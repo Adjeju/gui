@@ -11,7 +11,7 @@ import {
   SETTLE_MS,
   SLOW_START_MS,
 } from '../src/main/app-address'
-import { listenersOf } from '../src/main/ports'
+import { listenersOf, procIpv4, procIpv6 } from '../src/main/ports'
 
 const candidate = (
   port: number,
@@ -153,5 +153,18 @@ describe('asking what a port serves', () => {
     const port = await serve((_req, res) => res.end())
     const listeners = await listenersOf(process.pid)
     expect(listeners?.some((l) => l.port === port && l.pid === process.pid)).toBe(true)
+  })
+})
+
+describe('listening addresses in /proc/net', () => {
+  test('IPv4 addresses read back to front, and any address is *', () => {
+    expect(procIpv4('0100007F')).toBe('127.0.0.1')
+    expect(procIpv4('00000000')).toBe('*')
+  })
+
+  test('IPv6 addresses come out as lsof names them, and IPv4-mapped ones as IPv4', () => {
+    expect(procIpv6('00000000000000000000000001000000')).toBe('[::1]')
+    expect(procIpv6('00000000000000000000000000000000')).toBe('[::]')
+    expect(procIpv6('0000000000000000FFFF00000100007F')).toBe('127.0.0.1')
   })
 })

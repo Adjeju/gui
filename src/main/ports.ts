@@ -1,4 +1,6 @@
+import { readdir, readFile, readlink } from 'node:fs/promises'
 import { connect } from 'node:net'
+import { IS_MAC } from '../shared/platform'
 import { execFile } from './process'
 
 export interface Listener {
@@ -20,6 +22,13 @@ function run(command: string, args: string[]) {
 
 /** TCP listeners on a port, or null when lsof isn't available. */
 export async function listenersOn(port: number): Promise<Listener[] | null> {
+  if (!IS_MAC) {
+    const pids = (await readdir('/proc').catch(() => [] as string[]))
+      .filter((name) => /^\d+$/.test(name))
+      .map(Number)
+    const found = await procListeners(pids)
+    return found ? found.filter((listener) => listener.port === port) : null
+  }
   const out = await run('/usr/sbin/lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fpn'])
   if (out === null) return null
   const listeners: Listener[] = []
@@ -54,6 +63,7 @@ function parseAddress(name: string) {
 export async function listenersOf(root: number): Promise<PortListener[] | null> {
   const table = await run('/bin/ps', ['-A', '-o', 'pid=,ppid=,pgid='])
   const pids = table === null ? [root] : descendants(table, root)
+  if (!IS_MAC) return procListeners(pids)
   const args = ['-nP', '-a', '-iTCP', '-sTCP:LISTEN', '-Fpn']
   const out = await run('/usr/sbin/lsof', [...args, '-p', pids.join(',')])
   if (out === null) return null
@@ -63,6 +73,64 @@ export async function listenersOf(root: number): Promise<PortListener[] | null> 
     if (line.startsWith('p')) pid = Number(line.slice(1))
     else if (line.startsWith('n') && pid) {
       const address = parseAddress(line.slice(1))
+      if (address) listeners.push({ pid, ...address })
+    }
+  }
+  return listeners
+}
+
+async function procSockets() {
+  const sockets = new Map<string, { host: string; port: number }>()
+  let read = false
+  for (const [file, v6] of [
+    ['/proc/net/tcp', false],
+    ['/proc/net/tcp6', true],
+  ] as const) {
+    const text = await readFile(file, 'utf8').catch(() => null)
+    if (text === null) continue
+    read = true
+    for (const line of text.split('\n').slice(1)) {
+      const fields = line.trim().split(/\s+/)
+      const local = fields[1]
+      const inode = fields[9]
+      if (fields[3] !== '0A' || !local || !inode) continue
+      const [hex, portHex] = local.split(':')
+      const port = Number.parseInt(portHex ?? '', 16)
+      if (!hex || !Number.isInteger(port) || port <= 0) continue
+      sockets.set(inode, { host: v6 ? procIpv6(hex) : procIpv4(hex), port })
+    }
+  }
+  return read ? sockets : null
+}
+
+export function procIpv4(hex: string) {
+  const bytes = (hex.match(/../g) ?? []).map((pair) => Number.parseInt(pair, 16)).reverse()
+  const address = bytes.join('.')
+  return address === '0.0.0.0' ? '*' : address
+}
+
+export function procIpv6(hex: string) {
+  const words = hex.match(/.{8}/g) ?? []
+  const bytes = words.flatMap((word) => (word.match(/../g) ?? []).reverse())
+  const groups: string[] = []
+  for (let i = 0; i < bytes.length; i += 2) groups.push(`${bytes[i]}${bytes[i + 1]}`)
+  const full = groups.join(':')
+  if (/^(0000:){5}ffff:/i.test(full)) {
+    return procIpv4(bytes.slice(12).reverse().join(''))
+  }
+  return new URL(`http://[${full}]/`).hostname
+}
+
+async function procListeners(pids: number[]): Promise<PortListener[] | null> {
+  const sockets = await procSockets()
+  if (sockets === null) return null
+  const listeners: PortListener[] = []
+  for (const pid of pids) {
+    const fds = await readdir(`/proc/${pid}/fd`).catch(() => [] as string[])
+    for (const fd of fds) {
+      const target = await readlink(`/proc/${pid}/fd/${fd}`).catch(() => '')
+      const inode = /^socket:\[(\d+)\]$/.exec(target)?.[1]
+      const address = inode && sockets.get(inode)
       if (address) listeners.push({ pid, ...address })
     }
   }
