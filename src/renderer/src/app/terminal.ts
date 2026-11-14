@@ -167,11 +167,12 @@ export function mountTerminal(
   const keys: Keys = (event) => {
     if (!IS_MAC) {
       if (!event.ctrlKey || !event.shiftKey) return ghosttyKeys(event)
-      if (event.code === 'KeyC' || event.code === 'KeyV') {
+      if (event.code === 'KeyC') {
         event.preventDefault()
-        document.execCommand(event.code === 'KeyC' ? 'copy' : 'paste')
+        document.execCommand('copy')
         return
       }
+      if (event.code === 'KeyV') return
     } else if (!event.metaKey || event.code === 'KeyC' || event.code === 'KeyV') {
       return ghosttyKeys(event)
     }

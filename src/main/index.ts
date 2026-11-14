@@ -1936,7 +1936,9 @@ function buildMenu() {
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
-        { role: 'pasteAndMatchStyle' },
+        IS_MAC
+          ? { role: 'pasteAndMatchStyle' }
+          : { role: 'pasteAndMatchStyle', accelerator: 'CmdOrCtrl+Shift+V' },
         { role: 'delete' },
         { role: 'selectAll' },
         { type: 'separator' },
