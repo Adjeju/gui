@@ -20,6 +20,26 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
 
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: sudo apt-get update && sudo apt-get install -y rpm
+      - run: bun run dist:linux -- --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gui-linux
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+          if-no-files-found: error
+
   release-dry-run:
     runs-on: macos-latest
     steps:

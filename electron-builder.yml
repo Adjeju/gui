@@ -132,6 +132,7 @@ mac:
 linux:
   category: Development
   executableName: gui
+  syncDesktopName: true
   icon: build/linux-icon.png
   artifactName: ${productName}-${version}-${arch}.${ext}
   synopsis: Design real interfaces with your own AI agents
