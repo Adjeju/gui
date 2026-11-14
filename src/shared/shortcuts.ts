@@ -554,14 +554,14 @@ export const SHORTCUTS = {
   },
   clearTerminal: {
     label: 'Clear Terminal',
-    accelerator: 'CmdOrCtrl+K',
+    accelerator: IS_MAC ? 'CmdOrCtrl+K' : 'CmdOrCtrl+Shift+K',
     menu: null,
     group: 'terminal',
     description: 'Clear the terminal (in a terminal)',
   },
   deleteLine: {
     label: 'Delete Line',
-    accelerator: 'CmdOrCtrl+Backspace',
+    accelerator: IS_MAC ? 'CmdOrCtrl+Backspace' : 'CmdOrCtrl+Shift+Backspace',
     menu: null,
     group: 'terminal',
     description: "Delete the line you're typing (in a terminal)",

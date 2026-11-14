@@ -26,7 +26,7 @@ export async function listenersOn(port: number): Promise<Listener[] | null> {
     const pids = (await readdir('/proc').catch(() => [] as string[]))
       .filter((name) => /^\d+$/.test(name))
       .map(Number)
-    const found = await procListeners(pids)
+    const found = await procListeners(pids, { unowned: true })
     return found ? found.filter((listener) => listener.port === port) : null
   }
   const out = await run('/usr/sbin/lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fpn'])
@@ -63,7 +63,7 @@ function parseAddress(name: string) {
 export async function listenersOf(root: number): Promise<PortListener[] | null> {
   const table = await run('/bin/ps', ['-A', '-o', 'pid=,ppid=,pgid='])
   const pids = table === null ? [root] : descendants(table, root)
-  if (!IS_MAC) return procListeners(pids)
+  if (!IS_MAC) return procListeners(pids, { unowned: false })
   const args = ['-nP', '-a', '-iTCP', '-sTCP:LISTEN', '-Fpn']
   const out = await run('/usr/sbin/lsof', [...args, '-p', pids.join(',')])
   if (out === null) return null
@@ -132,16 +132,27 @@ async function socketInodes(pid: number) {
   return inodes
 }
 
-async function procListeners(pids: number[]): Promise<PortListener[] | null> {
+async function procListeners(
+  pids: number[],
+  { unowned }: { unowned: boolean },
+): Promise<PortListener[] | null> {
   const sockets = await procSockets()
   if (sockets === null) return null
   const inherited = await socketInodes(process.pid)
   const listeners: PortListener[] = []
+  const owned = new Set<string>()
   for (const pid of pids) {
     for (const inode of await socketInodes(pid)) {
       if (pid !== process.pid && inherited.has(inode)) continue
       const address = sockets.get(inode)
-      if (address) listeners.push({ pid, ...address })
+      if (!address) continue
+      owned.add(inode)
+      listeners.push({ pid, ...address })
+    }
+  }
+  if (unowned) {
+    for (const [inode, address] of sockets) {
+      if (!owned.has(inode)) listeners.push({ pid: 0, ...address })
     }
   }
   return listeners
@@ -173,7 +184,9 @@ function descendants(table: string, root: number): number[] {
 export async function processGroups(pids: number[]): Promise<Map<number, number>> {
   const groups = new Map<number, number>()
   if (pids.length === 0) return groups
-  const out = await run('/bin/ps', ['-o', 'pid=,pgid=', '-p', pids.join(',')])
+  const known = pids.filter((pid) => pid > 0)
+  if (known.length === 0) return groups
+  const out = await run('/bin/ps', ['-o', 'pid=,pgid=', '-p', known.join(',')])
   for (const line of out?.split('\n') ?? []) {
     const [pid, pgid] = line.trim().split(/\s+/).map(Number)
     if (pid && pgid) groups.set(pid, pgid)

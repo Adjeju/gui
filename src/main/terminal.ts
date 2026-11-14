@@ -59,7 +59,14 @@ export async function runInTerminal(command: string, intro: string) {
       detached: true,
       stdio: 'ignore',
     })
-    child.on('error', (error) => console.error('[gui] terminal failed to start', error))
+    const started = await new Promise<boolean>((resolve) => {
+      child.once('spawn', () => resolve(true))
+      child.once('error', (error) => {
+        console.error(`[gui] ${terminal.command} failed to start`, error)
+        resolve(false)
+      })
+    })
+    if (!started) continue
     child.unref()
     return
   }

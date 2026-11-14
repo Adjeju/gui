@@ -7,7 +7,17 @@ import {
   rmSync,
   statSync,
 } from 'node:fs'
-import { mkdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import {
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import {
@@ -605,6 +615,13 @@ function runSkillCommand(action: 'setup' | 'remove') {
  * skill included, before it does either.
  */
 async function installCli() {
+  if (!IS_MAC && !app.isPackaged) {
+    dialog.showErrorBox(
+      "Couldn't install the gui command",
+      'Install a packaged build of Gui, such as the AppImage, to use the gui command.',
+    )
+    return
+  }
   const { response } = await dialog.showMessageBox({
     type: 'question',
     message: "Install the 'gui' command?",
@@ -617,8 +634,9 @@ async function installCli() {
   if (response !== 0) return
   const script = cliScript()
   try {
-    if (!IS_MAC) await installLinuxCli(script)
-    else
+    if (!IS_MAC) {
+      if (!(await installLinuxCli(script))) return
+    } else
       try {
         await mkdir(dirname(CLI_LINK), { recursive: true })
         await rm(CLI_LINK, { force: true })
@@ -646,22 +664,56 @@ async function installCli() {
     message: "Installed the 'gui' command",
     detail: [
       'In a new terminal window, run gui in a project folder to open it here and start its dev server.',
+      ...(IS_MAC ? [] : await linuxPathHint()),
       skill,
     ].join('\n\n'),
   })
 }
 
-async function installLinuxCli(script: string) {
+const LINUX_LAUNCHER_PREFIX = '#!/bin/sh\nGUI_EXECUTABLE='
+
+async function installLinuxCli(script: string): Promise<boolean> {
+  const existing = await lstat(CLI_LINK).catch(() => null)
+  if (existing) {
+    const content = existing.isFile() ? await readFile(CLI_LINK, 'utf8').catch(() => '') : ''
+    if (!content.startsWith(LINUX_LAUNCHER_PREFIX)) {
+      const { response } = await dialog.showMessageBox({
+        type: 'warning',
+        message: `Replace ${CLI_LINK}?`,
+        detail: "A gui command that Gui didn't install is already there. Replacing it deletes it.",
+        buttons: ['Replace', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+      })
+      if (response !== 0) return false
+    }
+  }
   const executable = process.env.APPIMAGE || process.execPath
   const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`
   const body = (await readFile(script, 'utf8')).replace(/^#!.*\n/, '')
   await mkdir(dirname(CLI_LINK), { recursive: true })
-  await rm(CLI_LINK, { force: true })
-  await writeFile(
-    CLI_LINK,
-    `#!/bin/sh\nGUI_EXECUTABLE=${quote(executable)}\nexport GUI_EXECUTABLE\n${body}`,
-    { mode: 0o755 },
-  )
+  const temporary = `${CLI_LINK}.${process.pid}.tmp`
+  try {
+    await writeFile(
+      temporary,
+      `${LINUX_LAUNCHER_PREFIX}${quote(executable)}\nexport GUI_EXECUTABLE\n${body}`,
+      { mode: 0o755 },
+    )
+    await rename(temporary, CLI_LINK)
+  } catch (error) {
+    await rm(temporary, { force: true })
+    throw error
+  }
+  return true
+}
+
+async function linuxPathHint() {
+  const dir = dirname(CLI_LINK)
+  const path = (await getShellEnv()).PATH?.split(':') ?? []
+  if (path.includes(dir)) return []
+  return [
+    `${dir} isn't on your PATH yet. Add it in your shell's profile, for example: export PATH="$HOME/.local/bin:$PATH"`,
+  ]
 }
 
 function folderFromArgs(argv: readonly string[], cwd: string) {
