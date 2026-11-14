@@ -121,16 +121,26 @@ export function procIpv6(hex: string) {
   return new URL(`http://[${full}]/`).hostname
 }
 
+async function socketInodes(pid: number) {
+  const inodes = new Set<string>()
+  const fds = await readdir(`/proc/${pid}/fd`).catch(() => [] as string[])
+  for (const fd of fds) {
+    const target = await readlink(`/proc/${pid}/fd/${fd}`).catch(() => '')
+    const inode = /^socket:\[(\d+)\]$/.exec(target)?.[1]
+    if (inode) inodes.add(inode)
+  }
+  return inodes
+}
+
 async function procListeners(pids: number[]): Promise<PortListener[] | null> {
   const sockets = await procSockets()
   if (sockets === null) return null
+  const inherited = await socketInodes(process.pid)
   const listeners: PortListener[] = []
   for (const pid of pids) {
-    const fds = await readdir(`/proc/${pid}/fd`).catch(() => [] as string[])
-    for (const fd of fds) {
-      const target = await readlink(`/proc/${pid}/fd/${fd}`).catch(() => '')
-      const inode = /^socket:\[(\d+)\]$/.exec(target)?.[1]
-      const address = inode && sockets.get(inode)
+    for (const inode of await socketInodes(pid)) {
+      if (pid !== process.pid && inherited.has(inode)) continue
+      const address = sockets.get(inode)
       if (address) listeners.push({ pid, ...address })
     }
   }
