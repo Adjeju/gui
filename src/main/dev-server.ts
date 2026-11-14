@@ -12,6 +12,7 @@ import {
   RECENT_OUTPUT_MS,
   SLOW_START_MS,
 } from './app-address'
+import { DEFAULT_SHELL } from './os'
 import { Output } from './output'
 import { listenersOf, listenersOn, loopbackFor, portOpen, processGroups } from './ports'
 import { spawnPty } from './process'
@@ -322,7 +323,7 @@ export class DevServer extends EventEmitter<DevServerEvents> {
     this.task = task
     this.partial = ''
     this.write(`\r\n${ESC}[2m$ ${command}${ESC}[0m\r\n`)
-    const proc = spawnPty(env.SHELL || '/bin/zsh', ['-lc', command], {
+    const proc = spawnPty(env.SHELL || DEFAULT_SHELL, ['-lc', command], {
       name: 'xterm-256color',
       cols: this.size.cols,
       rows: this.size.rows,

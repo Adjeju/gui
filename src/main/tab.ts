@@ -40,6 +40,7 @@ import {
   type GuidePointerPhase,
 } from '../shared/ipc'
 import { RULER_SIZE } from '../shared/layout'
+import { IS_MAC } from '../shared/platform'
 import { PreviewText } from '../shared/preview-text'
 import { SHORTCUTS } from '../shared/shortcuts'
 import {
@@ -3269,7 +3270,10 @@ export class ProjectTab implements ChatPanelOwner {
     void envFile(root, env.target).then(
       // Always as text in the default text editor: `shell.openPath` would hand the file to
       // whatever app its type maps to.
-      (path) => execFile('/usr/bin/open', ['-t', path], () => undefined),
+      (path) =>
+        IS_MAC
+          ? execFile('/usr/bin/open', ['-t', path], () => undefined)
+          : void shell.openPath(path),
       (error: unknown) => console.error('[gui] not opening the env file', error),
     )
   }

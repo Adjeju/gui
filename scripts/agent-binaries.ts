@@ -23,6 +23,8 @@ export type AgentBinaries = Record<'claude' | 'codex', Record<string, AgentBinar
 const PLATFORMS = [
   { key: 'darwin-arm64', triple: 'aarch64-apple-darwin' },
   { key: 'darwin-x64', triple: 'x86_64-apple-darwin' },
+  { key: 'linux-arm64', triple: 'aarch64-unknown-linux-musl' },
+  { key: 'linux-x64', triple: 'x86_64-unknown-linux-musl' },
 ]
 
 function readJson(path: string): Record<string, unknown> {

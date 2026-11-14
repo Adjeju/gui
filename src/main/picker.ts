@@ -13,6 +13,7 @@ import {
   viewRectFromViewport,
 } from '../shared/coords'
 import { Events } from '../shared/ipc'
+import { IS_MAC } from '../shared/platform'
 import type { GuideOverlay, PickOverlayState, Point, Rect, VariationsBar } from '../shared/types'
 import { PANEL_MARGIN } from './chat-presentation'
 import { glideMs } from './input-pace'
@@ -40,6 +41,7 @@ const BAR_MIN_WIDTH = 240
  * double-click: the Mac's own double-click interval, kept to a sensible range.
  */
 function doubleClickMs() {
+  if (!IS_MAC) return 400
   const seconds = systemPreferences.getUserDefault('com.apple.mouse.doubleClickThreshold', 'double')
   return seconds > 0 ? Math.min(Math.max(seconds * 1000, 200), 800) : 400
 }

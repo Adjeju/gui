@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
+import { commandKeyPressed } from '../../../shared/shortcuts'
 import type { CustomAgentEntry } from '../../../shared/types'
 import { gui } from '../lib/api'
 import { readableError } from '../lib/errors'
@@ -113,7 +114,7 @@ export function CustomAgentForm({ original, onDone }: CustomAgentFormProps) {
           event.stopPropagation()
           onDone()
         }
-        if (event.key === 'Enter' && event.metaKey) {
+        if (event.key === 'Enter' && commandKeyPressed(event)) {
           event.preventDefault()
           event.currentTarget.requestSubmit()
         }

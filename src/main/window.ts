@@ -10,9 +10,11 @@ import {
   TOOLBAR_HEIGHT,
   TRAFFIC_LIGHTS,
 } from '../shared/layout'
+import { IS_MAC } from '../shared/platform'
 import type { RecentBoard, RecentProject, Rect, TabInfo, WindowState } from '../shared/types'
 import { boardIdOf } from './board'
 import { type ClosedTab, ClosedTabs, reopenIndex } from './closed-tabs'
+import { windowChrome } from './os'
 import { guardAppContents, loadRenderer, PRELOAD } from './renderer'
 import { ProjectTab, type TabHost } from './tab'
 import { followSurface, surfaceColor } from './theme'
@@ -119,8 +121,7 @@ export class ProjectWindow implements TabHost {
       minHeight: 640,
       show: false,
       title: 'Gui',
-      titleBarStyle: 'hiddenInset',
-      trafficLightPosition: TRAFFIC_LIGHTS,
+      ...windowChrome(),
       backgroundColor: surfaceColor(),
       webPreferences: { preload: PRELOAD, sandbox: true, contextIsolation: true },
     })
@@ -219,7 +220,7 @@ export class ProjectWindow implements TabHost {
       activeTab: this.active.id,
       focusMode: this.focus,
       shortcutsOpen: this.sheet,
-      fullScreen: this.win.isFullScreen(),
+      trafficLights: IS_MAC && !this.win.isFullScreen(),
     }
   }
 
@@ -528,6 +529,7 @@ export class ProjectWindow implements TabHost {
    * chat sidebar's header, which is then as tall), or the toolbar's.
    */
   private syncTrafficLights() {
+    if (!IS_MAC) return
     const tabbed = this.list.length > 1
     const lights = this.focus
       ? FOCUS_TRAFFIC_LIGHTS
@@ -544,7 +546,7 @@ export class ProjectWindow implements TabHost {
     const title = this.active.title ?? 'Gui'
     if (this.win.getTitle() !== title) this.win.setTitle(title)
     const file = this.active.getState().project?.root ?? ''
-    if (this.win.getRepresentedFilename() !== file) this.win.setRepresentedFilename(file)
+    if (IS_MAC && this.win.getRepresentedFilename() !== file) this.win.setRepresentedFilename(file)
   }
 
   private sendState() {

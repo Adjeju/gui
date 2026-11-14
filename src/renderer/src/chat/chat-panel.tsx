@@ -18,7 +18,8 @@ import {
   TRAFFIC_LIGHTS_INSET,
 } from '../../../shared/layout'
 import { SPRINGS, Spring } from '../../../shared/motion'
-import { withShortcut } from '../../../shared/shortcuts'
+import { IS_MAC } from '../../../shared/platform'
+import { commandKeyPressed, withShortcut } from '../../../shared/shortcuts'
 import {
   CHAT_FORMS,
   type ChatFloat,
@@ -68,8 +69,8 @@ function typing(target: EventTarget | null) {
  */
 function answerPermissionKeys() {
   const onKeyDown = (event: KeyboardEvent) => {
-    const modifiers = event.ctrlKey || event.altKey || event.shiftKey
-    if (!event.metaKey || modifiers || event.isComposing) return
+    const modifiers = (IS_MAC ? event.ctrlKey : event.metaKey) || event.altKey || event.shiftKey
+    if (!commandKeyPressed(event) || modifiers || event.isComposing) return
     const allow = event.key === 'Enter'
     if (!allow && event.key !== 'Backspace') return
     if (!allow && typing(event.target)) return

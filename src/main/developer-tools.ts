@@ -1,13 +1,15 @@
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { IS_MAC } from '../shared/platform'
 import { findExecutable } from './executables'
 import { execFile } from './process'
 import { getShellEnv } from './shell-env'
 
 /** What the user sees when Gui needs git and this Mac can't run it yet. */
-export const GIT_TOOLS_MISSING =
-  'Git needs Apple’s developer tools, which aren’t installed on this Mac yet. Install them from the banner above the preview, then try again.'
+export const GIT_TOOLS_MISSING = IS_MAC
+  ? 'Git needs Apple’s developer tools, which aren’t installed on this Mac yet. Install them from the banner above the preview, then try again.'
+  : 'Git isn’t installed. Install it with your package manager, then try again.'
 
 /**
  * Whether git can run here. On a Mac without Apple's developer tools, `/usr/bin/git` is a
@@ -48,6 +50,10 @@ class DeveloperTools extends EventEmitter<{ change: [status: DeveloperToolsStatu
   /** Opens macOS's installer for the developer tools; Gui checks again on its own after. */
   install() {
     if (this.status !== 'missing' && this.status !== 'installing') return
+    if (!IS_MAC) {
+      void this.recheck()
+      return
+    }
     execFile('/usr/bin/xcode-select', ['--install'], () => undefined)
     this.set('installing')
   }
@@ -60,7 +66,7 @@ class DeveloperTools extends EventEmitter<{ change: [status: DeveloperToolsStatu
   private async check() {
     const env = await getShellEnv()
     const git = await findExecutable('git', env.PATH)
-    const ok = git !== null && (git !== '/usr/bin/git' || (await this.hasAppleTools()))
+    const ok = git !== null && (!IS_MAC || git !== '/usr/bin/git' || (await this.hasAppleTools()))
     if (ok) this.set('ok')
     else if (this.status !== 'installing') this.set('missing')
     return ok

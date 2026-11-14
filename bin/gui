@@ -171,7 +171,21 @@ if [ ! -d "$dir" ]; then
 fi
 dir=$(cd "$dir" && pwd -P)
 
-if ! open -b dev.gui.app "$dir" 2>/dev/null; then
-  echo "gui: Gui isn't installed. From its repo, run: bun run install-app" >&2
+if [ "$(uname)" = Darwin ]; then
+  if ! open -b dev.gui.app "$dir" 2>/dev/null; then
+    echo "gui: Gui isn't installed. From its repo, run: bun run install-app" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+exe="${GUI_EXECUTABLE:-}"
+if [ -z "$exe" ]; then
+  here=$(dirname "$(readlink -f "$0")")
+  exe="$here/../../gui"
+fi
+if [ ! -x "$exe" ]; then
+  echo "gui: Gui isn't installed. Install it, then use Gui > 'gui' Command > Install 'gui' Command." >&2
   exit 1
 fi
+nohup "$exe" "$dir" >/dev/null 2>&1 &

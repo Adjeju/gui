@@ -1,3 +1,4 @@
+import { IS_MAC } from './platform'
 import { type DeviceViewport, viewportKey, viewportSpec } from './types'
 
 /**
@@ -630,7 +631,7 @@ export function allShortcuts(): Shortcut[] {
 }
 
 /** macOS's order for modifiers, and how menus draw them. */
-const MODIFIERS = [
+const MAC_MODIFIERS = [
   { names: ['Ctrl', 'Control'], symbol: '⌃', aria: 'Control' },
   { names: ['Alt', 'Option'], symbol: '⌥', aria: 'Alt' },
   { names: ['Shift'], symbol: '⇧', aria: 'Shift' },
@@ -640,6 +641,29 @@ const MODIFIERS = [
     aria: 'Meta',
   },
 ] as const
+
+const OTHER_MODIFIERS = [
+  {
+    names: ['Ctrl', 'Control', 'CmdOrCtrl', 'CommandOrControl'],
+    symbol: 'Ctrl',
+    aria: 'Control',
+  },
+  { names: ['Alt', 'Option'], symbol: 'Alt', aria: 'Alt' },
+  { names: ['Shift'], symbol: 'Shift', aria: 'Shift' },
+  { names: ['Cmd', 'Command', 'Super', 'Meta'], symbol: 'Super', aria: 'Meta' },
+] as const
+
+const MODIFIERS: readonly { names: readonly string[]; symbol: string; aria: string }[] = IS_MAC
+  ? MAC_MODIFIERS
+  : OTHER_MODIFIERS
+
+const OTHER_KEY_NAMES: Record<string, string> = {
+  Enter: 'Enter',
+  Return: 'Enter',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  Tab: 'Tab',
+}
 
 /** Keys drawn as a symbol, and their name in `aria-keyshortcuts` where it isn't the key. */
 const KEYS: Record<string, { symbol: string; aria: string }> = {
@@ -665,7 +689,7 @@ function parse(accelerator: string) {
   const parts = accelerator.split('+')
   const key = parts.pop() || '+'
   const modifiers = MODIFIERS.filter((modifier) =>
-    parts.some((part) => (modifier.names as readonly string[]).includes(part)),
+    parts.some((part) => modifier.names.includes(part)),
   )
   return { modifiers, key }
 }
@@ -673,14 +697,20 @@ function parse(accelerator: string) {
 /** The keys to press, as menus draw them: `Shift+CmdOrCtrl+L` is ⇧ ⌘ L. */
 export function acceleratorKeys(accelerator: string): string[] {
   const { modifiers, key } = parse(accelerator)
-  const symbol = KEYS[key]?.symbol ?? key.toUpperCase()
+  const symbol = (!IS_MAC && OTHER_KEY_NAMES[key]) || KEYS[key]?.symbol || key.toUpperCase()
   return [...modifiers.map((modifier) => modifier.symbol), symbol]
 }
 
 /** A shortcut's keys as one string, as the menu shows them: "⇧⌘L". */
 export function shortcutText(id: ShortcutId): string {
-  return acceleratorKeys(SHORTCUTS[id].accelerator).join('')
+  return acceleratorKeys(SHORTCUTS[id].accelerator).join(IS_MAC ? '' : '+')
 }
+
+export function commandKeyPressed(event: { metaKey: boolean; ctrlKey: boolean }): boolean {
+  return IS_MAC ? event.metaKey : event.ctrlKey
+}
+
+export const COMMAND_KEY_LABEL = IS_MAC ? '⌘' : 'Ctrl+'
 
 /** "Reload preview (⌘R)": a control's tooltip, with its shortcut. */
 export function withShortcut(label: string, id: ShortcutId): string {

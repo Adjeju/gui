@@ -254,7 +254,7 @@ async function begin(link: boolean): Promise<Attempt> {
   if (current?.link === link) return current
   await cancelSignIn()
   if (!safeStorage.isEncryptionAvailable())
-    throw new Error('Secure storage is unavailable. Signing in needs the macOS keychain.')
+    throw new Error('Secure storage is unavailable. Signing in needs the system keychain.')
   starting = (async () => {
     const server = createServer()
     try {

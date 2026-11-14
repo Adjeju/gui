@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { StartForm } from '../../../shared/ipc'
 import { FRAME_LABEL_HEIGHT } from '../../../shared/layout'
+import { IS_MAC } from '../../../shared/platform'
 import {
   frameLabel,
   PROJECT_TEMPLATES,
@@ -798,6 +799,21 @@ function EnvItem({ env }: { env: EnvSetup }) {
  */
 export function DeveloperToolsBanner({ state }: { state: WindowState }) {
   if (!state.project || !state.developerTools) return null
+  if (!IS_MAC) {
+    return (
+      <Banner
+        icon={Wrench}
+        tone="warning"
+        actions={
+          <Button size="sm" onClick={() => gui.installDeveloperTools()}>
+            Check again
+          </Button>
+        }
+      >
+        <span className="text-pretty">Undo needs git. Install it with your package manager.</span>
+      </Banner>
+    )
+  }
   if (state.developerTools === 'installing') {
     return (
       <Banner
