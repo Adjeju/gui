@@ -665,7 +665,8 @@ async function installLinuxCli(script: string) {
 }
 
 function folderFromArgs(argv: readonly string[], cwd: string) {
-  for (const arg of argv.slice(app.isPackaged ? 1 : 2).reverse()) {
+  if (!app.isPackaged) return null
+  for (const arg of argv.slice(1).reverse()) {
     if (arg.startsWith('-')) continue
     const path = resolve(cwd, arg)
     try {
