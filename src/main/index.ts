@@ -7,17 +7,7 @@ import {
   rmSync,
   statSync,
 } from 'node:fs'
-import {
-  lstat,
-  mkdir,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  stat,
-  symlink,
-  writeFile,
-} from 'node:fs/promises'
+import { mkdir, readFile, realpath, rm, stat, symlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import {
@@ -120,6 +110,7 @@ import {
   noRequestArgs,
   stringRequestArgs,
 } from './ipc-handler'
+import { installLinuxLauncher } from './linux-cli'
 import { isLoopback } from './loopback'
 import { preloadMcpSdk } from './mcp-server'
 import { chatWillHide, terminalWillHide } from './menu-toggles'
@@ -670,13 +661,12 @@ async function installCli() {
   })
 }
 
-const LINUX_LAUNCHER_PREFIX = '#!/bin/sh\nGUI_EXECUTABLE='
-
-async function installLinuxCli(script: string): Promise<boolean> {
-  const existing = await lstat(CLI_LINK).catch(() => null)
-  if (existing) {
-    const content = existing.isFile() ? await readFile(CLI_LINK, 'utf8').catch(() => '') : ''
-    if (!content.startsWith(LINUX_LAUNCHER_PREFIX)) {
+function installLinuxCli(script: string) {
+  return installLinuxLauncher({
+    target: CLI_LINK,
+    executable: process.env.APPIMAGE || process.execPath,
+    script,
+    confirmReplace: async () => {
       const { response } = await dialog.showMessageBox({
         type: 'warning',
         message: `Replace ${CLI_LINK}?`,
@@ -685,26 +675,9 @@ async function installLinuxCli(script: string): Promise<boolean> {
         defaultId: 1,
         cancelId: 1,
       })
-      if (response !== 0) return false
-    }
-  }
-  const executable = process.env.APPIMAGE || process.execPath
-  const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`
-  const body = (await readFile(script, 'utf8')).replace(/^#!.*\n/, '')
-  await mkdir(dirname(CLI_LINK), { recursive: true })
-  const temporary = `${CLI_LINK}.${process.pid}.tmp`
-  try {
-    await writeFile(
-      temporary,
-      `${LINUX_LAUNCHER_PREFIX}${quote(executable)}\nexport GUI_EXECUTABLE\n${body}`,
-      { mode: 0o755 },
-    )
-    await rename(temporary, CLI_LINK)
-  } catch (error) {
-    await rm(temporary, { force: true })
-    throw error
-  }
-  return true
+      return response === 0
+    },
+  })
 }
 
 async function linuxPathHint() {

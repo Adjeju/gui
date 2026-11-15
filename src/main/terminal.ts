@@ -1,34 +1,23 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, shell } from 'electron'
 import { IS_MAC } from '../shared/platform'
-import { findExecutable } from './executables'
 import { DEFAULT_SHELL } from './os'
-import { spawnProcess } from './process'
 import { getShellEnv } from './shell-env'
+import { launchTerminal } from './terminal-launch'
 
 const quote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`
-
-const LINUX_TERMINALS: readonly { command: string; args: (file: string) => string[] }[] = [
-  { command: 'x-terminal-emulator', args: (file) => ['-e', file] },
-  { command: 'gnome-terminal', args: (file) => ['--', file] },
-  { command: 'ptyxis', args: (file) => ['--', file] },
-  { command: 'konsole', args: (file) => ['-e', file] },
-  { command: 'xfce4-terminal', args: (file) => ['-x', file] },
-  { command: 'kitty', args: (file) => [file] },
-  { command: 'alacritty', args: (file) => ['-e', file] },
-  { command: 'wezterm', args: (file) => ['start', '--', file] },
-  { command: 'foot', args: (file) => [file] },
-  { command: 'xterm', args: (file) => ['-e', file] },
-]
 
 export async function runInTerminal(command: string, intro: string) {
   const dir = join(app.getPath('userData'), 'terminal')
   await mkdir(dir, { recursive: true, mode: 0o700 })
-  const file = join(dir, IS_MAC ? 'sign-in.command' : 'sign-in.sh')
+  const name = `sign-in-${randomBytes(6).toString('hex')}`
+  const file = join(dir, IS_MAC ? `${name}.command` : `${name}.sh`)
   const script = IS_MAC
     ? [
         '#!/bin/sh',
+        'rm -f -- "$0"',
         'clear',
         `printf '%s\\n\\n' ${quote(intro)}`,
         `exec "\${SHELL:-${DEFAULT_SHELL}}" -lic ${quote(`${command}; echo; echo "All done. You can close this window and go back to Gui."`)}`,
@@ -36,6 +25,7 @@ export async function runInTerminal(command: string, intro: string) {
       ]
     : [
         '#!/bin/sh',
+        'rm -f -- "$0"',
         'clear',
         `printf '%s\\n\\n' ${quote(intro)}`,
         `"\${SHELL:-${DEFAULT_SHELL}}" -lic ${quote(command)}`,
@@ -47,28 +37,16 @@ export async function runInTerminal(command: string, intro: string) {
   await writeFile(file, script.join('\n'), { mode: 0o700 })
   if (IS_MAC) {
     const error = await shell.openPath(file)
-    if (error) throw new Error(`Couldn't open Terminal: ${error}`)
-    return
+    if (!error) return
+    await rm(file, { force: true })
+    throw new Error(`Couldn't open Terminal: ${error}`)
   }
   const env = await getShellEnv()
-  for (const terminal of LINUX_TERMINALS) {
-    const path = await findExecutable(terminal.command, env.PATH)
-    if (!path) continue
-    const child = spawnProcess(path, terminal.args(file), {
-      env,
-      detached: true,
-      stdio: 'ignore',
-    })
-    const started = await new Promise<boolean>((resolve) => {
-      child.once('spawn', () => resolve(true))
-      child.once('error', (error) => {
-        console.error(`[gui] ${terminal.command} failed to start`, error)
-        resolve(false)
-      })
-    })
-    if (!started) continue
-    child.unref()
-    return
+  try {
+    await launchTerminal(file, env)
+  } catch (error) {
+    await rm(file, { force: true })
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`${message} Run \`${command}\` in a terminal, then try again.`)
   }
-  throw new Error(`Couldn't find a terminal app. Run \`${command}\` in a terminal, then try again.`)
 }

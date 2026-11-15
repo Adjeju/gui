@@ -40,7 +40,6 @@ import {
   type GuidePointerPhase,
 } from '../shared/ipc'
 import { RULER_SIZE } from '../shared/layout'
-import { IS_MAC } from '../shared/platform'
 import { PreviewText } from '../shared/preview-text'
 import { SHORTCUTS } from '../shared/shortcuts'
 import {
@@ -122,7 +121,6 @@ import type { AgentPointer } from './preview-interactions'
 import { PreviewMorph } from './preview-morph'
 import { PreviewTools, SETTLE_MS } from './preview-tools'
 import { Problems } from './problems'
-import { execFile } from './process'
 import { detectProject } from './project'
 import { retireProject, waitForRetiredProject } from './project-handoff'
 import { ProjectResources } from './project-resources'
@@ -179,6 +177,7 @@ import {
 import type { TabHost, TabState } from './tab-host'
 import { Terminals } from './terminals'
 import { collapseText, rewriteText } from './text-edit'
+import { openAsText } from './text-editor'
 import { thumbnail } from './thumbnail'
 import {
   agreeTo,
@@ -3267,15 +3266,14 @@ export class ProjectTab implements ChatPanelOwner {
     const root = this.state.project?.root
     const env = this.state.setup?.env
     if (!root || !env?.created) return
-    void envFile(root, env.target).then(
-      // Always as text in the default text editor: `shell.openPath` would hand the file to
-      // whatever app its type maps to.
-      (path) =>
-        IS_MAC
-          ? execFile('/usr/bin/open', ['-t', path], () => undefined)
-          : void shell.openPath(path),
-      (error: unknown) => console.error('[gui] not opening the env file', error),
-    )
+    void envFile(root, env.target)
+      .then(openAsText)
+      .catch((error: unknown) =>
+        dialog.showErrorBox(
+          "Couldn't open the env file",
+          error instanceof Error ? error.message : String(error),
+        ),
+      )
   }
 
   /**

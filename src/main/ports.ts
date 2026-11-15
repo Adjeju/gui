@@ -79,14 +79,26 @@ export async function listenersOf(root: number): Promise<PortListener[] | null> 
   return listeners
 }
 
-async function procSockets() {
+export interface ProcReader {
+  readFile(path: string): Promise<string>
+  readdir(path: string): Promise<string[]>
+  readlink(path: string): Promise<string>
+}
+
+const PROC: ProcReader = {
+  readFile: (path) => readFile(path, 'utf8'),
+  readdir: (path) => readdir(path),
+  readlink: (path) => readlink(path),
+}
+
+async function procSockets(reader: ProcReader) {
   const sockets = new Map<string, { host: string; port: number }>()
   let read = false
   for (const [file, v6] of [
     ['/proc/net/tcp', false],
     ['/proc/net/tcp6', true],
   ] as const) {
-    const text = await readFile(file, 'utf8').catch(() => null)
+    const text = await reader.readFile(file).catch(() => null)
     if (text === null) continue
     read = true
     for (const line of text.split('\n').slice(1)) {
@@ -121,29 +133,33 @@ export function procIpv6(hex: string) {
   return new URL(`http://[${full}]/`).hostname
 }
 
-async function socketInodes(pid: number) {
+async function socketInodes(pid: number, reader: ProcReader) {
   const inodes = new Set<string>()
-  const fds = await readdir(`/proc/${pid}/fd`).catch(() => [] as string[])
+  const fds = await reader.readdir(`/proc/${pid}/fd`).catch(() => [] as string[])
   for (const fd of fds) {
-    const target = await readlink(`/proc/${pid}/fd/${fd}`).catch(() => '')
+    const target = await reader.readlink(`/proc/${pid}/fd/${fd}`).catch(() => '')
     const inode = /^socket:\[(\d+)\]$/.exec(target)?.[1]
     if (inode) inodes.add(inode)
   }
   return inodes
 }
 
-async function procListeners(
+export async function procListeners(
   pids: number[],
-  { unowned }: { unowned: boolean },
+  {
+    unowned,
+    reader = PROC,
+    self = process.pid,
+  }: { unowned: boolean; reader?: ProcReader; self?: number },
 ): Promise<PortListener[] | null> {
-  const sockets = await procSockets()
+  const sockets = await procSockets(reader)
   if (sockets === null) return null
-  const inherited = await socketInodes(process.pid)
+  const inherited = await socketInodes(self, reader)
   const listeners: PortListener[] = []
   const owned = new Set<string>()
   for (const pid of pids) {
-    for (const inode of await socketInodes(pid)) {
-      if (pid !== process.pid && inherited.has(inode)) continue
+    for (const inode of await socketInodes(pid, reader)) {
+      if (pid !== self && inherited.has(inode)) continue
       const address = sockets.get(inode)
       if (!address) continue
       owned.add(inode)

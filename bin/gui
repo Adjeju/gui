@@ -26,7 +26,7 @@ print_skill() {
 name: open-in-gui
 description: Open the project you're working on in Gui, the desktop app for building web apps with agents. Use when the user says "open it in Gui", "open this in gui for me", "show me in Gui", "pull it up in Gui", or asks to see the app/project/worktree you just worked on in Gui.
 metadata:
-  gui-skill: "2"
+  gui-skill: "3"
 ---
 <!-- Installed by Gui. Remove it with "gui skill remove" or Gui > Remove Agent Skill. -->
 
@@ -43,9 +43,13 @@ Gui opens a folder as a project, starts its dev server itself, and shows the pre
    ```sh
    gui "/absolute/path/to/folder"
    ```
-   If `gui` isn't on PATH, fall back to:
+   If `gui` isn't on PATH, fall back to the copy Gui installs. On macOS:
    ```sh
    open -b dev.gui.app "/absolute/path/to/folder"
+   ```
+   On Linux:
+   ```sh
+   ~/.local/bin/gui "/absolute/path/to/folder"
    ```
    If that fails too, Gui isn't installed. Tell the user, and stop.
 3. **Don't start the dev server yourself.** Gui starts it. If you already have one running for this folder, tell the user: Gui will start its own, and a server pinned to one port may say the port is in use. Offer to stop yours.
