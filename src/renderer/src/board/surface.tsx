@@ -10,6 +10,7 @@ import type { BoardCamera } from '../../../shared/board'
 import { Card } from '../lib/surface'
 import { BoardRenderer } from './gl/renderer'
 import { readInks } from './gl/theme'
+import { sharpTile } from './intents'
 import type { SceneInput } from './scene'
 
 /*
@@ -18,7 +19,8 @@ import type { SceneInput } from './scene'
  * follows, only while something changed. Nothing here handles input: the board's DOM above
  * the canvas does, as it did when it drew the frames itself. Each frame's tile in that DOM
  * says which thumbnail the canvas holds for it (`data-thumb`, its width in pixels, 0 for
- * none), for tests and for anyone inspecting the board.
+ * none), and the scale of the sharp tile drawn over it zoomed in (`data-sharp`, sharp.ts, 0
+ * for none), for tests and for anyone inspecting the board.
  */
 
 /** A spare buffer of the canvas's is given back once nothing has been drawn for this long. */
@@ -47,6 +49,7 @@ export function BoardSurface({
   ref,
   input,
   camera,
+  board,
   thumbs,
   tiles,
   onUnavailable,
@@ -55,6 +58,8 @@ export function BoardSurface({
   input: BoardSurfaceInput
   /** The camera as it is this moment, which React's own copy follows a little behind */
   camera: () => BoardCamera | null
+  /** The canvas's id, which its sharp tiles are asked for by */
+  board: string
   /** Where thumbnails load from (`BoardState.thumbs`) */
   thumbs: string
   /** What holds the frames' tiles (`[data-frame]`), which say which thumbnail is drawn */
@@ -66,6 +71,7 @@ export function BoardSurface({
   const latest = useRef({
     input,
     camera,
+    board,
     thumbs,
     tiles,
     onUnavailable,
@@ -88,6 +94,7 @@ export function BoardSurface({
   useLayoutEffect(() => {
     latest.current.input = input
     latest.current.camera = camera
+    latest.current.board = board
     latest.current.thumbs = thumbs
     latest.current.tiles = tiles
     latest.current.onUnavailable = onUnavailable
@@ -115,6 +122,7 @@ export function BoardSurface({
         el,
         (want) =>
           `${latest.current.thumbs}/${want.id}${want.source === 'small' ? '.small' : ''}?v=${want.version}`,
+        (tile, signal) => sharpTile(latest.current.board, tile, signal),
         invalidate,
       )
     } catch {
@@ -130,8 +138,11 @@ export function BoardSurface({
       for (const tile of latest.current.tiles.current?.querySelectorAll<HTMLElement>(
         '[data-frame]',
       ) ?? []) {
-        const width = String(renderer.thumbWidth(tile.dataset.frame ?? ''))
+        const id = tile.dataset.frame ?? ''
+        const width = String(renderer.thumbWidth(id))
         if (tile.dataset.thumb !== width) tile.dataset.thumb = width
+        const sharp = String(renderer.sharpScale(id))
+        if (tile.dataset.sharp !== sharp) tile.dataset.sharp = sharp
       }
     }
     let trimmer: ReturnType<typeof setTimeout> | undefined

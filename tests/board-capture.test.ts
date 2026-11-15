@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { NativeImage } from 'electron'
@@ -42,6 +42,9 @@ const image = (text: string): NativeImage =>
     resize: () => image(text),
   }) as unknown as NativeImage
 
+/** A renderer for thumbnails; its sharp regions are null unless a test gives them. */
+type TestRenderer = Omit<BoardCaptureRenderer, 'region'> & Partial<BoardCaptureRenderer>
+
 async function fixture(ids = ['a', 'b']) {
   const base = await mkdtemp(join(tmpdir(), 'gui-capture-test-'))
   roots.push(base)
@@ -54,7 +57,7 @@ async function fixture(ids = ['a', 'b']) {
   )
   for (const id of ids) await writeFile(join(root, 'frames', `${id}.html`), `<h1>${id}</h1>`)
   const changed: string[] = []
-  const create = (renderer: BoardCaptureRenderer, queue = new BoardCaptureQueue()) => {
+  const create = (renderer: TestRenderer, queue = new BoardCaptureQueue()) => {
     const owner = new BoardCaptures(
       {
         root,
@@ -64,7 +67,7 @@ async function fixture(ids = ['a', 'b']) {
         url: (id) => `http://board/frames/${id}.html`,
         changed: (id) => changed.push(id),
       },
-      renderer,
+      { region: async () => null, ...renderer },
       queue,
     )
     owners.push(owner)
@@ -109,7 +112,7 @@ test('thumbnails made at 1× before are made again at 2×, and desktop frames st
   const desktop = f.frames.get('b')
   if (desktop) desktop.width = 1440
   const scales: string[] = []
-  const renderer = (): BoardCaptureRenderer => ({
+  const renderer = (): TestRenderer => ({
     render: async (frame, _url, scale) => {
       scales.push(`${frame.id}:${scale}`)
       return image(frame.id)
@@ -335,4 +338,34 @@ test('thumbnail versions never repeat across openings, and stale thumbnails are 
   await second.forget('a')
   expect(await readFile(second.path('a')).catch(() => null)).toBeNull()
   expect(await readFile(join(f.thumbs, 'a.small.jpg')).catch(() => null)).toBeNull()
+})
+
+test('a sharp region is laid out in its thumbnail’s worker, at the zoom asked, and never saved', async () => {
+  const f = await fixture(['a', 'b'])
+  const desktop = f.frames.get('b')
+  if (desktop) desktop.width = 1440
+  const regions: string[] = []
+  const owner = f.create({
+    render: async (frame) => image(frame.id),
+    region: async (frame, _url, scale, clip, zoom, _signal, maxHeight) => {
+      regions.push(`${frame.id}:${scale}x${zoom}:${clip.x},${clip.y},${clip.width}:${maxHeight}`)
+      return Buffer.from(`png ${frame.id}`)
+    },
+    dispose: () => undefined,
+  })
+  await owner.open()
+  await until(() => f.changed.length === 2)
+  const rect = { x: 10, y: 20, width: 100, height: 50 }
+  // A 400-wide frame's worker is at 2×, a desktop frame's at 1×: 4× is twice the one, 4× the other.
+  const narrow = owner.sharpen({ id: 'a', rect, scale: 4 })
+  const wide = owner.sharpen({ id: 'b', rect, scale: 4 })
+  expect((await narrow?.done)?.toString()).toBe('png a')
+  expect((await wide?.done)?.toString()).toBe('png b')
+  expect(regions).toEqual(['a:2x2:10,20,100:3000', 'b:1x4:10,20,100:3000'])
+  // Asked for before the frame shrank under it: nothing.
+  const frame = f.frames.get('a')
+  if (frame) frame.width = 50
+  expect(await owner.sharpen({ id: 'a', rect, scale: 4 })?.done).toBeNull()
+  expect(regions).toHaveLength(2)
+  expect((await readdir(f.thumbs)).filter((name) => !/\.(jpg|json)$/.test(name))).toEqual([])
 })

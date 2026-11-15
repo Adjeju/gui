@@ -15,6 +15,7 @@ import {
   boardViewRectFromBoard,
 } from '../../../shared/coords'
 import type { BoardFrame } from '../../../shared/types'
+import { type SharpTile, tileBoardRect } from './sharp'
 
 /*
  * What the board shows. Nothing here knows about WebGL or the DOM: it takes the board as main
@@ -128,10 +129,13 @@ export class QuadList {
   count = 0
   /** The thumbnail each `QUAD.thumb` quad wants, by its index */
   thumbs: (ThumbWant | undefined)[] = []
+  /** The frame whose sharp tile (sharp.ts) each such quad draws, by its index */
+  sharp: (string | undefined)[] = []
 
   clear() {
     this.count = 0
     this.thumbs.length = 0
+    this.sharp.length = 0
   }
 
   push(
@@ -176,7 +180,8 @@ export interface Scene {
 
 /**
  * Fills `quads` with what shows in a view of `size` through `camera`, on a display of `scale`
- * device pixels a CSS pixel. Only what reaches into the view is listed.
+ * device pixels a CSS pixel. Only what reaches into the view is listed. A frame with a sharp
+ * tile (`sharp`, by frame) has it drawn over its thumbnail, then its edge again over that.
  */
 export function buildScene(
   input: SceneInput,
@@ -184,6 +189,7 @@ export function buildScene(
   size: { width: number; height: number },
   scale: number,
   quads: QuadList,
+  sharp: ReadonlyMap<string, SharpTile> = new Map(),
 ): Scene {
   quads.clear()
   const { zoom } = camera
@@ -224,21 +230,30 @@ export function buildScene(
     }
   }
   for (const { frame, rect } of shown) {
+    const edge = input.hovered === frame.id ? INK.accent : INK.line
     const index = quads.push(
       rect,
       frame.captured ? QUAD.thumb : QUAD.flat,
       INK.raised,
-      input.hovered === frame.id ? INK.accent : INK.line,
+      edge,
       1,
       false,
       0,
     )
-    if (frame.captured)
-      quads.thumbs[index] = {
-        id: frame.id,
-        version: frame.version,
-        ...thumbTier(frame.width, rect.width * scale),
-      }
+    if (!frame.captured) continue
+    quads.thumbs[index] = {
+      id: frame.id,
+      version: frame.version,
+      ...thumbTier(frame.width, rect.width * scale),
+    }
+    const tile = sharp.get(frame.id)
+    if (!tile) continue
+    const area = boardViewRectFromBoard(tileBoardRect(frame, tile.rect), camera)
+    const at = quads.push(area, QUAD.thumb, INK.none, INK.none, 0, false, 0)
+    // Its image fills it, top to bottom.
+    quads.data[at * QUAD_STRIDE + 10] = area.height
+    quads.sharp[at] = frame.id
+    quads.push(rect, QUAD.flat, INK.none, edge, 1, false, 0)
   }
 
   // What's selected, above every frame.

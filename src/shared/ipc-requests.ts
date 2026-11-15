@@ -63,6 +63,7 @@ export interface AllIpcRequests {
   [Invoke.newOutsideToken]: Contract<'newOutsideToken'>
   [Invoke.copyOutsideSetup]: Contract<'copyOutsideSetup'>
   [Invoke.boardChatCover]: Contract<'boardChatCover'>
+  [Invoke.boardSharpen]: Contract<'boardSharpen'>
   [Invoke.getRulers]: Contract<'getRulers'>
 }
 

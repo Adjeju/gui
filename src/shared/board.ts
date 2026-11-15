@@ -44,6 +44,51 @@ export function thumbWidthOf(frameWidth: number) {
  * a hundred pixels wide on screen costs its memory many times over.
  */
 export const SMALL_THUMB_WIDTH = 360
+/** How much of a tall frame its thumbnail shows; screenshots and exports show all of it. */
+export const THUMB_MAX_HEIGHT = 3000
+
+/**
+ * Zoomed in past what a frame's thumbnail holds, the board asks for the part of the frame in
+ * view again, rendered at the zoom (renderer/src/board/sharp.ts): `rect` in the frame page's
+ * own CSS pixels, `scale` device pixels for each. It's drawn over the thumbnail, never saved.
+ */
+export interface SharpRequest {
+  id: string
+  rect: { x: number; y: number; width: number; height: number }
+  scale: number
+}
+/** The most device pixels a sharp render has per CSS pixel: twice a Retina screen's, at 200%. */
+export const SHARP_MAX_SCALE = 4
+/** A sharp render's widest or tallest, in device pixels: within every GPU's texture limit. */
+export const SHARP_MAX_EDGE = 8192
+/** A sharp render's most pixels: a 6K display's worth, with room. */
+export const SHARP_MAX_PIXELS = 24_000_000
+
+/**
+ * Whether a sharp request (from the board, over IPC) fits a frame `width` × `height`: whole
+ * CSS pixels within what its thumbnail covers, at a scale and size the limits allow.
+ */
+export function isSharpRequest(value: unknown, frame: { width: number; height: number } | null) {
+  if (!value || typeof value !== 'object' || !frame) return false
+  const { id, rect, scale } = value as Record<string, unknown>
+  if (!isFrameId(id) || !finite(scale) || scale <= 0 || scale > SHARP_MAX_SCALE) return false
+  if (!rect || typeof rect !== 'object') return false
+  const { x, y, width, height } = rect as Record<string, unknown>
+  const whole = [x, y, width, height].every((n) => Number.isInteger(n))
+  if (!whole) return false
+  const [left, top, w, h] = [x, y, width, height] as number[]
+  return (
+    left >= 0 &&
+    top >= 0 &&
+    w >= 1 &&
+    h >= 1 &&
+    left + w <= frame.width &&
+    top + h <= Math.min(frame.height, THUMB_MAX_HEIGHT) &&
+    w * scale <= SHARP_MAX_EDGE &&
+    h * scale <= SHARP_MAX_EDGE &&
+    w * h * scale * scale <= SHARP_MAX_PIXELS
+  )
+}
 
 /** The sizes a new frame can start at. */
 export const FRAME_PRESETS = [

@@ -5,7 +5,7 @@ import {
   session as sessions,
   type WebContents,
 } from 'electron'
-import type { BoardFrameLayout } from '../shared/board'
+import type { BoardFrameLayout, SharpRequest } from '../shared/board'
 import { type BoardCaptureRenderer, UnresponsiveFrameError } from './board-capture'
 
 const LOAD_TIMEOUT_MS = 8000
@@ -118,13 +118,85 @@ export class OffscreenBoardRenderer implements BoardCaptureRenderer {
   private workers = new Map<number, BrowserWindow>()
   private disposed = false
 
-  async render(
+  render(
     frame: BoardFrameLayout,
     url: string,
     scale: number,
     signal: AbortSignal,
     maxHeight: number,
   ): Promise<NativeImage | null> {
+    return this.withPage(frame, url, scale, signal, maxHeight, async (wc, width, height) => {
+      const image = await settleWithin(
+        wc.capturePage({ x: 0, y: 0, width, height }),
+        CAPTURE_TIMEOUT_MS,
+        signal,
+      )
+      return image && !image.isEmpty() ? image : null
+    })
+  }
+
+  /**
+   * Part of the page rasterized denser than the worker's own scale: Chromium's screenshot
+   * with a clip at a scale paints only that part, sharp, rather than the whole page at the
+   * higher scale (which, for a tall desktop frame at 4×, is hundreds of megabytes).
+   */
+  region(
+    frame: BoardFrameLayout,
+    url: string,
+    scale: number,
+    clip: SharpRequest['rect'],
+    zoom: number,
+    signal: AbortSignal,
+    maxHeight: number,
+  ): Promise<Buffer | null> {
+    return this.withPage(frame, url, scale, signal, maxHeight, async (wc) => {
+      // The clip is in the document's pixels; the thumbnail is of the viewport, wherever the
+      // page scrolled itself to.
+      const scroll = await settleWithin(
+        wc.executeJavaScript('[scrollX, scrollY]').then(
+          (value: unknown) => value,
+          () => null,
+        ),
+        PROBE_TIMEOUT_MS,
+        signal,
+      )
+      const [left, top] =
+        Array.isArray(scroll) && scroll.every((n) => typeof n === 'number') ? scroll : [0, 0]
+      const tools = wc.debugger
+      try {
+        tools.attach('1.3')
+      } catch {
+        return null
+      }
+      try {
+        const shot = await settleWithin(
+          tools.sendCommand('Page.captureScreenshot', {
+            format: 'png',
+            clip: { ...clip, x: clip.x + left, y: clip.y + top, scale: zoom },
+            fromSurface: true,
+          }) as Promise<{ data?: unknown }>,
+          CAPTURE_TIMEOUT_MS,
+          signal,
+        )
+        return typeof shot?.data === 'string' ? Buffer.from(shot.data, 'base64') : null
+      } finally {
+        if (tools.isAttached()) tools.detach()
+      }
+    })
+  }
+
+  /**
+   * Loads the frame's page in the worker for `scale`, sized as the frame (its top `maxHeight`
+   * at most), waits for it to be ready, and reads it with `capture`; then empties the worker.
+   */
+  private async withPage<T>(
+    frame: BoardFrameLayout,
+    url: string,
+    scale: number,
+    signal: AbortSignal,
+    maxHeight: number,
+    capture: (wc: WebContents, width: number, height: number) => Promise<T | null>,
+  ): Promise<T | null> {
     if (this.disposed || signal.aborted) return null
     const win = this.window(scale, new URL(url).origin)
     const width = frame.width
@@ -152,12 +224,8 @@ export class OffscreenBoardRenderer implements BoardCaptureRenderer {
       hung = ready === null && !(await responds(wc, signal))
       if (hung) throw new UnresponsiveFrameError(frame.id)
       if (!alive()) return null
-      const image = await settleWithin(
-        wc.capturePage({ x: 0, y: 0, width, height }),
-        CAPTURE_TIMEOUT_MS,
-        signal,
-      )
-      return alive() && image && !image.isEmpty() ? image : null
+      const result = await capture(wc, width, height)
+      return alive() ? result : null
     } finally {
       if (hung) this.kill(win)
       else if (!win.isDestroyed()) {

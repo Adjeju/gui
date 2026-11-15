@@ -1,4 +1,4 @@
-import { type BoardCamera, isFramePreset } from '../shared/board'
+import { type BoardCamera, isFramePreset, isSharpRequest, type SharpRequest } from '../shared/board'
 import { type FrameArrangement, Send } from '../shared/ipc'
 import type { Point } from '../shared/types'
 import type { ProjectTab } from './tab'
@@ -27,6 +27,40 @@ function camera(value: unknown): value is BoardCamera {
   if (!point(value)) return false
   const { zoom } = value as unknown as Record<string, unknown>
   return number(zoom) && zoom > 0
+}
+
+/** Each window's sharp renders under way, by the token its board cancels them with. */
+const sharpening = new WeakMap<object, Map<number, { cancel(): void }>>()
+
+/**
+ * Part of a frame of the window's canvas (`canvas`) rendered sharp, for its board zoomed in
+ * (`SharpRequest`): PNG bytes, or null. The caller has checked the window's chrome asked.
+ */
+export async function boardSharpen(
+  win: ProjectWindow,
+  token: unknown,
+  canvas: unknown,
+  request: unknown,
+): Promise<Uint8Array | null> {
+  const board = win.activeTab.boardSession
+  const id = request && typeof request === 'object' ? (request as { id?: unknown }).id : null
+  // Asked for as the tab's canvas went: it may show another canvas by now.
+  if (!board || canvas !== board.id || !number(token) || !string(id)) return null
+  if (!isSharpRequest(request, board.frame(id))) return null
+  const job = board.sharpen(request as SharpRequest)
+  if (!job) return null
+  const jobs = sharpening.get(win) ?? new Map<number, { cancel(): void }>()
+  sharpening.set(win, jobs)
+  jobs.get(token)?.cancel()
+  jobs.set(token, job)
+  try {
+    const png = await job.done
+    return png ? new Uint8Array(png.buffer, png.byteOffset, png.byteLength) : null
+  } catch {
+    return null
+  } finally {
+    if (jobs.get(token) === job) jobs.delete(token)
+  }
 }
 
 /** Canvas messages retain the owning window's chrome-only authorization boundary. */
@@ -87,6 +121,9 @@ export function registerBoardIpc(
     // Sent as a canvas's board goes away, the tab may show another canvas by now.
     if (board !== undefined && board !== tab.boardSession?.id) return
     if (camera(value)) tab.boardSetCamera(value)
+  })
+  onWindow(Send.boardSharpenCancel, (win, token) => {
+    if (number(token)) sharpening.get(win)?.get(token)?.cancel()
   })
   onBoard(Send.boardOpenFrame, (tab, id) => {
     if (id === null || string(id)) void tab.openFrame(id)

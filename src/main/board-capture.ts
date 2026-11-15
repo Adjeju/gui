@@ -6,8 +6,11 @@ import {
   type BoardFrameLayout,
   FRAME_MAX,
   FRAMES_DIR,
+  isSharpRequest,
+  type SharpRequest,
   SMALL_THUMB_WIDTH,
   THUMB_DENSITY,
+  THUMB_MAX_HEIGHT,
   THUMB_WIDTH,
 } from '../shared/board'
 import { writeFileAtomic } from './atomic-file'
@@ -18,9 +21,6 @@ import {
   CAPTURE_PRIORITY,
   type CaptureJob,
 } from './board-capture-queue'
-
-/** How much of a tall frame its thumbnail shows; screenshots and exports show all of it. */
-const THUMB_MAX_HEIGHT = 3000
 
 /**
  * A frame's page stopped responding while it was rendered (most likely a script that never
@@ -47,8 +47,28 @@ export interface BoardCaptureRenderer {
     signal: AbortSignal,
     maxHeight: number,
   ): Promise<NativeImage | null>
+  /**
+   * Part of the page, `clip` in its CSS pixels, laid out as `render` lays it out (`scale`,
+   * `maxHeight`) and rasterized `zoom` times denser than that: a PNG, or null as `render`.
+   */
+  region(
+    frame: BoardFrameLayout,
+    url: string,
+    scale: number,
+    clip: SharpRequest['rect'],
+    zoom: number,
+    signal: AbortSignal,
+    maxHeight: number,
+  ): Promise<Buffer | null>
   dispose(): void
 }
+
+/**
+ * The worker a frame is laid out in: narrower than THUMB_WIDTH, at 2× (narrowed to
+ * THUMB_WIDTH at most, `thumbWidthOf`); desktop frames at 1×. Two worker scales, not one for
+ * every width.
+ */
+const workerScale = (width: number) => (width < THUMB_WIDTH ? THUMB_DENSITY : 1)
 
 interface CaptureHost {
   root: string
@@ -284,6 +304,41 @@ export class BoardCaptures {
     return image
   }
 
+  /**
+   * Part of a frame rendered sharper than its thumbnail holds, for the board zoomed in past it:
+   * laid out exactly as the thumbnail is, so it lands on it pixel for pixel. Never saved; null
+   * when the frame changed size since it was asked for, or its page hangs.
+   */
+  sharpen(request: SharpRequest): CaptureJob<Buffer | null> | null {
+    if (this.disposed) return null
+    const job = this.queue.schedule(CAPTURE_PRIORITY.interactive, async (signal) => {
+      const frame = this.host.frame(request.id)
+      if (!frame || this.disposed || signal.aborted || !isSharpRequest(request, frame)) return null
+      const page = await pageSignature(join(this.host.root, FRAMES_DIR, `${frame.id}.html`))
+      if (!page || this.disposed || signal.aborted) return null
+      const attempt = `${this.assets}\n${page}`
+      if (this.hung.get(frame.id) === attempt) return null
+      const scale = workerScale(frame.width)
+      try {
+        return await this.renderer.region(
+          frame,
+          this.host.url(frame.id),
+          scale,
+          request.rect,
+          request.scale / scale,
+          signal,
+          THUMB_MAX_HEIGHT,
+        )
+      } catch (error) {
+        if (!(error instanceof UnresponsiveFrameError)) throw error
+        this.hung.set(frame.id, attempt)
+        return null
+      }
+    })
+    this.track(job)
+    return job
+  }
+
   private track(job: CaptureJob<unknown>) {
     this.jobs.add(job)
     // Do not create an unhandled rejection from a bookkeeping-only finally callback.
@@ -311,10 +366,13 @@ export class BoardCaptures {
       this.assets === assets
     let image: NativeImage | null
     try {
-      // Narrower than THUMB_WIDTH, it's captured at 2× and narrowed to THUMB_WIDTH at most
-      // (`thumbWidthOf`): two worker scales, not one for every width.
-      const scale = frame.width < THUMB_WIDTH ? THUMB_DENSITY : 1
-      image = await this.renderer.render(frame, this.host.url(id), scale, signal, THUMB_MAX_HEIGHT)
+      image = await this.renderer.render(
+        frame,
+        this.host.url(id),
+        workerScale(frame.width),
+        signal,
+        THUMB_MAX_HEIGHT,
+      )
     } catch (error) {
       if (!(error instanceof UnresponsiveFrameError)) throw error
       this.hung.set(id, attempt)

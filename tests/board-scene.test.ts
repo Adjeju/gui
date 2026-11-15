@@ -16,7 +16,7 @@ import {
   selectionSaid,
   thumbTier,
 } from '../src/renderer/src/board/scene'
-import { boardViewRect } from '../src/shared/coords'
+import { boardViewRect, pageRect } from '../src/shared/coords'
 
 // The WebGL board's scene is plain data: what it draws can be read without a GPU.
 
@@ -85,6 +85,41 @@ test('only what reaches into the view is drawn, in paint order', () => {
   // Panned right: frame a is out of view, and is not listed.
   buildScene(input(), { x: 1500, y: 0, zoom: 0.5 }, view, 2, list)
   expect(list.thumbs.filter(Boolean).map((want) => want?.id)).toEqual(['b'])
+})
+
+test('a sharp tile is drawn over its frame’s thumbnail in its place, and the frame’s edge over it', () => {
+  const list = new QuadList()
+  const camera = { x: 100, y: 50, zoom: 2 }
+  const tile = {
+    id: 'a',
+    version: 1,
+    width: 1440,
+    height: 900,
+    rect: pageRect(300, 200, 400, 250),
+    scale: 4,
+  }
+  buildScene(
+    input({ hovered: 'a' }),
+    camera,
+    { width: 800, height: 600 },
+    2,
+    list,
+    new Map([['a', tile]]),
+  )
+  const drawn = quads(list)
+  const frameAt = list.thumbs.findIndex((want) => want?.id === 'a')
+  const tileAt = list.sharp.indexOf('a')
+  expect(tileAt).toBe(frameAt + 1)
+  // The frame's page pixel (300, 200) is board pixel (300, 200): (400, 300) in view at 200%.
+  expect(drawn[tileAt]).toMatchObject({ kind: QUAD.thumb, rect: [400, 300, 800, 500] })
+  // The image fills the tile, top to bottom.
+  expect(list.data[tileAt * QUAD_STRIDE + 10]).toBe(500)
+  expect(drawn[tileAt + 1]).toMatchObject({
+    kind: QUAD.flat,
+    fill: INK.none,
+    stroke: INK.accent,
+    rect: drawn[frameAt].rect,
+  })
 })
 
 test('far out, the grid and the shadows go; a frame not yet captured has no thumbnail', () => {

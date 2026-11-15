@@ -25,6 +25,7 @@ import {
   placeFrame,
   placeInSection,
   regroupSections,
+  type SharpRequest,
   sectionBounds,
   sectionId,
   sectionOf,
@@ -794,6 +795,11 @@ export class BoardSession extends EventEmitter<BoardSessionEvents> {
 
   thumbPath(id: string) {
     return this.captures.path(id)
+  }
+
+  /** Part of a frame rendered sharp for the board zoomed in; never saved (`BoardCaptures.sharpen`). */
+  sharpen(request: SharpRequest) {
+    return this.captures.sharpen(request)
   }
 
   // Keeping in step with the files

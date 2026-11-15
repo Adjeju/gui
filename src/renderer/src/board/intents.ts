@@ -2,6 +2,7 @@ import type { BoardCamera } from '../../../shared/board'
 import type { BoardCommand, FrameArrangement, Unsubscribe } from '../../../shared/ipc'
 import type { Point, Rect } from '../../../shared/types'
 import { gui } from '../lib/api'
+import type { SharpTile } from './sharp'
 
 /*
  * Everything the board asks of main, and hears from it: the one place the board calls
@@ -81,6 +82,36 @@ export function onBoardCommand(listener: (command: BoardCommand) => void): Unsub
 export function chatCover(): Promise<Rect | null> {
   return gui.boardChatCover().catch(() => null)
 }
+
+/**
+ * Part of a frame of canvas `board` rendered sharp (sharp.ts), as PNG bytes; null when it
+ * couldn't be. Aborting it stops the render in main.
+ */
+export async function sharpTile(
+  board: string,
+  tile: SharpTile,
+  signal: AbortSignal,
+): Promise<Blob | null> {
+  const token = ++sharpTokens
+  const cancel = () => gui.boardSharpenCancel(token)
+  signal.addEventListener('abort', cancel, { once: true })
+  try {
+    const { x, y, width, height } = tile.rect
+    const png = await gui.boardSharpen(token, board, {
+      id: tile.id,
+      rect: { x, y, width, height },
+      scale: tile.scale,
+    })
+    return png && !signal.aborted
+      ? new Blob([png as Uint8Array<ArrayBuffer>], { type: 'image/png' })
+      : null
+  } catch {
+    return null
+  } finally {
+    signal.removeEventListener('abort', cancel)
+  }
+}
+let sharpTokens = 0
 
 /** An empty board's starter prompt, to the chat: whether it was sent. */
 export function sendStarter(prompt: string): Promise<boolean> {

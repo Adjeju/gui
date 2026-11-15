@@ -398,6 +398,7 @@ export function Board({ board, working = false }: { board: BoardState; working?:
       <BoardSurface
         ref={surface}
         camera={drawnCamera}
+        board={board.id}
         thumbs={board.thumbs}
         tiles={layer}
         onUnavailable={() => setUnavailable(true)}

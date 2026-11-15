@@ -86,7 +86,7 @@ import {
   listBoards,
   registerThumbProtocol,
 } from './board'
-import { registerBoardIpc } from './board-ipc'
+import { boardSharpen, registerBoardIpc } from './board-ipc'
 import { offersChoice } from './chat'
 import { cloneRepo, parseRepo } from './clone'
 import { errorReport, sendCrashReport } from './crash-reports'
@@ -947,6 +947,11 @@ function registerIpc() {
   })
   handleLegacy(Invoke.getLogs, (event) => tabFor(event)?.logsOutput() ?? NO_OUTPUT)
   handleLegacy(Invoke.boardChatCover, (event) => tabFor(event)?.chatCover() ?? null)
+  handleLegacy(Invoke.boardSharpen, (event, token: unknown, board: unknown, request: unknown) => {
+    // The board is in the window's chrome; frames' pages and chats can't ask.
+    const win = windowFor(event)
+    return win?.win.webContents === event.sender ? boardSharpen(win, token, board, request) : null
+  })
   handleLegacy(Invoke.getRulers, (event) => {
     // The window's own chrome draws the rulers, for the tab it shows.
     const win = windowFor(event)

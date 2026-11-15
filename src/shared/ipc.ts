@@ -1,5 +1,5 @@
 import type { AccountProfile, AccountState } from './account'
-import type { BoardCamera, FramePreset } from './board'
+import type { BoardCamera, FramePreset, SharpRequest } from './board'
 import type { ChatTurnUpdate } from './chat-transport'
 import type { FindCommand, FindResult } from './find'
 import type { GitHubState } from './github'
@@ -100,6 +100,7 @@ export const Invoke = {
   newOutsideToken: 'settings:outside-token',
   copyOutsideSetup: 'settings:outside-setup',
   boardChatCover: 'board:chat-cover',
+  boardSharpen: 'board:sharpen',
   getRulers: 'rulers:get',
 } as const
 
@@ -230,6 +231,7 @@ export const Send = {
   renameBoard: 'board:rename',
   boardCamera: 'board:camera',
   boardOpenFrame: 'board:open-frame',
+  boardSharpenCancel: 'board:sharpen-cancel',
 } as const
 
 /** The most a single `writeTerminal` carries; the drawer sends longer pastes in pieces. */
@@ -453,6 +455,12 @@ export interface GuiApi {
   boardCamera(camera: BoardCamera, board?: string): void
   /** Where the floating chat covers the window's content (CSS px), or null when it doesn't */
   boardChatCover(): Promise<Rect | null>
+  /**
+   * Part of a frame of canvas `board` rendered sharper than its thumbnail, for the board
+   * zoomed in: PNG bytes, or null when it couldn't be (or was cancelled with `token`)
+   */
+  boardSharpen(token: number, board: string, request: SharpRequest): Promise<Uint8Array | null>
+  boardSharpenCancel(token: number): void
   /** Shows a frame live in the preview; null goes back to the board */
   boardOpenFrame(id: string | null): void
   onBoardCommand(cb: (command: BoardCommand) => void): Unsubscribe
