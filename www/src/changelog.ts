@@ -22,6 +22,7 @@ export const releases: Release[] = [
       'Closed terminals give back their memory.',
       'Terminals keep about 5,000 lines of history, not a few hundred.',
       'In Design mode, a quick click elsewhere right after picking reaches your app instead of being ignored.',
+      'Gui builds and runs on Linux from source. There’s no Linux download yet. Thanks, Gabriel Aguiar.',
       'Fix: a terminal with a lot of colorful output, like a long diff or an agent CLI, could stop showing anything new while its command kept running. Gui now catches it and redraws the terminal with nothing lost.',
     ],
   },
