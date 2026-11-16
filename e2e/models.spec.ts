@@ -311,6 +311,7 @@ test('the model picker searches the models, sets the model and effort, and new s
   // Spaces, dashes and dots are loose: "kimik2" finds "Kimi K2", "gpt4.1" finds "GPT-4.1".
   await search.fill('kimik2')
   await expect(options).toHaveText(['Kimi K2', 'Kimi K2 Turbo'])
+  await session.shot('model-picker-filtered')
   await search.fill('gpt4.1')
   await expect(options).toHaveText(['GPT-4.1', 'GPT-4.1 Mini'])
   await search.fill('nothing like this')
