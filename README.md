@@ -54,7 +54,7 @@ bun install
 bun run dev
 ```
 
-To install your build as `/Applications/Gui.app`, with the `gui` terminal command that opens a folder in it, run `bun run install-app`. Packaging needs Xcode 26+. Builds from source don't ask for a Gui account, don't take updates from usegui.com, and never send crash reports; only official releases do.
+To install your build as `/Applications/Gui.app`, with the `gui` terminal command that opens a folder in it, run `bun run install-app`. Packaging needs Xcode 26+. Builds from source don't ask for a Gui account, don't take updates from usegui.com, and never send crash reports or usage data; only official releases do.
 
 ### Linux
 

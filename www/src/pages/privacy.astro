@@ -6,7 +6,7 @@ import TextPage from '../components/TextPage.astro'
   title="Privacy"
   description="What Gui collects, why, and how to remove it."
   path="/privacy"
-  updated="October 27, 2026"
+  updated="November 16, 2026"
 >
   <p>
     Work In Progress LLC (“WIP”) makes Gui. This page tells you what Gui collects about you, why,
@@ -16,8 +16,8 @@ import TextPage from '../components/TextPage.astro'
   <h2>Your projects stay on your Mac</h2>
   <p>
     Gui runs your app and your agent on your Mac. Gui does not send your code, your files, your
-    chats, or your screenshots to us. The Gui app does not collect analytics or usage data. The
-    only exception is crash reports, below.
+    chats, or your screenshots to us. Gui sends us only two things about how it runs: crash
+    reports and usage data, below. You can turn off each of them.
   </p>
   <p>
     Your agent (for example Claude Code or Codex) sends your prompts and code to the company that
@@ -33,6 +33,43 @@ import TextPage from '../components/TextPage.astro'
     sends the report. A crash report does not contain your code, your files, your chats, or the
     pages that you preview. We use crash reports only to repair Gui. To stop them, turn off Send
     crash reports in Gui, under Settings → Account.
+  </p>
+
+  <h2>Usage data</h2>
+  <p>
+    Gui counts some of the things that you do in it, so that we know which parts of Gui people
+    use. Gui sends an event when:
+  </p>
+  <ul>
+    <li>Gui opens. The event contains the Gui and macOS versions and the type of Mac processor.</li>
+    <li>
+      Your agent finishes a message. The event contains the agent (only “custom” for an agent that
+      you added yourself), whether the message finished, failed, or was stopped, and the model
+      provider that you selected for the agent, if the agent has one.
+    </li>
+    <li>You open a project.</li>
+    <li>You make a canvas.</li>
+    <li>Your app opens in the preview.</li>
+    <li>You connect an agent, when you install it or sign in to it. The event contains the agent.</li>
+    <li>Gui updates. The event contains the old version and the new version.</li>
+  </ul>
+  <p>
+    Each event also contains a random ID that Gui makes for your copy of Gui, your country, and the
+    date and time. The random ID is not connected to your Gui account or your email address.
+  </p>
+  <p>
+    Usage data never contains your code, your files, the names or paths of your projects and files,
+    your chats, your prompts, what your agent writes, the addresses of the pages that you preview,
+    your name, your email address, or your IP address.
+  </p>
+  <p>
+    When Gui checks for updates, we count the check. We keep the Gui version, your country, and the
+    date. An update check has no ID.
+  </p>
+  <p>
+    Gui sends usage data to usegui.com, which sends it to PostHog, a service that stores it for us.
+    To stop usage data, turn off Share usage data in Gui, under Settings → Account. Gui then also
+    deletes the events that it has not sent.
   </p>
 
   <h2>Your Gui account</h2>
@@ -80,7 +117,8 @@ import TextPage from '../components/TextPage.astro'
 
   <h2>Who processes your data</h2>
   <p>
-    The Gui account service and usegui.com run on Cloudflare, which stores the data above. WorkOS runs sign-in:
+    The Gui account service and usegui.com run on Cloudflare, which stores the data above, except
+    usage data. PostHog stores usage data. WorkOS runs sign-in:
     it keeps a record of your sign-in (your email, your name, and how you sign in) and sends
     sign-in codes. Google and GitHub process your sign-in under their own privacy policies. We do
     not sell your data, and we do not share it for advertising.
