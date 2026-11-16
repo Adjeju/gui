@@ -1100,6 +1100,25 @@ export interface ChatMeta {
   archived: { id: string; agentName: string } | null
   /** Current errors in the preview and dev server */
   problems: Problem[]
+  /**
+   * A canvas kept in a git repo, changed by the turn just ended (or asked for from the
+   * canvas's menu): the line under it that commits the canvas's folder. Null otherwise.
+   */
+  canvasCommit: CanvasCommit | null
+}
+
+/** Committing a canvas's folder to its repo, and only that (main/canvas-git.ts). */
+export interface CanvasCommit {
+  /** 'clean' when asked for by hand with nothing to commit */
+  state: 'offered' | 'committing' | 'committed' | 'failed' | 'clean'
+  /** The commit message, from the turn's request; the user can change it */
+  message: string
+  /** What happened, in plain words: the commit and its branch, or why there's none */
+  note: string | null
+  /** Git's whole output when it said more than one line (a hook's, say), shown on request */
+  detail: string | null
+  /** Commit after each turn is on for this canvas */
+  auto: boolean
 }
 
 export type ToolStatus = 'pending' | 'in_progress' | 'completed' | 'failed'

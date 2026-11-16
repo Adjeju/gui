@@ -1527,6 +1527,10 @@ function registerIpc() {
   })
   on(Send.sendQueuedNow, (tab) => tab.sendQueuedNow())
   on(Send.retry, (tab, turnId) => isString(turnId) && tab.retryTurn(turnId))
+  on(Send.commitCanvas, (tab, message) => {
+    if (isString(message) && message.length <= 2000) void tab.commitCanvas(message)
+  })
+  on(Send.showCanvasCommitMenu, (tab, at) => isPoint(at) && tab.showCanvasCommitMenu(at))
   on(Send.sendQueued, (tab, id) => isString(id) && tab.sendQueued(id))
   on(Send.setAutoApprove, (tab, on) => typeof on === 'boolean' && tab.setAutoApprove(on))
   on(Send.setAgentSetting, (tab, settingId, value) => {

@@ -45,6 +45,7 @@ import { SHORTCUTS } from '../shared/shortcuts'
 import {
   type AgentId,
   agentName,
+  type CanvasCommit,
   type ChatForm,
   type ChatGrab,
   type ChatSnapshot,
@@ -90,6 +91,7 @@ import { copyFrames, pastedFrames } from './board-clipboard'
 import { BoardSession } from './board-session'
 import { createBoardTools } from './board-tool-workflow'
 import { branchStatus } from './branch'
+import { CanvasGit, type CommitOutcome, commitMessage } from './canvas-git'
 import { mergeLayout, nextFrameName, sameLayout } from './canvas-layout'
 import { availableModels, type BoardLayout, ChatController } from './chat'
 import { Checkpoints } from './checkpoints'
@@ -519,6 +521,11 @@ export class ProjectTab implements ChatPanelOwner {
   /** The turn last seen starting, so a new one is told from a permission card being answered */
   private runningTurn: string | null = null
   /**
+   * The open canvas is in a git repo (canvas-git.ts): its menu offers Commit to Git. Known
+   * once it's trusted and checked, as it opens and after each turn.
+   */
+  private canvasInRepo = false
+  /**
    * The preview's current page is Chromium's error page for a load that failed. It fires
    * dom-ready like any page, which must not take the failure back.
    */
@@ -905,6 +912,7 @@ export class ProjectTab implements ChatPanelOwner {
         canSelect: this.canSelect,
         canvas: !!this.resources.board,
         canvasEmpty: this.resources.board?.frames.length === 0,
+        canvasCommit: null,
         docked: getPrefs().chatSidebar,
         sidebarSide: getPrefs().chatSidebarSide,
         trafficLights: false,
@@ -1049,6 +1057,7 @@ export class ProjectTab implements ChatPanelOwner {
       })
       this.layout()
       void listBoards().then((boards) => this.host.shareBoards(boards))
+      void this.offerCanvasCommit(null)
     } catch (error) {
       if (current()) this.closeProject()
       else void resources.dispose()
@@ -1215,6 +1224,121 @@ export class ProjectTab implements ChatPanelOwner {
     if (!board) return
     await board.renameBoard(name)
     this.host.shareBoards(await listBoards())
+  }
+
+  // Committing a canvas kept in a git repo (canvas-git.ts)
+
+  /** The open canvas's folder in its repo, for this opening; null outside one, or untrusted. */
+  private async canvasRepo() {
+    const { resources } = this
+    const board = resources.board
+    // Gui's own canvases aren't in a repo of the user's. Git runs only for a trusted canvas
+    // under a `.git` (read from files first), and only once it's installed: asking for it
+    // would put up macOS's offer to install the developer tools.
+    if (!board || boardIdOf(board.root) || !(await isTrusted(board.root))) return null
+    if (!(await branchStatus(board.root)) || !(await developerTools.gitAvailable())) {
+      if (resources.board === board) this.canvasInRepo = false
+      return null
+    }
+    const git = new CanvasGit(board.root, getShellEnv)
+    const repo = await git.repo()
+    if (resources.board !== board) return null
+    this.canvasInRepo = repo !== null
+    return repo && { board, git, repo, chat: resources.chat }
+  }
+
+  /**
+   * After a turn (`message` from its request), or from the canvas's menu (`byHand`): when the
+   * canvas's folder has changes git hasn't got, the line under the turn offers to commit them,
+   * or commits them at once for a canvas that does that after each turn. Null `message` only
+   * looks whether it's in a repo, as the canvas opens.
+   */
+  async offerCanvasCommit(message: string | null, byHand = false) {
+    const found = await this.canvasRepo().catch(() => null)
+    if (!found || message === null) return
+    const { board, git, repo, chat } = found
+    if (!chat || chat.meta.canvasCommit?.state === 'committing') return
+    await board.save().catch(() => undefined)
+    const changed = await git.changed(repo)
+    if (this.resources.board !== board) return
+    const auto = getPrefs().commitAfterTurn.includes(board.root)
+    if (!changed) {
+      if (byHand)
+        chat.setCanvasCommit({
+          state: 'clean',
+          message,
+          note: 'Nothing to commit: the canvas is as git has it.',
+          detail: null,
+          auto,
+        })
+      return
+    }
+    chat.setCanvasCommit({ state: 'offered', message, note: null, detail: null, auto })
+    if (byHand) this.panel.showConversation()
+    if (auto && !byHand) await this.commitCanvas(message)
+  }
+
+  /** The line's Commit: the canvas's folder, and nothing else in the repo, with `message`. */
+  async commitCanvas(message: string) {
+    const { resources } = this
+    const { board, chat } = resources
+    const offer = chat?.meta.canvasCommit
+    if (!board || !chat || !offer || offer.state === 'committing') return
+    const text = message.trim() || offer.message
+    const update = (patch: Partial<CanvasCommit>) => {
+      if (resources.board === board && resources.chat === chat)
+        chat.setCanvasCommit({ ...offer, message: text, note: null, detail: null, ...patch })
+    }
+    update({ state: 'committing' })
+    let outcome: CommitOutcome
+    try {
+      await board.save().catch(() => undefined)
+      const found = await this.canvasRepo()
+      outcome = found
+        ? await found.git.commit(found.repo, text)
+        : {
+            ok: false,
+            message: 'Not committed: this canvas isn’t in a git repo now.',
+            detail: null,
+          }
+    } catch (error) {
+      outcome = { ok: false, message: `Not committed: ${String(error)}`, detail: null }
+    }
+    if (outcome.ok)
+      update({
+        state: 'committed',
+        note: outcome.branch
+          ? `Committed ${outcome.sha} to ${outcome.branch}`
+          : `Committed ${outcome.sha} on a detached HEAD, not on a branch`,
+      })
+    else update({ state: 'failed', note: outcome.message, detail: outcome.detail })
+  }
+
+  /** The commit line's own menu: Commit After Each Turn, for this canvas, and Hide. */
+  showCanvasCommitMenu(at: { x: number; y: number }) {
+    const { board, chat } = this.resources
+    const offer = chat?.meta.canvasCommit
+    if (!board || !chat || !offer) return
+    const auto = getPrefs().commitAfterTurn.includes(board.root)
+    const template: MenuItemConstructorOptions[] = [
+      {
+        label: 'Commit After Each Turn',
+        type: 'checkbox',
+        checked: auto,
+        click: () => {
+          const rest = getPrefs().commitAfterTurn.filter((root) => root !== board.root)
+          setPrefs({ commitAfterTurn: auto ? rest : [...rest, board.root] })
+          const now = chat.meta.canvasCommit
+          if (now && this.resources.chat === chat) chat.setCanvasCommit({ ...now, auto: !auto })
+        },
+      },
+      { type: 'separator' },
+      { label: 'Hide', click: () => this.resources.chat === chat && chat.setCanvasCommit(null) },
+    ]
+    Menu.buildFromTemplate(template).popup({
+      window: this.panel.popoutWindow ?? this.host.win,
+      ...this.inWindow(this.chatView.webContents, at),
+    })
   }
 
   boardSetCamera(camera: BoardCamera) {
@@ -1623,6 +1747,9 @@ export class ProjectTab implements ChatPanelOwner {
         this.panel.showConversation()
         this.closeWebsite()
         this.websiteClosedNote = null
+        // The commit line was the last turn's; this one offers its own as it ends.
+        if (chat.meta.canvasCommit && chat.meta.canvasCommit.state !== 'committing')
+          chat.setCanvasCommit(null)
       }
       // Once the turn ends, the website is the user's to use, and the preview is at their viewport.
       this.holdWebsite()
@@ -1654,6 +1781,9 @@ export class ProjectTab implements ChatPanelOwner {
     chat.on('turnEnd', (turn) => {
       // The reply stays in view until the user goes back to their app.
       this.panel.showConversation()
+      const board = this.resources.board
+      if (board && turn.status !== 'running')
+        void this.offerCanvasCommit(commitMessage(board.name, turn.prompt))
       if (this.restartAfterTurn) {
         this.restartAfterTurn = false
         void this.restartForChanges()
@@ -4563,6 +4693,15 @@ export class ProjectTab implements ChatPanelOwner {
         label: 'Reveal in Finder',
         click: () => shell.showItemInFolder(join(board.root, 'canvas.json')),
       },
+      // In a git repo: its changes, the user's own included, committed from the chat's line.
+      ...(this.canvasInRepo
+        ? [
+            {
+              label: 'Commit to Git…',
+              click: () => void this.offerCanvasCommit(commitMessage(board.name, null), true),
+            },
+          ]
+        : []),
     ]
     Menu.buildFromTemplate(template).popup({ window: this.host.win })
   }

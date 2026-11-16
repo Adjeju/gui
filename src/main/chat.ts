@@ -24,6 +24,7 @@ import {
   type AgentCommand,
   type AgentId,
   agentName,
+  type CanvasCommit,
   type ChatMeta,
   type ChatSnapshot,
   type FollowUp,
@@ -386,6 +387,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       canSelect: false,
       canvas: !!options.board,
       canvasEmpty: false,
+      canvasCommit: null,
       docked: options.docked,
       sidebarSide: getPrefs().chatSidebarSide,
       trafficLights: false,
@@ -674,6 +676,10 @@ export class ChatController extends EventEmitter<ChatEvents> {
 
   setCanvasEmpty(canvasEmpty: boolean) {
     if (canvasEmpty !== this.meta.canvasEmpty) this.patchMeta({ canvasEmpty })
+  }
+
+  setCanvasCommit(canvasCommit: CanvasCommit | null) {
+    this.patchMeta({ canvasCommit })
   }
 
   setPopped(popped: boolean) {

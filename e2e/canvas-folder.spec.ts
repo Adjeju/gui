@@ -1,9 +1,14 @@
-import { existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { BoardState, RecentBoard } from '../src/shared/types'
 import { waitFor } from './helpers/env'
 import type { GuiSession } from './helpers/session'
 import { expect, test } from './helpers/test'
+import { ask, installToolAgent } from './helpers/tool-agent'
+
+/** Git for the test's own repo: none of the developer's config. */
+const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
 
 // A canvas kept in a folder of the user's, outside Gui's data (inside a project's repo here):
 // made there with New Canvas, listed under Recent canvases, opened again from there and with
@@ -104,4 +109,66 @@ test('a canvas made in a folder of the user’s holds only its own files, and op
     'the entry removed',
   )
   expect((await session.state()).board).toBe(null)
+})
+
+test('in a git repo, the line under the turn commits the canvas and nothing else', async ({
+  launch,
+}) => {
+  const session = await launch({ fixture: 'vite', open: 'recent' })
+  const repo = join(session.fixture.base, 'shop')
+  const hooks = join(session.fixture.base, 'no-hooks')
+  mkdirSync(join(repo, 'design'), { recursive: true })
+  mkdirSync(hooks)
+  const git = (...args: string[]) =>
+    execFileSync('git', args, { cwd: repo, encoding: 'utf8', env: GIT_ENV })
+  git('init', '-q', '-b', 'main')
+  // The repo's own identity, and none of the developer's hooks or signing.
+  git('config', 'user.name', 'Gui Test')
+  git('config', 'user.email', 'gui-test@example.com')
+  git('config', 'core.hooksPath', hooks)
+  git('config', 'commit.gpgsign', 'false')
+  writeFileSync(join(repo, 'app.ts'), 'export const a = 1\n')
+  writeFileSync(join(repo, 'notes.md'), 'notes\n')
+
+  const folder = join(repo, 'design', 'landing')
+  await answerSaveSheet(session, folder)
+  await session.chrome.getByRole('button', { name: /New canvas/ }).click()
+  await board(session)
+  git('add', '.')
+  git('commit', '-q', '-m', 'start')
+  // The user's own work in progress, elsewhere in the repo: one change unstaged, one staged.
+  writeFileSync(join(repo, 'app.ts'), 'export const a = 2\n')
+  writeFileSync(join(repo, 'notes.md'), 'staged notes\n')
+  git('add', 'notes.md')
+
+  await installToolAgent(session)
+  await ask(session, [
+    {
+      name: 'canvas_create_frame',
+      args: { name: 'Hero', width: 1440, height: 900, html: '<h1>Hero</h1>' },
+    },
+  ])
+  const offered = await waitFor(async () => {
+    const offer = (await session.chatSnapshot()).meta.canvasCommit
+    return offer?.state === 'offered' && offer
+  }, 'the commit line')
+  expect(offered.message).toMatch(/^landing: /)
+  const line = session.chat.locator('[data-canvas-commit]')
+  await expect(line).toBeVisible()
+  await line.getByLabel('Commit message').fill('Add a hero frame')
+  await session.shot('commit-line-offered')
+  await line.getByRole('button', { name: 'Commit to git' }).click()
+  const committed = await waitFor(async () => {
+    const offer = (await session.chatSnapshot()).meta.canvasCommit
+    return offer?.state === 'committed' && offer
+  }, 'the commit')
+  expect(committed.note).toMatch(/^Committed [0-9a-f]{7,} to main$/)
+  await expect(line.getByRole('status')).toHaveText(committed.note ?? '')
+  await session.shot('commit-line-committed')
+
+  const files = git('show', '--name-only', '--format=%s', 'HEAD').trim().split('\n')
+  expect(files[0]).toBe('Add a hero frame')
+  expect(files.slice(2).every((file) => file.startsWith('design/landing/'))).toBe(true)
+  expect(files).toContain('design/landing/frames/hero.html')
+  expect(git('status', '--porcelain')).toBe(' M app.ts\nM  notes.md\n')
 })

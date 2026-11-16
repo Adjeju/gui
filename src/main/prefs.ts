@@ -56,6 +56,8 @@ export interface Prefs {
   outsideAgents: boolean
   /** Where the last new canvas went, where New Canvas's sheet starts; null for Gui's own data */
   canvasFolder: string | null
+  /** Canvases (their folders) committed to their git repo after each turn, without asking */
+  commitAfterTurn: string[]
 }
 
 const DEFAULTS: Prefs = {
@@ -77,6 +79,7 @@ const DEFAULTS: Prefs = {
   guides: {},
   outsideAgents: false,
   canvasFolder: null,
+  commitAfterTurn: [],
 }
 /** More guides than anyone draws; keeps a damaged file from making thousands of views. */
 export const MAX_GUIDES = 50
@@ -197,6 +200,7 @@ export function getPrefs(): Prefs {
         typeof parsed.canvasFolder === 'string' && isAbsolute(parsed.canvasFolder)
           ? parsed.canvasFolder
           : null,
+      commitAfterTurn: roots(parsed.commitAfterTurn),
     }
   } catch (error) {
     // A damaged file would otherwise be replaced by defaults on the next save, losing (among

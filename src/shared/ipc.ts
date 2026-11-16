@@ -184,6 +184,8 @@ export const Send = {
   moveQueued: 'chat:queue-move',
   sendQueuedNow: 'chat:queue-send',
   retry: 'chat:retry',
+  commitCanvas: 'chat:canvas-commit',
+  showCanvasCommitMenu: 'chat:canvas-commit-menu',
   sendQueued: 'chat:queue-send-one',
   clearQueued: 'chat:queue-clear',
   setAutoApprove: 'chat:auto-approve',
@@ -700,6 +702,10 @@ export interface GuiApi {
   sendQueued(id: string): void
   /** Sends a failed turn's message again (`ChatMeta.retryTurnId`), with what it carried */
   retry(turnId: string): void
+  /** Commits the canvas's folder to its git repo with `message` (`ChatMeta.canvasCommit`) */
+  commitCanvas(message: string): void
+  /** The commit line's menu at `at` in the chat page: Commit After Each Turn, Hide */
+  showCanvasCommitMenu(at: { x: number; y: number }): void
   /** Auto mode on or off (see `ChatMeta.autoApprove`) */
   setAutoApprove(on: boolean): void
   /**

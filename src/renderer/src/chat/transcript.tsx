@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import type { ChatMeta, Turn } from '../../../shared/types'
+import type { CanvasCommit, ChatMeta, Turn } from '../../../shared/types'
 import { gui } from '../lib/api'
+import { TechnicalDetails } from '../lib/disclosure'
 import { ErrorBoundary } from '../lib/error-boundary'
 import { readableError } from '../lib/errors'
-import { InlineError } from '../lib/field'
-import { Archive, MessageSquare, SquarePen } from '../lib/icons'
+import { InlineError, Input } from '../lib/field'
+import { Archive, Ellipsis, MessageSquare, SquarePen } from '../lib/icons'
 import { Banner, Card, Message } from '../lib/surface'
-import { Button, PromptButton } from '../lib/ui'
+import { Button, IconButton, PromptButton } from '../lib/ui'
 import { setDraft, useChat, waitingCard } from './store'
 import { TurnLayout } from './turn-layout'
 import { TurnPresentation, TurnPresentationProvider } from './turn-presentation'
@@ -73,6 +74,68 @@ function ArchivedNotice({ archived }: { archived: NonNullable<ChatMeta['archived
       <p>Your chat with {archived.agentName} is archived.</p>
       {error && <InlineError>{error}</InlineError>}
     </Banner>
+  )
+}
+
+/**
+ * Under the turn that changed a canvas kept in a git repo: its message, ready to edit, and
+ * Commit, which commits the canvas's folder and nothing else. Then what happened, in a line;
+ * git's whole say (a hook's output) one click away. Its menu turns on committing after each
+ * turn, for this canvas, or hides it.
+ */
+function CanvasCommitLine({ offer }: { offer: CanvasCommit }) {
+  const [message, setMessage] = useState(offer.message)
+  // A new offer brings its own message; the user's edits stand until then.
+  useEffect(() => setMessage(offer.message), [offer.message])
+  const done = offer.state === 'committed' || offer.state === 'clean'
+  const committing = offer.state === 'committing'
+  const menu = (
+    <IconButton
+      label="Commit options"
+      icon={Ellipsis}
+      size="sm"
+      aria-haspopup="menu"
+      onClick={(event) => {
+        const box = event.currentTarget.getBoundingClientRect()
+        gui.showCanvasCommitMenu({ x: Math.round(box.left), y: Math.round(box.bottom + 4) })
+      }}
+    />
+  )
+  return (
+    <section aria-label="Commit to git" className="flex flex-col gap-1.5" data-canvas-commit>
+      {done ? (
+        <div className="flex items-center gap-2">
+          <p role="status" className="min-w-0 flex-1 truncate text-small text-muted">
+            {offer.note}
+          </p>
+          {menu}
+        </div>
+      ) : (
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            gui.commitCanvas(message)
+          }}
+        >
+          <Input
+            aria-label="Commit message"
+            value={message}
+            disabled={committing}
+            onChange={(event) => setMessage(event.target.value)}
+            className="min-w-0 flex-1"
+          />
+          <Button type="submit" size="sm" loading={committing}>
+            Commit to git
+          </Button>
+          {menu}
+        </form>
+      )}
+      {offer.state === 'failed' && offer.note && <InlineError>{offer.note}</InlineError>}
+      {offer.state === 'failed' && offer.detail && (
+        <TechnicalDetails text={offer.detail} label="Git’s output" />
+      )}
+    </section>
   )
 }
 
@@ -210,7 +273,7 @@ function Turns({ turnIds, meta }: { turnIds: string[]; meta: ChatMeta }) {
   useLayoutEffect(() => {
     if (waiting !== null) pin()
   }, [waiting, pin])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the hint below the turns coming or going moves the end too.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the hint and commit line below the turns coming or going move the end too.
   useLayoutEffect(() => {
     currentLayout.current = layout
     currentWidth.current = viewport.width
@@ -223,7 +286,7 @@ function Turns({ turnIds, meta }: { turnIds: string[]; meta: ChatMeta }) {
     }
     anchor.current = null
     readViewport()
-  }, [layout, viewport.width, hint, readViewport])
+  }, [layout, viewport.width, hint, meta.canvasCommit?.state, readViewport])
   // Rows that just mounted are measured before they're painted, wherever the layout guessed.
   useLayoutEffect(() => {
     const measured = sizes.takeMounted()
@@ -310,6 +373,7 @@ function Turns({ turnIds, meta }: { turnIds: string[]; meta: ChatMeta }) {
               />
             ))}
           </div>
+          {meta.canvasCommit && <CanvasCommitLine offer={meta.canvasCommit} />}
           {hint && <LongChatHint />}
         </div>
       </div>
