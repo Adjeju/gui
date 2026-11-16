@@ -13,6 +13,7 @@ import {
 import type { RecentBoard, RecentProject, Rect, TabInfo, WindowState } from '../shared/types'
 import { boardIdOf } from './board'
 import { type ClosedTab, ClosedTabs, reopenIndex } from './closed-tabs'
+import { devBoardWebgpu } from './dev-flags'
 import { guardAppContents, loadRenderer, PRELOAD } from './renderer'
 import { ProjectTab, type TabHost } from './tab'
 import { followSurface, surfaceColor } from './theme'
@@ -220,6 +221,7 @@ export class ProjectWindow implements TabHost {
       focusMode: this.focus,
       shortcutsOpen: this.sheet,
       fullScreen: this.win.isFullScreen(),
+      devBoardWebgpu,
     }
   }
 

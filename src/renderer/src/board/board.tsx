@@ -45,7 +45,16 @@ const MAC = navigator.platform.toLowerCase().includes('mac')
  * double-click opens one live, as ⌘D does to pick in it. The shell: it owns the camera and the gesture under way, gives events to
  * gestures.ts and keys.ts and does what they ask, and runs the board's effects.
  */
-export function Board({ board, working = false }: { board: BoardState; working?: boolean }) {
+export function Board({
+  board,
+  working = false,
+  webgpu = false,
+}: {
+  board: BoardState
+  working?: boolean
+  /** Draw with WebGPU where it starts (`WindowState.devBoardWebgpu`) */
+  webgpu?: boolean
+}) {
   const ref = useRef<HTMLDivElement>(null)
   /** What this board's tiles' element ids start with */
   const tiles = useId()
@@ -401,6 +410,7 @@ export function Board({ board, working = false }: { board: BoardState; working?:
         board={board.id}
         thumbs={board.thumbs}
         tiles={layer}
+        webgpu={webgpu}
         onUnavailable={() => setUnavailable(true)}
         input={{
           frames,

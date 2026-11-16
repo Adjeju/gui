@@ -5,10 +5,11 @@ import {
   useImperativeHandle,
   useLayoutEffect,
   useRef,
+  useState,
 } from 'react'
 import type { BoardCamera } from '../../../shared/board'
 import { Card } from '../lib/surface'
-import type { BoardBackend, BoardBackendHooks, BoardSources } from './backend'
+import type { BoardBackend, BoardBackendHooks, BoardBackendKind, BoardSources } from './backend'
 import { BoardRenderer } from './gl/renderer'
 import { sharpTile } from './intents'
 import type { SceneInput } from './scene'
@@ -21,8 +22,8 @@ import { readInks } from './theme'
  * the canvas does, as it did when it drew the frames itself. Each frame's tile in that DOM
  * says which thumbnail the canvas holds for it (`data-thumb`, its width in pixels, 0 for
  * none), and the scale of the sharp tile drawn over it zoomed in (`data-sharp`, sharp.ts, 0
- * for none), for tests and for anyone inspecting the board. What draws is a backend
- * (backend.ts); the canvas says which (`data-board-backend`).
+ * for none), for tests and for anyone inspecting the board. What draws is WebGL2, or with the
+ * development switch WebGPU (backend.ts); the canvas says which (`data-board-backend`).
  */
 
 /** A spare buffer of the canvas's is given back once nothing has been drawn for this long. */
@@ -54,6 +55,7 @@ export function BoardSurface({
   board,
   thumbs,
   tiles,
+  webgpu = false,
   onUnavailable,
 }: {
   ref: Ref<BoardSurfaceHandle>
@@ -66,10 +68,17 @@ export function BoardSurface({
   thumbs: string
   /** What holds the frames' tiles (`[data-frame]`), which say which thumbnail is drawn */
   tiles: RefObject<HTMLElement | null>
+  /** Draw with WebGPU where it starts (GUI_BOARD_WEBGPU=1, unpackaged builds); WebGL2 where not */
+  webgpu?: boolean
   /** WebGL2 couldn't start here, or its context was lost and never given back: nothing will be drawn */
   onUnavailable: () => void
 }) {
   const canvas = useRef<HTMLCanvasElement>(null)
+  /**
+   * What's asked to draw. WebGPU that doesn't start, or stops for good, falls back to WebGL2 on
+   * a canvas of its own: a canvas keeps the first kind of context it was asked for.
+   */
+  const [kind, setKind] = useState<BoardBackendKind>(webgpu ? 'webgpu' : 'webgl2')
   const latest = useRef({
     input,
     camera,
@@ -118,8 +127,14 @@ export function BoardSurface({
     let trimmer: ReturnType<typeof setTimeout> | undefined
     let restoring: ReturnType<typeof setTimeout> | undefined
     let backend: BoardBackend | null = null
+    let ended = false
     const invalidate = () => {
       if (!frame && backend) frame = requestAnimationFrame(() => draw())
+    }
+    const fallBack = () => {
+      if (ended) return
+      console.warn('[gui] the board falls back to WebGL2')
+      setKind('webgl2')
     }
     const hooks: BoardBackendHooks = {
       changed: invalidate,
@@ -134,7 +149,8 @@ export function BoardSurface({
       },
       failed: () => {
         clearTimeout(restoring)
-        latest.current.onUnavailable()
+        if (kind === 'webgpu') fallBack()
+        else latest.current.onUnavailable()
       },
     }
     const sources: BoardSources = {
@@ -216,13 +232,29 @@ export function BoardSurface({
       if (size) made.resize(...size)
     }
 
-    try {
-      start(new BoardRenderer(el, sources, hooks))
-    } catch {
-      latest.current.onUnavailable()
+    if (kind === 'webgpu')
+      void import('./gpu/renderer')
+        .then(({ WebGpuRenderer }) => WebGpuRenderer.create(el, sources, hooks))
+        .then(
+          (made) => {
+            if (ended) made.dispose()
+            else start(made)
+          },
+          (error: unknown) => {
+            console.warn('[gui] WebGPU did not start:', error)
+            fallBack()
+          },
+        )
+    else {
+      try {
+        start(new BoardRenderer(el, sources, hooks))
+      } catch {
+        latest.current.onUnavailable()
+      }
     }
 
     return () => {
+      ended = true
       loop.current = null
       cancelAnimationFrame(frame)
       clearTimeout(timer)
@@ -233,12 +265,12 @@ export function BoardSurface({
       backend?.dispose()
       backend = null
     }
-  }, [])
+  }, [kind])
 
   return (
     // Nothing to a screen reader: the board's DOM over it says what's here.
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-      <canvas ref={canvas} className="block size-full" />
+      <canvas key={kind} ref={canvas} className="block size-full" />
     </div>
   )
 }
