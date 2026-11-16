@@ -372,6 +372,76 @@ test('a /download asked for in parts is counted once, for the part from the firs
   expect(await counted()).toEqual([{ file: 'Gui-arm64.dmg' }])
 })
 
+const MAC =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/142.0 Safari/537.36'
+const LINUX_CHROME = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/142.0 Safari/537.36'
+const LINUX_ARM_FIREFOX = 'Mozilla/5.0 (X11; Linux aarch64; rv:146.0) Gecko/20100101 Firefox/146.0'
+const ANDROID =
+  'Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 Chrome/142.0 Mobile Safari/537.36'
+
+test('/download on a Mac is the DMG', async () => {
+  files['Gui-alpha-arm64.dmg'] = 'alpha dmg'
+  const response = await get('/download', { 'user-agent': MAC })
+  expect(response.status).toBe(200)
+  expect(await response.text()).toBe('alpha dmg')
+  expect(await counted()).toEqual([{ file: 'Gui-alpha-arm64.dmg' }])
+})
+
+for (const [agent, page] of [
+  [LINUX_CHROME, '/download/linux'],
+  [LINUX_ARM_FIREFOX, '/download/linux-arm64'],
+]) {
+  test(`/download on Linux is the download page, ${page}, and is not counted`, async () => {
+    files['Gui-alpha-arm64.dmg'] = 'alpha dmg'
+    const response = await get('/download', { 'user-agent': agent })
+    expect(response.status).toBe(303)
+    expect(response.headers.get('location')).toBe(`https://usegui.com${page}`)
+    expect(await counted()).toEqual([])
+  })
+}
+
+test('/download on a phone goes back to the page, though Android says it is Linux', async () => {
+  const response = await get('/download', { 'user-agent': ANDROID })
+  expect(response.status).toBe(303)
+  expect(response.headers.get('location')).toBe('https://usegui.com/#mac-only')
+  expect(await counted()).toEqual([])
+})
+
+test('a Linux download is the alpha copy until a stable release uploads its own', async () => {
+  files['Gui-alpha-x86_64.AppImage'] = 'alpha appimage'
+  const response = await get('/download/Gui-x86_64.AppImage', { 'user-agent': LINUX_CHROME })
+  expect(response.status).toBe(200)
+  expect(response.headers.get('content-disposition')).toBe(
+    'attachment; filename="Gui-x86_64.AppImage"',
+  )
+  expect(response.headers.get('cache-control')).toBe('no-cache')
+  expect(await response.text()).toBe('alpha appimage')
+  expect(await counted()).toEqual([{ file: 'Gui-alpha-x86_64.AppImage' }])
+})
+
+test('a Linux download is the stable copy once there is one', async () => {
+  files['Gui-alpha-arm64.deb'] = 'alpha deb'
+  files['Gui-arm64.deb'] = 'stable deb'
+  const response = await get('/download/Gui-arm64.deb', { 'user-agent': LINUX_ARM_FIREFOX })
+  expect(response.headers.get('content-disposition')).toBe('attachment; filename="Gui-arm64.deb"')
+  expect(await response.text()).toBe('stable deb')
+  expect(await counted()).toEqual([{ file: 'Gui-arm64.deb' }])
+})
+
+test('/download/ serves only the Linux downloads; anything else there is the site', async () => {
+  files['Gui-0.1.0-alpha.15-x86_64.AppImage'] = 'versioned'
+  files['Gui-alpha-arm64.dmg'] = 'alpha dmg'
+  for (const path of [
+    '/download/linux',
+    '/download/Gui-0.1.0-alpha.15-x86_64.AppImage',
+    '/download/Gui-arm64.dmg',
+  ]) {
+    expect(await (await get(path)).text()).toBe('site')
+  }
+  expect((await get('/download/Gui-amd64.deb')).status).toBe(404)
+  expect(await counted()).toEqual([])
+})
+
 /** The static site, which sends the whole file whatever Range asks for, as Cloudflare's does. */
 const site = (/** @type {Request} */ request) => {
   const tag = '"video-1"'

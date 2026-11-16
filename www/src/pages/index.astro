@@ -185,7 +185,7 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
         <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" />
       </svg>
-      Download for Mac
+      <span data-download-label>Download for Mac</span>
     </a>
     <button class="try-button" type="button" data-demo-open aria-haspopup="dialog">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -559,8 +559,11 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
       showDialog(macDialog)
     })
   }
+  // On Linux, /download is the Linux download page, which has its own steps (worker.js).
+  const linux = /Linux/.test(ua) && !/Android/.test(ua)
+  if (linux) document.querySelector('[data-download-label]')!.textContent = 'Download for Linux'
   document.querySelector('.download-button')!.addEventListener('click', () => {
-    if (!notMac) document.querySelector<HTMLElement>('[data-download-help]')!.hidden = false
+    if (!notMac && !linux) document.querySelector<HTMLElement>('[data-download-help]')!.hidden = false
   })
   // The worker's /downloads is the counted total. If it is missing, show nothing.
   const count = document.querySelector<HTMLElement>('[data-download-count]')
