@@ -27,6 +27,7 @@ mock.module('electron', () => ({
   // Usage data (analytics.ts), which a build from source never sends.
   net: {},
   powerMonitor: {},
+  autoUpdater: {},
 }))
 mock.module('../../src/main/agents', () => ({
   listAgents: async () => {

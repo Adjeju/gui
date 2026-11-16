@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, type Event, net, powerMonitor } from 'electron'
+import { app, autoUpdater, type Event, net, powerMonitor } from 'electron'
 import type { AgentId, TurnStatus } from '../shared/types'
 import { turnUsage, type UsageEventName, type UsageProps, usageQueue } from './analytics-queue'
 import { officialBuild } from './official-build'
@@ -99,10 +99,13 @@ let quitting = false
  */
 export function startAnalytics() {
   if (!officialBuild) return
-  // Logging out or shutting down isn't held up, even by a second.
-  powerMonitor.on('shutdown', () => {
+  // Logging out, shutting down, or Restart to Update isn't held up, even by a second: an
+  // update's installer waits on this quit. The update is counted at the next launch anyway.
+  const ending = () => {
     systemEnding = true
-  })
+  }
+  powerMonitor.on('shutdown', ending)
+  autoUpdater.on('before-quit-for-update', ending)
   const version = app.getVersion()
   const saved = readInstall()
   track('app_opened', {
