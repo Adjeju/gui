@@ -59,8 +59,91 @@ export const MAX_THUMBNAIL = 256 * 1024
  */
 export const MAX_PNG_BYTES = 3 * 1024 * 1024
 
+/**
+ * Characters of a tool step's title a chat keeps. Agents send the whole command as the title,
+ * a heredoc's file and all: of 46,490 commands in real Claude Code sessions the longest was
+ * 36,066 characters and one in 2,000 was over this. The chat shows one line of it. A step's
+ * output, its diff and its raw input are never kept at all (see `applyItem` in main/chat.ts).
+ */
+export const MAX_TOOL_TITLE = 16 * 1024
+/**
+ * Paths a chat keeps for one tool step. Agents send one, or a handful for a patch; the chat
+ * names the first and counts the rest.
+ */
+export const MAX_TOOL_LOCATIONS = 100
+/** One of those paths; macOS has none longer. */
+export const MAX_TOOL_LOCATION = 1024
+
 /** Newest `max` items, in the same order. */
 export function bounded<T>(items: readonly T[], max: number): T[] {
   if (max <= 0) return []
   return items.length <= max ? [...items] : items.slice(-max)
+}
+
+/** Room `clampMiddle` leaves for its own line saying how much is gone. */
+const LEFT_OUT_ROOM = 64
+
+/**
+ * `text` in at most `max` characters (above 64): its start and its end, half each, and
+ * between them how much was left out. Text already that short comes back as it is.
+ */
+export function clampMiddle(text: string, max: number): string {
+  if (text.length <= max) return text
+  const keep = max - LEFT_OUT_ROOM
+  let head = Math.ceil(keep / 2)
+  let tail = keep - head
+  // Never half of a character that takes two code units (an emoji).
+  if (isHighSurrogate(text.charCodeAt(head - 1))) head--
+  if (isLowSurrogate(text.charCodeAt(text.length - tail))) tail--
+  const leftOut = (text.length - head - tail).toLocaleString('en-US')
+  return `${text.slice(0, head)}\n… ${leftOut} characters left out …\n${text.slice(text.length - tail)}`
+}
+
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff
+
+/** What a chat keeps of a tool step's title and paths. */
+interface ToolText {
+  title: string
+  locations: string[]
+  /** Paths left out of `locations` */
+  moreLocations?: number
+}
+
+/**
+ * The first MAX_TOOL_LOCATIONS of a tool step's paths, none longer than a path can be, with
+ * how many were left out: these and the `more` the caller already left out.
+ */
+export function boundedLocations(
+  paths: readonly string[],
+  more = 0,
+): Pick<ToolText, 'locations' | 'moreLocations'> {
+  const locations = paths
+    .slice(0, MAX_TOOL_LOCATIONS)
+    .map((path) => clampMiddle(path, MAX_TOOL_LOCATION))
+  const leftOut = paths.length - locations.length + more
+  return { locations, moreLocations: leftOut > 0 ? leftOut : undefined }
+}
+
+/**
+ * A saved tool step within the caps above: history written before them may hold more. A step
+ * that fits comes back as it is, and nothing else in one that doesn't is changed.
+ */
+export function boundedTool<T extends ToolText>(tool: T): T {
+  let bounded = tool
+  if (typeof tool.title === 'string' && tool.title.length > MAX_TOOL_TITLE) {
+    bounded = { ...bounded, title: clampMiddle(tool.title, MAX_TOOL_TITLE) }
+  }
+  const paths: unknown = tool.locations
+  const isPath = (path: unknown): path is string => typeof path === 'string'
+  if (
+    Array.isArray(paths) &&
+    (paths.length > MAX_TOOL_LOCATIONS ||
+      paths.some((path) => !isPath(path) || path.length > MAX_TOOL_LOCATION))
+  ) {
+    const more = Number(tool.moreLocations)
+    const counted = Number.isSafeInteger(more) && more > 0 ? more : 0
+    bounded = { ...bounded, ...boundedLocations(paths.filter(isPath), counted) }
+  }
+  return bounded
 }

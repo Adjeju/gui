@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  boundedTool,
   MAX_IMAGE_BASE64,
   MAX_NARRATED_RECORDING_MS,
   MAX_RECORDING_FRAMES,
@@ -258,6 +259,8 @@ function settleItem(item: TurnItem): TurnItem {
   if (item.kind === 'subagent' && (item.status === 'running' || item.status === 'waiting')) {
     return { ...item, status: 'stopped', endedAt: item.endedAt ?? item.startedAt }
   }
+  // Saved before a step's title and paths were capped: the same caps as when one arrives.
+  if (item.kind === 'tool') return boundedTool(item)
   if (item.kind !== 'permission') return item
   // Saved before prompts described the action; fill in what the transcript expects.
   return {

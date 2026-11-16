@@ -1122,10 +1122,14 @@ export type TurnItem = (
   | {
       kind: 'tool'
       id: string
+      /** What the agent called it, often the whole command; cut in the middle past MAX_TOOL_TITLE */
       title: string
       toolKind: string
       status: ToolStatus
+      /** The first MAX_TOOL_LOCATIONS paths it touches */
       locations: string[]
+      /** How many more paths the agent named than `locations` keeps; missing when it keeps them all */
+      moreLocations?: number
       /** When Gui first heard of it, and when it completed or failed; missing in older history */
       startedAt?: number
       endedAt?: number | null

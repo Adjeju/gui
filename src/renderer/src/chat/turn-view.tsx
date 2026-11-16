@@ -692,11 +692,11 @@ const TOOL_ICONS: Record<string, typeof Wrench> = {
 /** A path's file name, without the line number Gui adds to locations. */
 const fileName = (location: string) => location.replace(/:\d+$/, '').split('/').at(-1) ?? location
 
-/** "Hero.tsx", "Hero.tsx and 2 more"; null without paths. */
-function fileNames(locations: string[]) {
+/** "Hero.tsx", "Hero.tsx and 2 more"; null without paths. `leftOut`: paths the list doesn't keep. */
+function fileNames(locations: string[], leftOut = 0) {
   const first = locations[0]
   if (!first) return null
-  const more = locations.length - 1
+  const more = locations.length - 1 + leftOut
   return more > 0 ? `${fileName(first)} and ${more} more` : fileName(first)
 }
 
@@ -706,7 +706,7 @@ function fileNames(locations: string[]) {
  * describe better (another server's tools), keep the title they came with.
  */
 function stepLabel(tool: ToolItem) {
-  const files = fileNames(tool.locations)
+  const files = fileNames(tool.locations, tool.moreLocations)
   switch (tool.toolKind) {
     case 'read':
       return files ? `Read ${files}` : 'Read files'
@@ -736,7 +736,10 @@ function stepDetail(tool: ToolItem) {
     case 'edit':
     case 'delete':
     case 'move':
-      return tool.locations.length ? tool.locations.join(', ') : tool.title
+      if (!tool.locations.length) return tool.title
+      return tool.moreLocations
+        ? `${tool.locations.join(', ')}, and ${tool.moreLocations.toLocaleString('en-US')} more`
+        : tool.locations.join(', ')
     case 'search':
     case 'execute':
     case 'fetch':

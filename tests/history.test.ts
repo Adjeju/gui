@@ -13,6 +13,8 @@ import {
   summaryFile,
 } from '../src/main/history-summary'
 import { HistoryWriter } from '../src/main/history-writer'
+import { clampMiddle, MAX_TOOL_LOCATIONS, MAX_TOOL_TITLE } from '../src/shared/bounded'
+import type { TurnItem } from '../src/shared/types'
 
 let userData = ''
 mock.module('electron', () => ({ app: { getPath: () => userData } }))
@@ -262,6 +264,68 @@ test('unreadable histories and recovery files retain references conservatively',
   // A non-file transcript is also unreadable, rather than an empty set of references.
   await mkdir(file)
   expect(await chatReferences(root)).toBeNull()
+})
+
+test('an older chat with oversized tool steps loads within the caps, the rest as it was saved', async () => {
+  const { file } = await project()
+  const state = chat('Write the data file')
+  const body = Array.from({ length: 20_000 }, (_, i) => `row ${i}: ${'value '.repeat(8)}`).join(
+    '\n',
+  )
+  const command = `cat > src/data.txt <<'EOF'\n${body}\nEOF`
+  const paths = Array.from({ length: 3000 }, (_, i) => `src/generated/File${i}.tsx:${i + 1}`)
+  const reply = 'Done. '.repeat(50_000)
+  state.turns[0].prompt = 'Write the data file. '.repeat(5000)
+  const saved: TurnItem[] = [
+    { id: 'thought', kind: 'thought', text: reply },
+    {
+      id: 'heredoc',
+      kind: 'tool',
+      title: command,
+      toolKind: 'execute',
+      status: 'completed',
+      locations: [],
+      startedAt: 1,
+      endedAt: 2,
+    },
+    {
+      id: 'many',
+      kind: 'tool',
+      title: 'Read files',
+      toolKind: 'read',
+      status: 'failed',
+      locations: paths,
+    },
+    {
+      id: 'small',
+      kind: 'tool',
+      title: 'bun run check',
+      toolKind: 'execute',
+      status: 'completed',
+      locations: [],
+    },
+    { id: 'reply', kind: 'text', text: reply },
+  ]
+  state.turns[0].items = saved
+  await mkdir(dirname(file), { recursive: true })
+  await writeFile(file, serializeHistory(state))
+  const loaded = await loadHistory(file)
+  const [thought, heredoc, many, small, text] = loaded?.turns[0].items ?? []
+  // The person's words, the agent's thinking and its reply are whole.
+  expect(loaded?.turns[0].prompt).toBe(state.turns[0].prompt)
+  expect(thought).toEqual(saved[0])
+  expect(text).toEqual(saved[4])
+  expect(small).toEqual(saved[3])
+  // The command keeps its start and its end; everything else about the step is as saved.
+  const title = clampMiddle(command, MAX_TOOL_TITLE)
+  expect(title.length).toBeLessThanOrEqual(MAX_TOOL_TITLE)
+  expect(title).toContain('characters left out')
+  expect(heredoc).toEqual({ ...saved[1], title } as TurnItem)
+  expect(many).toEqual({
+    ...saved[2],
+    locations: paths.slice(0, MAX_TOOL_LOCATIONS),
+    moreLocations: 3000 - MAX_TOOL_LOCATIONS,
+  } as TurnItem)
 })
 
 test('missing and malformed archive indexes rebuild many files without unbounded read fan-out', async () => {

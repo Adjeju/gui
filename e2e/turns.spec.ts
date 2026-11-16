@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
+import { MAX_TOOL_LOCATIONS, MAX_TOOL_TITLE } from '../src/shared/bounded'
 import { electronExecutable, sleep, waitFor } from './helpers/env'
 import { type GuiSession, standInsFile } from './helpers/session'
 import { expect, test } from './helpers/test'
@@ -19,6 +20,8 @@ import { expect, test } from './helpers/test'
  * to run a command; LONG writes a long answer, starts a step, and then waits for Stop. FAIL
  * fails the first time with the provider's raw overloaded error, and answers the next. EDIT
  * asks to edit package.json, with the change it would make. PLAN finishes a two-item plan.
+ * BIG writes a file with a heredoc command of about 80 KB that prints as much, and reads 250
+ * files in one step.
  */
 const AGENT_SCRIPT = String.raw`
 const { appendFileSync } = require('node:fs')
@@ -110,6 +113,14 @@ const prompt = async ({ sessionId, prompt }) => {
     ]
     await ask('session/request_permission', { sessionId, toolCall, options })
     done('edit-1')
+  } else if (text.includes('BIG')) {
+    const body = Array.from({ length: 4000 }, (_, i) => 'row ' + i + ': 0123456789').join('\n')
+    tool('heredoc-1', "cat > src/data.txt <<'EOF'\n" + body + '\nEOF', 'execute')
+    done('heredoc-1', { content: [{ type: 'content', content: { type: 'text', text: body } }], rawOutput: { stdout: body } })
+    const locations = Array.from({ length: 250 }, (_, i) => ({ path: cwd + '/src/File' + i + '.tsx' }))
+    tool('many-1', 'Read files', 'read', { locations })
+    done('many-1')
+    say('Written.')
   } else if (text.includes('LONG')) {
     const lines = Array.from({ length: 60 }, (_, i) => 'Line ' + (i + 1) + ' of the answer.')
     say(lines.join('\n\n'))
@@ -320,6 +331,25 @@ test('a turn reads as steps, permission cards ask in macOS order, effort levels 
   await expect(planned.getByRole('list', { name: 'Plan' }).getByRole('listitem')).toHaveText([
     'Find the button',
     'Make it blue',
+  ])
+
+  // A step keeps its command, not what the command printed: the start and the end of a very
+  // long one, with how much was left out between; and the first paths of very many.
+  expect(await send(chat, 'BIG Write the data.')).toBe(true)
+  const { turn: big } = await session.waitForTurn(6)
+  const [heredoc, many] = big.items.flatMap((item) => (item.kind === 'tool' ? [item] : []))
+  expect(heredoc.title.length).toBeLessThanOrEqual(MAX_TOOL_TITLE)
+  expect(heredoc.title).toMatch(
+    /^cat > src\/data\.txt <<'EOF'\nrow 0: 0123456789\n[\s\S]*\n… [\d,]+ characters left out …\n[\s\S]*\nrow 3999: 0123456789\nEOF$/,
+  )
+  expect(JSON.stringify(big).length).toBeLessThan(MAX_TOOL_TITLE * 2)
+  expect(many.locations).toHaveLength(MAX_TOOL_LOCATIONS)
+  expect(many.moreLocations).toBe(250 - MAX_TOOL_LOCATIONS)
+  const written = chat.getByRole('article').nth(6)
+  await written.getByRole('button', { name: /^2 steps/ }).click()
+  await expect(written.getByRole('list', { name: 'Steps' }).getByRole('listitem')).toHaveText([
+    /^Run a command\s*cat > src\/data\.txt <<'EOF'/,
+    /^Read File0\.tsx and 249 more\s*src\/File0\.tsx, .*, and 150 more/,
   ])
 })
 

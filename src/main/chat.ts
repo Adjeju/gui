@@ -10,7 +10,13 @@ import type {
   SessionNotification,
 } from '@agentclientprotocol/sdk'
 import { app, BrowserWindow, dialog, type MessageBoxOptions } from 'electron'
-import { MAX_SUBAGENT_STEPS } from '../shared/bounded'
+import {
+  boundedLocations,
+  clampMiddle,
+  MAX_SUBAGENT_STEPS,
+  MAX_TOOL_LOCATIONS,
+  MAX_TOOL_TITLE,
+} from '../shared/bounded'
 import { type ChatTurnUpdate, TurnPublisher } from '../shared/chat-transport'
 import { invokedCommand, parseCommands, takesContext } from '../shared/commands'
 import { editDiffs } from '../shared/edit-diff'
@@ -2239,10 +2245,10 @@ export class ChatController extends EventEmitter<ChatEvents> {
         items.push({
           kind: 'tool',
           id: update.toolCallId,
-          title: preview ? GUI_TOOL_LABELS[preview] : this.relativize(update.title),
+          title: preview ? GUI_TOOL_LABELS[preview] : this.toolTitle(update.title),
           toolKind: preview ? 'preview' : (update.kind ?? 'other'),
           status,
-          locations: (update.locations ?? []).map((l) => this.displayPath(l.path, l.line)),
+          ...this.toolLocations(update.locations ?? []),
           startedAt: now,
           endedAt: isFinished(status) ? now : null,
           ...owned,
@@ -2254,14 +2260,12 @@ export class ChatController extends EventEmitter<ChatEvents> {
           (i) => i.kind === 'tool' && i.id === update.toolCallId && ownedBy(i, owner),
         )
         if (item?.kind !== 'tool') return false
-        if (update.title && item.toolKind !== 'preview') item.title = this.relativize(update.title)
+        if (update.title && item.toolKind !== 'preview') item.title = this.toolTitle(update.title)
         if (update.kind && item.toolKind !== 'preview') item.toolKind = update.kind
         if (update.status) item.status = update.status as ToolStatus
         // For how long a run of steps took.
         if (isFinished(item.status)) item.endedAt ??= Date.now()
-        if (update.locations) {
-          item.locations = update.locations.map((l) => this.displayPath(l.path, l.line))
-        }
+        if (update.locations) Object.assign(item, this.toolLocations(update.locations))
         return true
       }
       // Subagents' sessions don't send these (SubagentRouter drops them).
@@ -2670,6 +2674,23 @@ export class ChatController extends EventEmitter<ChatEvents> {
   /** Tool titles often embed absolute paths; show them relative to the project. */
   private relativize(text: string) {
     return text.split(`${this.root}/`).join('')
+  }
+
+  /**
+   * A tool step's title as the transcript keeps it. Only the title and the paths of a step are
+   * kept (its output, diff and raw input never are), and both within the caps in bounded.ts:
+   * the title is often the whole command.
+   */
+  private toolTitle(title: string) {
+    return this.relativize(clampMiddle(title, MAX_TOOL_TITLE))
+  }
+
+  private toolLocations(locations: readonly { path: string; line?: number | null }[]) {
+    const shown = locations.slice(0, MAX_TOOL_LOCATIONS)
+    return boundedLocations(
+      shown.map((l) => this.displayPath(l.path, l.line)),
+      locations.length - shown.length,
+    )
   }
 
   private displayPath(path: string, line?: number | null) {
