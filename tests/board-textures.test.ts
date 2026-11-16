@@ -9,7 +9,7 @@ import { QUAD, QUAD_STRIDE, type SceneInput, type ThumbWant } from '../src/rende
 import type { TextureUpload } from '../src/renderer/src/board/textures'
 
 // Which thumbnails the board holds as textures, and when it loads, replaces and frees them:
-// the policy both GPU backends share (draw-plan.ts), run here with no GPU at all.
+// the policy apart from the GPU (draw-plan.ts), run here with no GPU at all.
 
 interface Fake {
   n: number
@@ -17,7 +17,7 @@ interface Fake {
   mips: boolean
 }
 
-/** A backend that records what it's asked to make and free. */
+/** A GPU that records what it's asked to make and free. */
 function fakeGpu() {
   let made = 0
   const live = new Set<Fake>()

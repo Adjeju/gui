@@ -5,11 +5,10 @@ import {
   useImperativeHandle,
   useLayoutEffect,
   useRef,
-  useState,
 } from 'react'
 import type { BoardCamera } from '../../../shared/board'
 import { Card } from '../lib/surface'
-import type { BoardBackend, BoardBackendHooks, BoardBackendKind, BoardSources } from './backend'
+import type { BoardBackend, BoardBackendHooks } from './backend'
 import { BoardRenderer } from './gl/renderer'
 import { sharpTile } from './intents'
 import type { SceneInput } from './scene'
@@ -22,8 +21,8 @@ import { readInks } from './theme'
  * the canvas does, as it did when it drew the frames itself. Each frame's tile in that DOM
  * says which thumbnail the canvas holds for it (`data-thumb`, its width in pixels, 0 for
  * none), and the scale of the sharp tile drawn over it zoomed in (`data-sharp`, sharp.ts, 0
- * for none), for tests and for anyone inspecting the board. What draws is WebGL2, or with the
- * development switch WebGPU (backend.ts); the canvas says which (`data-board-backend`).
+ * for none), for tests and for anyone inspecting the board. What draws is WebGL2
+ * (gl/renderer.ts), through backend.ts.
  */
 
 /** A spare buffer of the canvas's is given back once nothing has been drawn for this long. */
@@ -55,7 +54,6 @@ export function BoardSurface({
   board,
   thumbs,
   tiles,
-  webgpu = false,
   onUnavailable,
 }: {
   ref: Ref<BoardSurfaceHandle>
@@ -68,17 +66,10 @@ export function BoardSurface({
   thumbs: string
   /** What holds the frames' tiles (`[data-frame]`), which say which thumbnail is drawn */
   tiles: RefObject<HTMLElement | null>
-  /** Draw with WebGPU where it starts (GUI_BOARD_WEBGPU=1, unpackaged builds); WebGL2 where not */
-  webgpu?: boolean
   /** WebGL2 couldn't start here, or its context was lost and never given back: nothing will be drawn */
   onUnavailable: () => void
 }) {
   const canvas = useRef<HTMLCanvasElement>(null)
-  /**
-   * What's asked to draw. WebGPU that doesn't start, or stops for good, falls back to WebGL2 on
-   * a canvas of its own: a canvas keeps the first kind of context it was asked for.
-   */
-  const [kind, setKind] = useState<BoardBackendKind>(webgpu ? 'webgpu' : 'webgl2')
   const latest = useRef({
     input,
     camera,
@@ -126,15 +117,8 @@ export function BoardSurface({
     let timer: ReturnType<typeof setTimeout> | undefined
     let trimmer: ReturnType<typeof setTimeout> | undefined
     let restoring: ReturnType<typeof setTimeout> | undefined
-    let backend: BoardBackend | null = null
-    let ended = false
     const invalidate = () => {
-      if (!frame && backend) frame = requestAnimationFrame(() => draw())
-    }
-    const fallBack = () => {
-      if (ended) return
-      console.warn('[gui] the board falls back to WebGL2')
-      setKind('webgl2')
+      if (!frame) frame = requestAnimationFrame(() => draw())
     }
     const hooks: BoardBackendHooks = {
       changed: invalidate,
@@ -149,19 +133,28 @@ export function BoardSurface({
       },
       failed: () => {
         clearTimeout(restoring)
-        if (kind === 'webgpu') fallBack()
-        else latest.current.onUnavailable()
+        latest.current.onUnavailable()
       },
     }
-    const sources: BoardSources = {
-      thumbUrl: (want) =>
-        `${latest.current.thumbs}/${want.id}${want.source === 'small' ? '.small' : ''}?v=${want.version}`,
-      sharpTile: (tile, signal) => sharpTile(latest.current.board, tile, signal),
+    let renderer: BoardBackend
+    try {
+      renderer = new BoardRenderer(
+        el,
+        {
+          thumbUrl: (want) =>
+            `${latest.current.thumbs}/${want.id}${want.source === 'small' ? '.small' : ''}?v=${want.version}`,
+          sharpTile: (tile, signal) => sharpTile(latest.current.board, tile, signal),
+        },
+        hooks,
+      )
+    } catch {
+      latest.current.onUnavailable()
+      return
     }
 
     let marked = -1
     /** Each tile says the width of the texture its frame has now, when that may have changed. */
-    const markTiles = (renderer: BoardBackend) => {
+    const markTiles = () => {
       if (!latest.current.rendered && marked === renderer.thumbChanges) return
       latest.current.rendered = false
       marked = renderer.thumbChanges
@@ -177,14 +170,12 @@ export function BoardSurface({
     }
     const draw = (trimmed = false) => {
       frame = 0
-      const renderer = backend
-      if (!renderer) return
       const { input, hovered } = latest.current
       const camera = latest.current.camera()
       if (!camera) return
       const lit = hovered && !input.hand && !input.selected.has(hovered) ? hovered : null
       const again = renderer.draw({ ...input, hovered: lit }, camera, performance.now())
-      markTiles(renderer)
+      markTiles()
       clearTimeout(timer)
       if (again === 0) invalidate()
       else if (again !== null) timer = setTimeout(invalidate, again)
@@ -197,64 +188,32 @@ export function BoardSurface({
           draw(true)
         }, TRIM_AFTER_MS)
     }
+    loop.current = { invalidate, frames: (ids) => renderer.keep(ids) }
 
     const theme = () => {
-      backend?.setInks(readInks(el))
+      renderer.setInks(readInks(el))
       invalidate()
     }
+    theme()
     const scheme = matchMedia('(prefers-color-scheme: dark)')
+    scheme.addEventListener('change', theme)
 
     // The canvas in device pixels, exactly: its size or the display's scale changing (the
     // window dragged to another display) both arrive here. Drawn at once, in the same frame
     // the size changes: a canvas resized is a canvas cleared.
-    let size: Parameters<BoardBackend['resize']> | null = null
     const observer = new ResizeObserver(([entry]) => {
       const [device] = entry.devicePixelContentBoxSize
       const [css] = entry.contentBoxSize
-      size = [
+      renderer.resize(
         { width: css.inlineSize, height: css.blockSize },
         { width: device.inlineSize, height: device.blockSize },
-      ]
-      if (!backend) return
-      backend.resize(...size)
+      )
       cancelAnimationFrame(frame)
       draw()
     })
-
-    /** The backend is ready: everything that drives it starts. */
-    const start = (made: BoardBackend) => {
-      backend = made
-      el.dataset.boardBackend = made.kind
-      loop.current = { invalidate, frames: (ids) => made.keep(ids) }
-      theme()
-      scheme.addEventListener('change', theme)
-      observer.observe(el, { box: 'device-pixel-content-box' })
-      if (size) made.resize(...size)
-    }
-
-    if (kind === 'webgpu')
-      void import('./gpu/renderer')
-        .then(({ WebGpuRenderer }) => WebGpuRenderer.create(el, sources, hooks))
-        .then(
-          (made) => {
-            if (ended) made.dispose()
-            else start(made)
-          },
-          (error: unknown) => {
-            console.warn('[gui] WebGPU did not start:', error)
-            fallBack()
-          },
-        )
-    else {
-      try {
-        start(new BoardRenderer(el, sources, hooks))
-      } catch {
-        latest.current.onUnavailable()
-      }
-    }
+    observer.observe(el, { box: 'device-pixel-content-box' })
 
     return () => {
-      ended = true
       loop.current = null
       cancelAnimationFrame(frame)
       clearTimeout(timer)
@@ -262,15 +221,14 @@ export function BoardSurface({
       clearTimeout(restoring)
       observer.disconnect()
       scheme.removeEventListener('change', theme)
-      backend?.dispose()
-      backend = null
+      renderer.dispose()
     }
-  }, [kind])
+  }, [])
 
   return (
     // Nothing to a screen reader: the board's DOM over it says what's here.
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-      <canvas key={kind} ref={canvas} className="block size-full" />
+      <canvas ref={canvas} className="block size-full" />
     </div>
   )
 }

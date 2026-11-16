@@ -6,9 +6,9 @@ import { fetchThumb, type TextureUpload, type ThumbLoad, ThumbTextures } from '.
 
 /*
  * One draw of the board, without the GPU: the scene for the camera, which texture each quad
- * draws with, and afterwards what to load, replace or free and how soon to draw again. Both
- * backends (backend.ts) draw through it, each with its own `TextureUpload`; a test can run it
- * with none.
+ * draws with, and afterwards what to load, replace or free and how soon to draw again. The
+ * renderer (backend.ts) draws through it with its own `TextureUpload`; a test can run it with
+ * none.
  */
 
 /** Textures are replaced for the zoom there is once it has held still this long. */

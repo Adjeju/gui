@@ -19,8 +19,6 @@ const MCP_TRACE_LIMIT = 1000
  *   GUI_DEV_MAX_FRAMES=1000  a canvas may hold that many frames (users get MAX_FRAMES)
  *   GUI_E2E_MCP_TRACE=1      what agents ask Gui's MCP server goes in globalThis.guiMcpTrace
  *                            (McpTraceEntry[]), for the agent smoke test (smoke/)
- *   GUI_BOARD_WEBGPU=1       canvases are drawn with WebGPU where it starts, WebGL2 where not
- *                            (src/renderer/src/board/backend.ts); `devBoardWebgpu`
  */
 export function applyDevFlags() {
   if (app.isPackaged) return
@@ -28,9 +26,6 @@ export function applyDevFlags() {
   if (frames) setFrameLimitForDevelopment(frames)
   if (process.env.GUI_E2E_MCP_TRACE === '1') traceMcpRequests()
 }
-
-/** GUI_BOARD_WEBGPU=1 on an unpackaged build: the board tries WebGPU (`WindowState.devBoardWebgpu`). */
-export const devBoardWebgpu = !app.isPackaged && process.env.GUI_BOARD_WEBGPU === '1'
 
 function traceMcpRequests() {
   const trace: McpTraceEntry[] = []

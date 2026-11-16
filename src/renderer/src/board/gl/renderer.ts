@@ -144,7 +144,6 @@ class GlTextures implements TextureUpload<WebGLTexture> {
 }
 
 export class BoardRenderer implements BoardBackend {
-  readonly kind = 'webgl2'
   private readonly gl: WebGL2RenderingContext
   private readonly plan: DrawPlan<WebGLTexture>
   private inks: Float32Array = new Float32Array(INK_COUNT * 4)

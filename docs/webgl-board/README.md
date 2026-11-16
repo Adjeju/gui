@@ -6,8 +6,9 @@ decisions below; all seven stages of the plan are done, so the board is drawn wi
 [inventory.md](inventory.md) lists everything the DOM board did and where each part went.
 The prototype itself, its probe and its raw results are on the branch
 `brijr/webgl-board-prototype` (commit `e9f7d31`). Since then the texture policy moved out of
-`gl/` (to `board/textures.ts`, `sharp-textures.ts`, `draw-plan.ts`) for a WebGPU trial:
-[webgpu.md](webgpu.md).
+`gl/` (to `board/textures.ts`, `sharp-textures.ts`, `draw-plan.ts`, behind `board/backend.ts`),
+so `tests/board-textures.test.ts` runs it without a GPU. A WebGPU renderer was tried on that
+split and not kept: [webgpu.md](webgpu.md).
 
 ## In short
 

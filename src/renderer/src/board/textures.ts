@@ -2,7 +2,7 @@ import type { ThumbWant } from './scene'
 
 /*
  * Which thumbnails the board holds as textures, and when they're loaded, replaced and freed;
- * the GPU's part (making and freeing a texture) is the backend's `TextureUpload`. Frames'
+ * the GPU's part (making and freeing a texture) is the renderer's `TextureUpload`. Frames'
  * thumbnails as textures: one a frame, at the width it's drawn (`thumbTier`). A
  * thumbnail is fetched and decoded off the main thread (`createImageBitmap` on the fetched
  * bytes, resized there to the width wanted), uploaded within a few milliseconds a frame, and
@@ -46,7 +46,7 @@ interface Entry<T> {
 
 const keyOf = (want: ThumbWant) => `${want.width}@${want.version}`
 
-/** A backend's half of a texture: made from decoded pixels, and freed. */
+/** The renderer's half of a texture: made from decoded pixels, and freed. */
 export interface TextureUpload<T> {
   /** A texture of the bitmap's pixels, with mip levels when `mips`. The bitmap stays open. */
   upload(bitmap: ImageBitmap, mips: boolean): T

@@ -107,12 +107,7 @@ export function Canvas({ state }: { state: WindowState }) {
             </div>
           )
         ) : (
-          <Board
-            key={state.board.id}
-            board={state.board}
-            working={turnRunning(state)}
-            webgpu={state.devBoardWebgpu}
-          />
+          <Board key={state.board.id} board={state.board} working={turnRunning(state)} />
         )}
       </main>
     )
