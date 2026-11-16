@@ -308,6 +308,11 @@ test('the model picker searches the models, sets the model and effort, and new s
   await expect(options).toHaveText(['Claude Sonnet 4.5', 'Claude Sonnet 4'])
   await search.fill('qwen coder')
   await expect(options).toHaveText(['Qwen3 Coder'])
+  // Spaces, dashes and dots are loose: "kimik2" finds "Kimi K2", "gpt4.1" finds "GPT-4.1".
+  await search.fill('kimik2')
+  await expect(options).toHaveText(['Kimi K2', 'Kimi K2 Turbo'])
+  await search.fill('gpt4.1')
+  await expect(options).toHaveText(['GPT-4.1', 'GPT-4.1 Mini'])
   await search.fill('nothing like this')
   await expect(options).toHaveCount(0)
   await expect(dialog.getByText('No models match')).toBeVisible()

@@ -26,6 +26,7 @@ import {
   placePopover,
 } from '../lib/surface'
 import { Button, HIT_AREA, OPEN, SegmentedControl } from '../lib/ui'
+import { matchesWords, searchWords } from './model-search'
 import { useChat, whenPanelShown } from './store'
 
 type Choice = AgentSetting['options'][number]
@@ -143,10 +144,9 @@ interface Entry {
   title?: string
 }
 
-/** Every typed word appears somewhere in the name, value or group, ignoring case. */
+/** Every typed word appears somewhere in the name, value or group (see matchesWords). */
 function matches(entry: Entry, words: string[]) {
-  const text = `${entry.name} ${entry.value} ${entry.group ?? ''}`.toLowerCase()
-  return words.every((word) => text.includes(word))
+  return matchesWords([entry.name, entry.value, entry.group ?? ''], words)
 }
 
 /**
@@ -340,7 +340,7 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
         })
   const searchable = entries.length > SEARCH_AFTER
   // Without a search field there's nothing typed to go by, and nowhere to clear it.
-  const words = searchable ? query.toLowerCase().split(/\s+/).filter(Boolean) : []
+  const words = searchable ? searchWords(query) : []
   const grouped = entries.some((entry) => entry.group !== null)
   const shown = sections(
     entries.filter((entry) => matches(entry, words)),
