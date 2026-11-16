@@ -357,7 +357,7 @@ async function crash(request, env) {
  * or anything the user wrote.
  */
 const VERSION = /^[\w.+-]{1,40}$/
-const NAME = /^[a-z][\w-]{0,39}$/
+const NAME = /^[a-z][\w-]{0,39}$/i
 /** @type {Record<string, Record<string, RegExp | string[]>>} */
 const EVENTS = {
   app_opened: { version: VERSION, os: NAME, osVersion: VERSION, arch: NAME },
