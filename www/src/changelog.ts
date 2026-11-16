@@ -12,8 +12,10 @@ export interface Release {
 export const releases: Release[] = [
   {
     version: '0.1.0-alpha.21',
-    date: '2026-11-13',
+    date: '2026-11-16',
     changes: [
+      'Other agents, like Claude Code in Terminal, can use Gui’s canvas and preview, and open your projects and canvases themselves (Settings → Agents → Other agents). What they open has no chat until you show it.',
+      'Zoomed in on a canvas, frames are drawn sharp instead of blurry.',
       'While your agent works, ⌘↩ sends a message into its reply under way instead of queueing it (Claude Code and Codex). Enter still queues; Settings → Agents can swap the two.',
       'Pick your agent in the model picker, beside the model and effort. In a chat that has started, another agent starts a new chat; your default stays what Settings → Agents says.',
       'When your agent asks you a question, you see all of it: each choice on its own line, in full, with what it means.',
