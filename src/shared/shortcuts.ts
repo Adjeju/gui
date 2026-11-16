@@ -710,8 +710,6 @@ export function commandKeyPressed(event: { metaKey: boolean; ctrlKey: boolean })
   return IS_MAC ? event.metaKey : event.ctrlKey
 }
 
-export const COMMAND_KEY_LABEL = IS_MAC ? '⌘' : 'Ctrl+'
-
 /** "Reload preview (⌘R)": a control's tooltip, with its shortcut. */
 export function withShortcut(label: string, id: ShortcutId): string {
   return `${label} (${shortcutText(id)})`
