@@ -35,9 +35,10 @@ files:
   - "!**/node_modules/**/*.{d.ts,d.mts,d.cts,md,markdown}"
   # TypeScript sources some packages ship next to their JS (zod's src/ alone is ~4 MB).
   - "!**/node_modules/**/*.{ts,mts,cts,tsx}"
-  # node-pty: only its JS and the darwin-arm64 prebuild are used at runtime.
+  # node-pty: only its JS and one native build are used at runtime: the darwin-arm64 prebuild
+  # on macOS, or on Linux the build/Release that `bun install` compiles (it has no prebuild).
   - "!**/node_modules/node-pty/{src,deps,third_party,scripts,typings,binding.gyp}"
-  - "!**/node_modules/node-pty/prebuilds/win32-*"
+  - "!**/node_modules/node-pty/prebuilds/{win32-*,darwin-x64}"
   # The Claude Code and Codex CLIs (~530 MB) aren't shipped: Gui uses the user's own
   # install, or downloads the exact version its adapters need (src/main/agent-binaries.ts).
   - "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**"
