@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, shell } from 'electron'
-import { AGENTS, type AgentHealth, type AgentId } from '../shared/types'
+import { AGENTS, type AgentHealth, type AgentId, type ModelSettings } from '../shared/types'
 import { AgentAuthError, AgentSession, type AuthMethod } from './agent'
 import {
   AgentMissingError,
@@ -17,13 +17,15 @@ import {
 } from './agent-binaries'
 import { type AgentDefinition, listAgents } from './agents'
 import { describeError } from './errors'
-import { getPrefs, isAgentEnabled, prefsEvents } from './prefs'
+import { getPrefs, isAgentEnabled, prefsEvents, savedAgentSettings } from './prefs'
 import type { ChildProcess } from './process'
 import { killProcessGroup, spawnProcess } from './process'
 import { getShellEnv } from './shell-env'
 import { runInTerminal } from './terminal'
 
 const CHECK_TIMEOUT_MS = 45_000
+/** For the check's switch to the user's provider: listing it is a nicety, not the check. */
+const PROVIDER_TIMEOUT_MS = 10_000
 /** Browser sign-in waits on the user. */
 const SIGN_IN_TIMEOUT_MS = 5 * 60_000
 /** Browser-based sign-in methods Gui can drive; API keys belong in the user's environment. */
@@ -481,6 +483,7 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
         authenticate ? 'Sign-in timed out.' : "The agent didn't respond. Try again.",
       )
       this.methods.delete(id)
+      await this.listSavedProvider(session, info.models)
       // So the chat can offer the agent's models before its own session starts.
       this.set(id, {
         status: 'ready',
@@ -509,6 +512,24 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
       this.sessions.delete(session)
       session.dispose()
     }
+  }
+
+  /**
+   * Switches the check's session to the provider the user picked for this agent, when it
+   * isn't on it, so a chat that hasn't started its own session can list that provider's
+   * models (reportedModels). The check's models stay the agent's own; a refusal changes nothing.
+   */
+  private async listSavedProvider(session: AgentSession, models: ModelSettings | null) {
+    const provider = models?.provider
+    if (!provider) return
+    const all = savedAgentSettings(session.agentId)
+    const saved = Object.hasOwn(all, provider.id) ? all[provider.id] : provider.value
+    if (saved === provider.value || !provider.options.some(({ value }) => value === saved)) return
+    await withTimeout(
+      session.setConfigOption(provider.id, saved),
+      PROVIDER_TIMEOUT_MS,
+      "The agent didn't switch providers.",
+    ).catch(() => undefined)
   }
 
   /**

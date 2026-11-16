@@ -3697,6 +3697,11 @@ export class ProjectTab implements ChatPanelOwner {
     this.resources.chat?.setAgentSetting(settingId, value)
   }
 
+  /** See ChatController.setProvider. */
+  setProvider(value: string) {
+    return this.resources.chat?.setProvider(value)
+  }
+
   /** Starts the chat's agent early so the command menu can list its commands. */
   loadCommands() {
     return this.resources.chat?.loadCommands()

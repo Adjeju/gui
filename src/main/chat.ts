@@ -45,15 +45,9 @@ import {
   type TurnStatus,
   type Version,
 } from '../shared/types'
-import {
-  AgentAuthError,
-  type AgentInfo,
-  AgentSession,
-  type PermissionResolver,
-  parseModelSettings,
-} from './agent'
+import { AgentAuthError, type AgentInfo, AgentSession, type PermissionResolver } from './agent'
 import { AgentMissingError } from './agent-binaries'
-import { type PermissionRequest, QUESTION_KIND } from './agent-protocol'
+import { type PermissionRequest, parseModelSettings, QUESTION_KIND } from './agent-protocol'
 import { agentHealth } from './agent-status'
 import {
   agentChoices,
@@ -717,6 +711,63 @@ export class ChatController extends EventEmitter<ChatEvents> {
     this.refreshModels()
     const agent = this.agent
     if (agent && this.agentInfo && !this.active) void this.applySettings(agent, null)
+  }
+
+  /**
+   * The user's pick of model provider (ModelSettings.provider), which brings that provider's
+   * models. The agent decides whether it can: a running session switches now, and a chat
+   * without one starts its agent to ask (as loadCommands does). Saved for this agent only
+   * once the agent takes it. Resolves to the agent's reason when it doesn't, else null.
+   * During a turn it's saved, and switched before the next prompt, as a model would be.
+   */
+  async setProvider(value: string): Promise<string | null> {
+    const provider = this.meta.models?.provider
+    if (!provider || !offersChoice(this.meta.models, provider.id, value)) return null
+    if (value === provider.value) return null
+    const save = () => {
+      this.refused.delete(provider.id)
+      saveAgentSetting(this.meta.agentId, provider.id, value)
+      this.refreshModels()
+    }
+    if (this.active) {
+      save()
+      return null
+    }
+    const epoch = this.epoch
+    const started = this.agent && this.agentInfo ? true : await this.warmUp()
+    const agent = this.agent
+    if (this.epoch !== epoch || this.active) return null
+    // No agent to ask (the folder isn't trusted yet, say): the next session switches.
+    if (!started || !agent || !this.agentInfo) {
+      save()
+      return null
+    }
+    const run = this.settingChanges.then(async (): Promise<string | null> => {
+      if (this.agent !== agent) return null
+      const refusal = await withTimeout(
+        agent.setConfigOption(provider.id, value),
+        SETTING_TIMEOUT_MS,
+        `${this.meta.agentName} didn't answer.`,
+      ).then(
+        () => null,
+        (error: unknown) => describeError(error).message,
+      )
+      if (this.agent !== agent) return null
+      this.sessionModels = agent.models
+      if (refusal === null) save()
+      else this.refreshModels()
+      return refusal
+    })
+    const settled = run.catch((error: unknown) => {
+      console.error('[gui] provider change failed', error)
+      return null
+    })
+    this.settingChanges = settled.then(() => undefined)
+    const refusal = await settled
+    if (refusal !== null || this.agent !== agent) return refusal
+    // The saved model and effort, where the new provider offers them.
+    if (!this.active) void this.applySettings(agent, null)
+    return null
   }
 
   /**
@@ -2064,14 +2115,15 @@ export class ChatController extends EventEmitter<ChatEvents> {
 
   /**
    * Brings the running session in line with the project's Ask or Auto, then the user's
-   * saved choices: the model first, since the effort levels on offer can depend on it.
+   * saved choices: the provider first, since the models on offer depend on it, then the
+   * model, since the effort levels on offer can depend on it.
    * Never throws. During a turn, a refusal is a notice and the turn goes on with the
    * agent's own setting; between turns it stays quiet and the next turn tries again.
    */
   private applySettings(agent: AgentSession, record: TurnRecord | null) {
     const run = this.settingChanges.then(async () => {
       await this.applyPolicy(agent, record)
-      for (const key of ['model', 'effort'] as const) {
+      for (const key of ['provider', 'model', 'effort'] as const) {
         const setting = this.agent === agent ? this.sessionModels?.[key] : null
         if (!setting) continue
         const value = chosenValue(setting, savedAgentSettings(agent.agentId), this.refused)

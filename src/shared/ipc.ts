@@ -73,6 +73,7 @@ export const Invoke = {
   setStartCommand: 'project:set-start-command',
   chatSetUpAgent: 'chat:set-up-agent',
   loadCommands: 'chat:load-commands',
+  setProvider: 'chat:set-provider',
   listChats: 'chat:list',
   openChat: 'chat:open',
   renameChat: 'chat:rename',
@@ -705,6 +706,12 @@ export interface GuiApi {
    * Ignored unless `value` is one of that setting's current options.
    */
   setAgentSetting(settingId: string, value: string): void
+  /**
+   * The user's pick of `ChatMeta.models.provider`, which brings that provider's models.
+   * Resolves to the agent's reason when it turns the provider down (it stays on its own),
+   * else null. Starts the agent first when the chat hasn't yet.
+   */
+  setProvider(value: string): Promise<string | null>
   /**
    * Starts the agent without sending anything, so `ChatMeta.commands` fills in before the
    * first message. Resolves once they're there, or there are none to wait for (the agent

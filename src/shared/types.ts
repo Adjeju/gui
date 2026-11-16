@@ -908,10 +908,15 @@ export interface AgentSetting {
   options: { value: string; name: string; group: string | null }[]
 }
 
-/** The agent's model, and its effort (reasoning) level when it has one */
+/** The agent's model, and its effort (reasoning) level and model provider when it has them */
 export interface ModelSettings {
   model: AgentSetting
   effort: AgentSetting | null
+  /**
+   * Where the models come from, when the agent offers more than one (fx: its gateway, Codex,
+   * Grok). The model list is that provider's: switching it changes the list.
+   */
+  provider: AgentSetting | null
 }
 
 /** A slash command the agent offers (ACP `available_commands_update`), e.g. `compact` */

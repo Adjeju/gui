@@ -22,13 +22,15 @@ const AGENT: AgentId = `${CUSTOM_AGENT_PREFIX}Models`
  * Speaks ACP (ndjson JSON-RPC) on stdio. The model list is long and grouped by provider,
  * like OpenCode's ("short": three models, ungrouped; "none": no models or effort at all);
  * effort is flat, and refuses "max". A `mode` setting stands in for the categories Gui
- * ignores. "signed-out" turns every session down until the user signs in. A message saying
- * SLOW keeps its turn running until it's stopped.
+ * ignores. "signed-out" turns every session down until the user signs in. "providers" adds a
+ * provider setting, as fx has: Gateway lists the long list, Codex two models of its own, and
+ * Grok isn't signed in. A message saying SLOW keeps its turn running until it's stopped.
  */
 const AGENT_SCRIPT = String.raw`
 const { appendFileSync } = require('node:fs')
 const [log, size] = process.argv.slice(2)
-const state = { llm: 'swift', depth: 'medium' }
+const state = { provider: 'gateway', llm: 'swift', depth: 'medium' }
+const CODEX = [{ value: 'gpt-5-codex', name: 'GPT-5 Codex' }, { value: 'gpt-5', name: 'GPT-5' }]
 let held = null
 const PROVIDERS = {
   Anthropic: ['Claude Opus 4.1', 'Claude Opus 4', 'Claude Sonnet 4.5', 'Claude Sonnet 4',
@@ -45,6 +47,7 @@ const PROVIDERS = {
 const slug = (text) => text.toLowerCase().replace(/[^a-z0-9.]+/g, '-')
 const models = () => size === 'short'
   ? ['Swift', 'Sage', 'Atlas'].map((name) => ({ value: slug(name), name }))
+  : state.provider === 'codex' ? CODEX
   : [
       { group: 'fast', name: 'Fast', options: [{ value: 'swift', name: 'Swift' }] },
       { group: 'smart', name: 'Smart', options: [{ value: 'sage', name: 'Acme/Sage' }] },
@@ -56,8 +59,13 @@ const models = () => size === 'short'
     ]
 const MODE = { id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: 'ask',
   options: [{ value: 'ask', name: 'Ask' }] }
+const PROVIDER = () => ({ id: 'provider', name: 'Provider', category: 'model', type: 'select',
+  currentValue: state.provider,
+  options: [{ value: 'gateway', name: 'Gateway' }, { value: 'codex', name: 'Codex' },
+    { value: 'grok', name: 'Grok' }] })
 const configOptions = () => size === 'none' ? [MODE] : [
   MODE,
+  ...(size === 'providers' ? [PROVIDER()] : []),
   { id: 'llm', name: 'Model', category: 'model', type: 'select', currentValue: state.llm,
     options: models() },
   { id: 'depth', name: 'Thinking', category: 'thought_level', type: 'select',
@@ -85,6 +93,15 @@ const handle = ({ id, method, params }) => {
   }
   if (method === 'session/set_config_option') {
     if (params.value === 'max') return write({ id, error: { code: -32602, message: 'Max is not on this plan' } })
+    if (params.value === 'grok') {
+      return write({ id, error: { code: -32603, message: "Grok isn't signed in. Run fx login grok." } })
+    }
+    // Another provider starts on its own first model.
+    if (params.configId === 'provider') {
+      state.provider = params.value
+      const first = models()[0]
+      state.llm = first.value ?? first.options[0].value
+    }
     state[params.configId] = params.value
     return write({ id, result: { configOptions: configOptions() } })
   }
@@ -106,7 +123,7 @@ process.stdin.on('data', (chunk) => {
 })
 `
 
-type Kind = 'long' | 'short' | 'none' | 'signed-out'
+type Kind = 'long' | 'short' | 'none' | 'signed-out' | 'providers'
 
 interface Call {
   pid: number
@@ -193,6 +210,7 @@ function pickerOf(session: GuiSession) {
     list: dialog.getByRole('listbox', { name: 'Models' }),
     options: dialog.getByRole('option'),
     effort: dialog.getByRole('group', { name: 'Effort' }),
+    provider: dialog.getByRole('group', { name: 'Provider' }),
   }
 }
 
@@ -272,6 +290,8 @@ test('the model picker searches the models, sets the model and effort, and new s
     'High',
     'Max',
   ])
+  // No provider setting, no provider row.
+  expect(listed.provider).toBeNull()
   const health = (await session.state()).agents.find((agent) => agent.id === AGENT)
   expect(health?.models).toEqual(listed)
 
@@ -289,8 +309,9 @@ test('the model picker searches the models, sets the model and effort, and new s
   await expect(button).toHaveAttribute('aria-haspopup', 'dialog')
   await expect(button).toHaveAttribute('aria-expanded', 'false')
   await button.click()
-  const { dialog, search, list, options, effort } = pickerOf(session)
+  const { dialog, search, list, options, effort, provider } = pickerOf(session)
   await expect(dialog).toBeVisible()
+  await expect(provider).toHaveCount(0)
   await expect(button).toHaveAttribute('aria-expanded', 'true')
   await expect(search).toBeFocused()
   await expect(search).toHaveAttribute('aria-controls', (await list.getAttribute('id')) ?? '')
@@ -499,6 +520,125 @@ test('a short model list has no search field and is driven from the list', async
   await expect(
     session.chat.getByRole('button', { name: 'Model: Sage, effort Medium' }),
   ).toBeFocused()
+})
+
+test('an agent with providers: the picker switches provider, lists its models, and new chats keep it', async ({
+  launch,
+}) => {
+  const session = await launch({ fixture: 'vite' })
+  await session.declineConsentDialogs()
+  const runs = await addAgent(session, 'providers')
+  const { chat } = session
+
+  // Before any chat session: the health check's provider, beside the model and effort.
+  const listed = await modelsAre(session, 'swift', 'medium')
+  expect(listed.provider).toEqual({
+    id: 'provider',
+    value: 'gateway',
+    options: [
+      { value: 'gateway', name: 'Gateway', group: null },
+      { value: 'codex', name: 'Codex', group: null },
+      { value: 'grok', name: 'Grok', group: null },
+    ],
+  })
+  expect(listed.model.options).toHaveLength(41)
+
+  // A row above the models, in the agent's own names.
+  await chat.getByRole('button', { name: 'Model: Swift, effort Medium' }).click()
+  const { dialog, search, options, provider } = pickerOf(session)
+  const choice = (name: string) => provider.getByRole('button', { name })
+  await expect(provider).toBeVisible()
+  await expect(provider.getByRole('button')).toHaveText(['Gateway', 'Codex', 'Grok'])
+  await expect(choice('Gateway')).toHaveAttribute('aria-pressed', 'true')
+  await expect(options).toHaveCount(41)
+  await search.fill('gpt 5')
+  await expect(options).toHaveText(['GPT-5', 'GPT-5 Mini', 'GPT-5 Nano'])
+
+  // One the agent turns down says why, and the picker stays on the provider it had. The
+  // chat had no session yet: asking started one.
+  await choice('Grok').click()
+  await expect(dialog.getByRole('alert')).toHaveText("Grok isn't signed in. Run fx login grok.")
+  await expect(choice('Gateway')).toHaveAttribute('aria-pressed', 'true')
+  await expect(options).toHaveText(['GPT-5', 'GPT-5 Mini', 'GPT-5 Nano'])
+  expect(runs()).toHaveLength(1)
+  await session.shot('model-picker-provider-refused')
+
+  // Another one lists its models in place: two, too few for the search field.
+  await choice('Codex').click()
+  await expect(choice('Codex')).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.getByRole('alert')).toHaveCount(0)
+  await expect(search).toHaveCount(0)
+  await expect(options).toHaveText(['GPT-5 Codex', 'GPT-5'])
+  await modelsAre(session, 'gpt-5-codex', 'medium')
+  await session.shot('model-picker-provider')
+  await options.filter({ hasText: /^GPT-5$/ }).click()
+  await expect(dialog).toBeHidden()
+  await modelsAre(session, 'gpt-5', 'medium')
+  await waitFor(() => configCalls(runs()[0]).length === 3, 'the model change')
+  expect(configCalls(runs()[0])).toEqual([
+    { configId: 'provider', value: 'grok' },
+    { configId: 'provider', value: 'codex' },
+    { configId: 'llm', value: 'gpt-5' },
+  ])
+
+  // Remembered with the model; the refused one never was.
+  const prefsFile = join(session.fixture.userData, 'prefs.json')
+  await waitFor(() => {
+    const prefs = JSON.parse(readFileSync(prefsFile, 'utf8')) as {
+      agentSettings?: Record<string, unknown>
+    }
+    return isDeepStrictEqual(prefs.agentSettings?.[AGENT], { provider: 'codex', llm: 'gpt-5' })
+  }, "the agent's settings in prefs.json")
+
+  // The agent's next check lists that provider too, so a chat after a restart has its models.
+  const checks = () => {
+    const chats = new Set(runs().flatMap((calls) => calls.map((call) => call.pid)))
+    return readFileSync(join(session.fixture.base, 'agent-calls.ndjson'), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Call)
+      .filter((call) => !chats.has(call.pid))
+  }
+  const before = checks().length
+  await session.chrome.evaluate(() => window.gui.checkAgents())
+  await waitFor(
+    () =>
+      checks()
+        .slice(before)
+        .some(
+          (call) => call.method === 'session/set_config_option' && call.params.value === 'codex',
+        ),
+    "the check's switch to Codex",
+  )
+
+  // A new chat lists that provider's models before its session starts, and its session
+  // switches to the provider before the model, before the first prompt.
+  await chat.evaluate(() => window.gui.newSession())
+  await waitFor(async () => (await session.chatSnapshot()).turns.length === 0, 'the new chat')
+  const next = await modelsAre(session, 'gpt-5', 'medium')
+  expect(next.provider?.value).toBe('codex')
+  expect(next.model.options.map((option) => option.value)).toEqual(['gpt-5-codex', 'gpt-5'])
+  await chat.getByRole('button', { name: 'Model: GPT-5, effort Medium' }).click()
+  await expect(choice('Codex')).toHaveAttribute('aria-pressed', 'true')
+  await expect(options).toHaveText(['GPT-5 Codex', 'GPT-5'])
+  await chat.keyboard.press('Escape')
+  expect(await send(session, 'Hello')).toBe(true)
+  const turn = await session.waitForTurn(0)
+  expect(turn.turn.status).toBe('done')
+  expect(runs()).toHaveLength(2)
+  const methods = (runs()[1] ?? []).map((call) => call.method)
+  expect(methods.slice(methods.indexOf('session/new'))).toEqual([
+    'session/new',
+    'session/set_config_option',
+    'session/set_config_option',
+    'session/prompt',
+  ])
+  expect(configCalls(runs()[1])).toEqual([
+    { configId: 'provider', value: 'codex' },
+    { configId: 'llm', value: 'gpt-5' },
+  ])
+  expect(turn.meta.models?.provider?.value).toBe('codex')
+  expect(turn.meta.models?.model.value).toBe('gpt-5')
 })
 
 const OTHER: AgentId = `${CUSTOM_AGENT_PREFIX}Other`

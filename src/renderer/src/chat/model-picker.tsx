@@ -73,6 +73,56 @@ function choiceName(setting: AgentSetting) {
 }
 
 /**
+ * A setting's choices in the picker (effort levels, providers): side by side when they fit
+ * a picker `width` wide, else one per row, like the models. Each applies on click and
+ * leaves the picker open.
+ */
+function SettingChoices({
+  labelId,
+  choices,
+  value,
+  width,
+  onChange,
+}: {
+  labelId: string
+  choices: { value: string; label: string }[]
+  value: string
+  width: number
+  onChange: (value: string) => void
+}) {
+  const labels = choices.map((choice) => choice.label)
+  if (segmentsFit(labels, width)) {
+    return (
+      <SegmentedControl
+        aria-labelledby={labelId}
+        segments={choices.map((choice) => ({ ...choice, title: choice.label }))}
+        value={value}
+        onChange={onChange}
+        stretch
+      />
+    )
+  }
+  return (
+    <fieldset aria-labelledby={labelId} className="flex flex-col">
+      {choices.map((choice) => {
+        const on = choice.value === value
+        return (
+          <MenuRow
+            key={choice.value}
+            as="button"
+            selected={on}
+            aria-pressed={on}
+            onClick={() => onChange(choice.value)}
+          >
+            {choice.label}
+          </MenuRow>
+        )
+      })}
+    </fieldset>
+  )
+}
+
+/**
  * Gui's own names for the effort levels agents share, so they read the same whichever
  * agent offers them ("xhigh" isn't "Xhigh"). Any other level keeps the agent's name.
  */
@@ -184,6 +234,7 @@ export function ModelButton({ meta }: { meta: ChatMeta }) {
   const fullName = models ? (choiceName(models.model) ?? models.model.value) : null
   const model = fullName && shortName(fullName)
   const effort = models?.effort ? effortName(models.effort) : null
+  const provider = models?.provider ? choiceName(models.provider) : null
   const label = model
     ? effort
       ? `Model: ${model}, effort ${effort}`
@@ -221,7 +272,7 @@ export function ModelButton({ meta }: { meta: ChatMeta }) {
         aria-controls={open ? pickerId : undefined}
         aria-label={label}
         title={withShortcut(
-          [meta.agentName, fullName, effort].filter(Boolean).join(' · '),
+          [meta.agentName, provider, fullName, effort].filter(Boolean).join(' · '),
           'chooseModel',
         )}
         aria-keyshortcuts={ariaShortcut('chooseModel')}
@@ -278,7 +329,9 @@ interface ModelPickerProps {
 /**
  * What the chat runs on, in one place. First the agent's models under their provider,
  * searchable when the list is long, and its effort levels when it has them: a model applies
- * on pick and closes the picker; an effort level applies and leaves it open. The row above
+ * on pick and closes the picker; an effort level applies and leaves it open. An agent that
+ * takes its models from more than one provider (fx) offers those above the list: picking one
+ * asks the agent, which lists that provider's models in place, or says why it can't. The row above
  * them names the agent and opens the agents in the same picker (Esc or ← comes back). Another
  * agent takes this chat while nothing has been said in it, and leaves the default agent as
  * Settings has it. Once the chat has started it keeps its agent: another one starts a new chat,
@@ -288,11 +341,17 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
   const { models, agents, agentId } = meta
   const model = models?.model ?? null
   const effort = models?.effort ?? null
+  const provider = models?.provider ?? null
   const root = useRef<HTMLDivElement>(null)
   const searchField = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const listId = `${id}-list`
   const effortId = `${id}-effort`
+  const providerId = `${id}-provider`
+  /** The provider asked for, until the agent answers */
+  const [switching, setSwitching] = useState<string | null>(null)
+  /** Why the agent turned the last provider down */
+  const [refusal, setRefusal] = useState<string | null>(null)
   const [asked, setView] = useState<'models' | 'agents'>('models')
   // An agent with no models to choose has only the agents to show.
   const view = model ? asked : 'agents'
@@ -313,6 +372,23 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
     setListed(listing)
     setQuery('')
     setActive(current)
+  }
+  // Another provider's models: what's typed still filters them; with nothing typed, the
+  // current model is the one on.
+  const [listedProvider, setListedProvider] = useState(provider?.value ?? null)
+  if (listedProvider !== (provider?.value ?? null)) {
+    setListedProvider(provider?.value ?? null)
+    setActive(query.trim() ? null : current)
+  }
+
+  const pickProvider = (value: string) => {
+    if (!provider || switching !== null || value === provider.value) return
+    setSwitching(value)
+    setRefusal(null)
+    void gui
+      .setProvider(value)
+      .then(setRefusal, (error: unknown) => setRefusal(String(error)))
+      .finally(() => setSwitching(null))
   }
 
   const entries: Entry[] =
@@ -558,6 +634,31 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
           )}
         </div>
       )}
+      {view === 'models' && provider && (
+        <div
+          aria-busy={switching !== null || undefined}
+          className="flex shrink-0 flex-col gap-1.5 border-b-hairline border-line p-2"
+        >
+          <GroupLabel id={providerId} className="px-1">
+            Provider
+          </GroupLabel>
+          <SettingChoices
+            labelId={providerId}
+            choices={provider.options.map((choice) => ({
+              value: choice.value,
+              label: choice.name,
+            }))}
+            value={switching ?? provider.value}
+            width={placement.width}
+            onChange={pickProvider}
+          />
+          {refusal && (
+            <p role="alert" className="px-1 text-caption text-pretty text-danger">
+              {refusal}
+            </p>
+          )}
+        </div>
+      )}
       {searchable && (
         <PopoverSearch
           ref={searchField}
@@ -632,38 +733,16 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
           <GroupLabel id={effortId} className="px-1">
             Effort
           </GroupLabel>
-          {segmentsFit(effort.options.map(effortLabel), placement.width) ? (
-            <SegmentedControl
-              aria-labelledby={effortId}
-              segments={effort.options.map((choice) => ({
-                value: choice.value,
-                label: effortLabel(choice),
-                title: effortLabel(choice),
-              }))}
-              value={effort.value}
-              onChange={(value) => gui.setAgentSetting(effort.id, value)}
-              stretch
-            />
-          ) : (
-            // Too many levels to sit side by side: one per row, like the models, as buttons
-            // that apply and leave the picker open.
-            <fieldset aria-labelledby={effortId} className="flex flex-col">
-              {effort.options.map((choice) => {
-                const on = choice.value === effort.value
-                return (
-                  <MenuRow
-                    key={choice.value}
-                    as="button"
-                    selected={on}
-                    aria-pressed={on}
-                    onClick={() => gui.setAgentSetting(effort.id, choice.value)}
-                  >
-                    {effortLabel(choice)}
-                  </MenuRow>
-                )
-              })}
-            </fieldset>
-          )}
+          <SettingChoices
+            labelId={effortId}
+            choices={effort.options.map((choice) => ({
+              value: choice.value,
+              label: effortLabel(choice),
+            }))}
+            value={effort.value}
+            width={placement.width}
+            onChange={(value) => gui.setAgentSetting(effort.id, value)}
+          />
         </div>
       )}
     </Popover>,

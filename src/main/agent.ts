@@ -16,12 +16,15 @@ import { AgentMissingError, pinnedAgent, requireAgentBinary } from './agent-bina
 import {
   displayedModes,
   errorDetail,
+  findSetting,
   formQuestions,
   modeNoticeUpdate,
   type PermissionRequest,
+  parseModelSettings,
   plainAgentError,
   questionRequest,
   resumeMethods,
+  selectSetting,
 } from './agent-protocol'
 import {
   type AgentDefinition,
@@ -200,51 +203,22 @@ function signInMessage(agent: AgentDefinition, error: unknown, inApp: boolean) {
   return agent.signIn && !inApp && !agent.terminalSignIn ? `${lead} ${agent.signIn}` : lead
 }
 
+/** The models each agent's sessions last reported, by agent and then by provider. */
+const reported = new Map<AgentId, Map<string, ModelSettings>>()
+
 /**
- * The model and effort settings among an agent's session config options. Found by
- * category, since every agent names them differently (`effort`, `reasoning_effort`, …).
- * An agent may put other settings in the model category too (fx: its provider, and fast
- * mode, before the model), so one with the id `model` wins. Null when the agent offers no
- * model choice.
+ * The model list `agentId` last reported for `provider`, from any of its sessions (a chat's
+ * or a health check's) since Gui started; null when none has used that provider yet.
  */
-export function parseModelSettings(
-  configOptions: acp.SessionConfigOption[] | null | undefined,
-): ModelSettings | null {
-  const model =
-    findSetting(configOptions, (option) => option.category === 'model' && option.id === 'model') ??
-    selectSetting(configOptions, 'model')
-  return model ? { model, effort: selectSetting(configOptions, 'thought_level') } : null
+export function reportedModels(agentId: AgentId, provider: string): ModelSettings | null {
+  return reported.get(agentId)?.get(provider) ?? null
 }
 
-function selectSetting(
-  configOptions: acp.SessionConfigOption[] | null | undefined,
-  category: string,
-): AgentSetting | null {
-  return findSetting(configOptions, (option) => option.category === category)
-}
-
-/** The first select config option `match` accepts, with its choices flattened. */
-function findSetting(
-  configOptions: acp.SessionConfigOption[] | null | undefined,
-  match: (option: Record<string, unknown>) => boolean,
-): AgentSetting | null {
-  // Custom agents can send anything; a malformed list mustn't break the session.
-  if (!Array.isArray(configOptions)) return null
-  for (const option of configOptions) {
-    if (!isRecord(option) || !match(option) || option.type !== 'select') continue
-    if (typeof option.currentValue !== 'string' || !Array.isArray(option.options)) continue
-    const entries: unknown[] = option.options
-    // Grouped lists (e.g. by provider) are flattened; each choice keeps its group's name.
-    const options = entries.flatMap((entry): AgentSetting['options'] => {
-      if (isChoice(entry)) return [{ value: entry.value, name: entry.name, group: null }]
-      if (!isRecord(entry) || !Array.isArray(entry.options)) return []
-      const group = typeof entry.name === 'string' ? entry.name : null
-      const choices: unknown[] = entry.options
-      return choices.filter(isChoice).map(({ value, name }) => ({ value, name, group }))
-    })
-    return { id: option.id, value: option.currentValue, options }
-  }
-  return null
+function reportModels(agentId: AgentId, models: ModelSettings | null) {
+  if (!models?.provider) return
+  const byProvider = reported.get(agentId) ?? new Map<string, ModelSettings>()
+  byProvider.set(models.provider.value, models)
+  reported.set(agentId, byProvider)
 }
 
 /**
@@ -270,9 +244,6 @@ const settingValues = (setting: AgentSetting) => setting.options.map(({ value })
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-
-const isChoice = (value: unknown): value is { value: string; name: string } =>
-  isRecord(value) && typeof value.value === 'string' && typeof value.name === 'string'
 
 /** One ACP agent process with a single session rooted at the project. */
 export class AgentSession {
@@ -801,6 +772,7 @@ export class AgentSession {
    */
   private remember(configOptions: acp.SessionConfigOption[] | null | undefined) {
     this.configOptions = Array.isArray(configOptions) ? configOptions : []
+    reportModels(this.agentId, this.models)
     const mode = selectSetting(this.configOptions, 'mode')
     if (mode && this.modes) this.modes = { ...this.modes, currentModeId: mode.value }
   }

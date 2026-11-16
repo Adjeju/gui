@@ -1,10 +1,14 @@
 import * as acp from '@agentclientprotocol/sdk'
+import type { AgentSetting, ModelSettings } from '../shared/types'
 
 // How Gui reads what agents send where they differ from one another. No Electron here,
 // so tests can load it on its own.
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const isChoice = (value: unknown): value is { value: string; name: string } =>
+  isRecord(value) && typeof value.value === 'string' && typeof value.name === 'string'
 
 /** The values a select config option offers, with grouped lists flattened. */
 function selectValues(option: unknown): string[] {
@@ -242,4 +246,59 @@ function fieldChoices(field: Record<string, unknown>) {
   if (oneOf.length) return oneOf
   const values = list(field.enum).filter((value): value is string => typeof value === 'string')
   return values.length ? values.map((value) => ({ value, name: value })) : null
+}
+
+/**
+ * The model, effort and provider settings among an agent's session config options. Found by
+ * category, since every agent names them differently (`effort`, `reasoning_effort`, …).
+ * An agent may put other settings in the model category too (fx: its provider, and fast
+ * mode, before the model), so one with the id `model` wins. The provider is one of those
+ * others, named as one, with a choice to make. Null when the agent offers no model choice.
+ */
+export function parseModelSettings(
+  configOptions: acp.SessionConfigOption[] | null | undefined,
+): ModelSettings | null {
+  const inModels = (option: Record<string, unknown>) => option.category === 'model'
+  const named = (option: Record<string, unknown>, name: string) =>
+    [option.id, option.name].some((text) => typeof text === 'string' && text.toLowerCase() === name)
+  const found =
+    findSetting(configOptions, (option) => inModels(option) && option.id === 'provider') ??
+    findSetting(configOptions, (option) => inModels(option) && named(option, 'provider'))
+  const provider = found && found.options.length > 1 ? found : null
+  const model =
+    findSetting(configOptions, (option) => inModels(option) && option.id === 'model') ??
+    findSetting(configOptions, (option) => inModels(option) && option.id !== found?.id)
+  if (!model) return null
+  return { model, effort: selectSetting(configOptions, 'thought_level'), provider }
+}
+
+export function selectSetting(
+  configOptions: acp.SessionConfigOption[] | null | undefined,
+  category: string,
+): AgentSetting | null {
+  return findSetting(configOptions, (option) => option.category === category)
+}
+
+/** The first select config option `match` accepts, with its choices flattened. */
+export function findSetting(
+  configOptions: acp.SessionConfigOption[] | null | undefined,
+  match: (option: Record<string, unknown>) => boolean,
+): AgentSetting | null {
+  // Custom agents can send anything; a malformed list mustn't break the session.
+  if (!Array.isArray(configOptions)) return null
+  for (const option of configOptions) {
+    if (!isRecord(option) || !match(option) || option.type !== 'select') continue
+    if (typeof option.currentValue !== 'string' || !Array.isArray(option.options)) continue
+    const entries: unknown[] = option.options
+    // Grouped lists (e.g. by provider) are flattened; each choice keeps its group's name.
+    const options = entries.flatMap((entry): AgentSetting['options'] => {
+      if (isChoice(entry)) return [{ value: entry.value, name: entry.name, group: null }]
+      if (!isRecord(entry) || !Array.isArray(entry.options)) return []
+      const group = typeof entry.name === 'string' ? entry.name : null
+      const choices: unknown[] = entry.options
+      return choices.filter(isChoice).map(({ value, name }) => ({ value, name, group }))
+    })
+    return { id: option.id, value: option.currentValue, options }
+  }
+  return null
 }

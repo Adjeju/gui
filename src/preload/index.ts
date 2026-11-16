@@ -210,6 +210,7 @@ const api: GuiApi = {
   setAutoApprove: send(Send.setAutoApprove),
   setAgentSetting: send(Send.setAgentSetting),
   loadCommands: () => legacyInvoke(Invoke.loadCommands),
+  setProvider: (value) => legacyInvoke(Invoke.setProvider, value),
   startRecording: (narrate) => legacyInvoke(Invoke.startRecording, narrate === true),
   saveRecordingFrame: (id, at, jpeg) => legacyInvoke(Invoke.recordingFrame, id, at, jpeg),
   saveRecordingVideo: (id, chunk) => legacyInvoke(Invoke.recordingVideo, id, chunk),

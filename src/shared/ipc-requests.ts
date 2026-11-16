@@ -36,6 +36,7 @@ export interface AllIpcRequests {
   [Invoke.setStartCommand]: Contract<'setStartCommand'>
   [Invoke.chatSetUpAgent]: Contract<'setUpChatAgent'>
   [Invoke.loadCommands]: Contract<'loadCommands'>
+  [Invoke.setProvider]: Contract<'setProvider'>
   [Invoke.listChats]: Contract<'listChats'>
   [Invoke.openChat]: Contract<'openChat'>
   [Invoke.renameChat]: Contract<'renameChat'>

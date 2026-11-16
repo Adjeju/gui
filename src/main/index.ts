@@ -1140,6 +1140,14 @@ function registerIpc() {
   )
   handleLegacy(Invoke.chatSetUpAgent, (event) => requireTab(event).setUpAgent())
   handleLegacy(Invoke.loadCommands, (event) => tabFor(event)?.loadCommands())
+  handleLegacy(Invoke.setProvider, async (event, value: unknown) => {
+    // Only a provider the composer offers right now (see Send.setAgentSetting).
+    const tab = tabFor(event)
+    const provider = tab?.chatModels?.provider
+    if (!tab || !provider || !isString(value)) return null
+    if (!offersChoice(tab.chatModels, provider.id, value)) return null
+    return (await tab.setProvider(value)) ?? null
+  })
   const chatRequest = {
     authorize: (event: IpcMainInvokeEvent) => !!windowFor(event),
     validate: noRequestArgs,
