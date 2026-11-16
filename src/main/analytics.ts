@@ -20,9 +20,12 @@ const FLUSH_EVERY = 5 * 60 * 1000
 /** The longest quitting waits for the last events to go. */
 const QUIT_WAIT = 1000
 
-/** The install's ID and the version it last launched, in Gui's data. */
+/**
+ * The install's random ID and the version it last launched, in Gui's data. The ID is made
+ * the first time usage data is sent, so a copy that never shares it never has one.
+ */
 interface Install {
-  id: string
+  id: string | null
   version: string | null
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -31,21 +34,19 @@ let install: Install | null = null
 
 function readInstall(): Install {
   if (install) return install
+  install = { id: null, version: null }
   try {
     const saved = JSON.parse(readFileSync(installFile(), 'utf8')) as Partial<Install>
-    if (typeof saved.id === 'string' && UUID.test(saved.id)) {
-      install = { id: saved.id, version: typeof saved.version === 'string' ? saved.version : null }
-      return install
-    }
+    if (typeof saved.id === 'string' && UUID.test(saved.id)) install.id = saved.id
+    if (typeof saved.version === 'string') install.version = saved.version
   } catch {
-    // None yet, or unreadable: a new ID.
+    // None yet, or unreadable: starts again.
   }
-  install = { id: randomUUID(), version: null }
-  saveInstall()
   return install
 }
 
-function saveInstall() {
+function saveInstall(patch: Partial<Install>) {
+  install = { ...readInstall(), ...patch }
   try {
     writeFileSync(installFile(), JSON.stringify(install), { mode: 0o600 })
   } catch (error) {
@@ -53,10 +54,18 @@ function saveInstall() {
   }
 }
 
+function installId() {
+  const { id } = readInstall()
+  if (id) return id
+  const made = randomUUID()
+  saveInstall({ id: made })
+  return made
+}
+
 const queue = usageQueue({
   official: officialBuild,
   enabled: () => getPrefs().shareUsage,
-  installId: () => readInstall().id,
+  installId,
   post: (body, signal) =>
     net.fetch(ENDPOINT, {
       method: 'POST',
@@ -105,10 +114,7 @@ export function startAnalytics() {
   if (saved.version && saved.version !== version) {
     track('update_installed', { from: saved.version, to: version })
   }
-  if (saved.version !== version) {
-    install = { ...saved, version }
-    saveInstall()
-  }
+  if (saved.version !== version) saveInstall({ version })
   setInterval(() => void queue.flush(), FLUSH_EVERY).unref()
 }
 
