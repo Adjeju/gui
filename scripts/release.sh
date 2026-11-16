@@ -58,8 +58,11 @@ else
   export APPLE_KEYCHAIN_PROFILE="${APPLE_KEYCHAIN_PROFILE:-gui-notary}"
   notary="--keychain-profile $APPLE_KEYCHAIN_PROFILE"
   # shellcheck disable=SC2086
-  xcrun notarytool history $notary >/dev/null 2>&1 ||
-    fail "Notarization profile $APPLE_KEYCHAIN_PROFILE doesn't work. See the top of this script."
+  if ! said=$(xcrun notarytool history $notary 2>&1); then
+    # Apple's own reason, such as an agreement to accept, rather than only that it failed.
+    printf '%s\n' "$said" | grep -m1 '^Error' >&2 || printf '%s\n' "$said" | tail -n 1 >&2
+    fail "Notarization profile $APPLE_KEYCHAIN_PROFILE doesn't work (Apple's answer is above). An agreement is accepted at developer.apple.com, under Account; for credentials, see the top of this script."
+  fi
 fi
 (cd www && bunx wrangler r2 bucket info "$bucket" >/dev/null 2>&1) ||
   fail "Wrangler can't reach the $bucket R2 bucket. Run: cd www && bunx wrangler login"
