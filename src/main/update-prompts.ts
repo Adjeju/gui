@@ -22,7 +22,7 @@ export interface UpdatePromptsOptions {
   }
   /** The version that's running */
   version(): string
-  /** Squirrel.Mac can't replace a Gui run from its disk image or from Downloads. */
+  /** Squirrel.Mac can't replace a Gui run from its disk image or from Downloads. True on Linux. */
   inApplications(): boolean
   /** Calls `run` once a restart has had long enough to happen; must not keep Gui alive. */
   afterRestartWait(run: () => void): void
