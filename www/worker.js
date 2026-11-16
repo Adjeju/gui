@@ -5,7 +5,9 @@
 // an update downloads only what changed and an interrupted download can resume. /downloads is
 // that count as one number, for the homepage. /waitlist adds an address to the Windows and
 // Linux waitlist in the same database, and /crash keeps the crash reports installed copies send
-// (src/main/crash-reports.ts). Everything else is the static site in dist/ (with dist/404.html
+// (src/main/crash-reports.ts). /t/v1 takes the app's usage events (src/main/analytics.ts) and
+// passes the ones it knows on to PostHog, so where they are kept can change here without a
+// new app; update feed requests are counted the same way. Everything else is the static site in dist/ (with dist/404.html
 // for pages that don't exist); its videos are sent in parts too.
 
 /** What /download serves: the copy of the newest DMG every release uploads, alpha or stable. */
@@ -35,7 +37,14 @@ const DOWNLOAD_ALPHA = 'Gui-alpha-arm64.dmg'
  *   run(): Promise<{ meta: { changes: number } }>
  * }} D1Statement
  * @typedef {{ prepare(sql: string): D1Statement }} D1Database
- * @typedef {{ ASSETS: { fetch: typeof fetch }, RELEASES: R2Bucket, DB: D1Database }} Env
+ * @typedef {{
+ *   ASSETS: { fetch: typeof fetch }
+ *   RELEASES: R2Bucket
+ *   DB: D1Database
+ *   POSTHOG_KEY?: string
+ *   POSTHOG_HOST?: string
+ *   ANALYTICS?: string
+ * }} Env
  * @typedef {{ waitUntil(promise: Promise<unknown>): void }} Context
  */
 export default {
@@ -65,8 +74,13 @@ export default {
     if (url.pathname === '/downloads') return countedDownloads(request, env, ctx)
     if (url.pathname === '/waitlist' && request.method === 'POST') return waitlist(request, env)
     if (url.pathname === '/crash' && request.method === 'POST') return crash(request, env)
+    if (url.pathname === '/t/v1' && request.method === 'POST') return usage(request, env, ctx)
     const file = url.pathname.match(/^\/releases\/([\w.-]+)$/)?.[1]
-    if (file) return release(request, env, file)
+    if (file) {
+      if (file.endsWith('.yml') && request.method === 'GET')
+        countUpdateCheck(request, env, ctx, file)
+      return release(request, env, file)
+    }
     const asset = await env.ASSETS.fetch(request)
     const video = url.pathname.startsWith('/video/')
     return secure(video ? await inParts(request, asset) : asset, url.pathname)
@@ -334,6 +348,169 @@ async function crash(request, env) {
     )
     .run()
   return new Response(null, { status: 204 })
+}
+
+/**
+ * The usage events the app may send, and the props each may carry: a pattern each value must
+ * match, or the values it may be. Anything else (an event or prop not listed here, a value
+ * that doesn't fit) is dropped, never kept. None of them can hold a path, a name, an address,
+ * or anything the user wrote.
+ */
+const VERSION = /^[\w.+-]{1,40}$/
+const NAME = /^[a-z][\w-]{0,39}$/
+/** @type {Record<string, Record<string, RegExp | string[]>>} */
+const EVENTS = {
+  app_opened: { version: VERSION, os: NAME, osVersion: VERSION, arch: NAME },
+  turn_finished: { agent: NAME, outcome: ['done', 'failed', 'stopped'], provider: NAME },
+  project_opened: {},
+  canvas_created: {},
+  preview_opened: {},
+  agent_connected: { agent: NAME },
+  update_installed: { from: VERSION, to: VERSION },
+}
+/** A batch is a few kilobytes; much more isn't one. */
+const MAX_USAGE_BYTES = 64_000
+const MAX_USAGE_EVENTS = 100
+const INSTALL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** An event's time, if it's one the app could have queued: no older than a week, not ahead. */
+const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * The kill switch, `ANALYTICS` in wrangler.jsonc: unset to keep everything, `off` to keep
+ * nothing (the app stops sending until it next launches), or a comma list of events to drop.
+ * @param {Env} env
+ */
+function usageSwitch(env) {
+  const value = (env.ANALYTICS ?? '').trim()
+  if (value === 'off') return { off: true, dropped: new Set() }
+  return { off: false, dropped: new Set(value.split(',').map((name) => name.trim())) }
+}
+
+/**
+ * Takes a batch of the app's usage events: `{ installId, events: [{ event, at, props }] }`.
+ * The ones it knows go on to PostHog after the reply; the rest are dropped.
+ * @param {Request} request @param {Env} env @param {Context} ctx
+ */
+async function usage(request, env, ctx) {
+  const { off, dropped } = usageSwitch(env)
+  if (off) return Response.json({ stop: true })
+  const text = await request.text()
+  if (text.length > MAX_USAGE_BYTES) return new Response(null, { status: 413 })
+  /** @type {any} */
+  const batch = (() => {
+    try {
+      return JSON.parse(text)
+    } catch {
+      return null
+    }
+  })()
+  const installId = batch?.installId
+  if (
+    typeof installId !== 'string' ||
+    !INSTALL_ID.test(installId) ||
+    !Array.isArray(batch.events)
+  ) {
+    return new Response(null, { status: 400 })
+  }
+  const place = country(request)
+  const events = []
+  for (const raw of batch.events.slice(0, MAX_USAGE_EVENTS)) {
+    const kept = usageEvent(raw, dropped)
+    if (!kept) continue
+    const props = { ...kept.props, country: place }
+    events.push(posthogEvent(kept.event, installId.toLowerCase(), kept.at, props))
+  }
+  if (events.length > 0) ctx.waitUntil(forward(env, events))
+  return new Response(null, { status: 204 })
+}
+
+/**
+ * One event as the app sent it, with only the props its event allows; null for an event this
+ * doesn't know or that was switched off.
+ * @param {unknown} raw @param {Set<string>} dropped
+ */
+function usageEvent(raw, dropped) {
+  if (!raw || typeof raw !== 'object') return null
+  const { event, at, props } = /** @type {Record<string, unknown>} */ (raw)
+  if (typeof event !== 'string' || !Object.hasOwn(EVENTS, event) || dropped.has(event)) return null
+  const allowed = EVENTS[event]
+  /** @type {Record<string, string>} */
+  const kept = {}
+  if (props && typeof props === 'object') {
+    for (const [key, value] of Object.entries(props)) {
+      const rule = Object.hasOwn(allowed, key) ? allowed[key] : null
+      if (!rule || typeof value !== 'string') continue
+      if (Array.isArray(rule) ? rule.includes(value) : rule.test(value)) kept[key] = value
+    }
+  }
+  const now = Date.now()
+  const time = typeof at === 'number' && at > now - MAX_AGE_MS && at <= now ? at : now
+  return { event, at: time, props: kept }
+}
+
+/**
+ * An event in PostHog's shape, with nothing that identifies the person: no IP (the request
+ * PostHog sees is this worker's anyway), no location looked up from one, and no person
+ * profile. `distinctId` is the install's random ID, or a fixed one for update checks.
+ * @param {string} event @param {string} distinctId @param {number} at
+ * @param {Record<string, string | null>} props
+ */
+function posthogEvent(event, distinctId, at, props) {
+  return {
+    event,
+    distinct_id: distinctId,
+    timestamp: new Date(at).toISOString(),
+    properties: {
+      ...props,
+      $ip: null,
+      $geoip_disable: true,
+      $process_person_profile: false,
+    },
+  }
+}
+
+/**
+ * Sends events to PostHog's batch API. Without POSTHOG_KEY (before the secret is set) they
+ * are dropped. A failure is logged here; the app never hears of it.
+ * @param {Env} env @param {object[]} events
+ */
+async function forward(env, events) {
+  if (!env.POSTHOG_KEY) return
+  const host = env.POSTHOG_HOST ?? 'https://us.i.posthog.com'
+  try {
+    const response = await fetch(`${host}/batch/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ api_key: env.POSTHOG_KEY, batch: events }),
+    })
+    if (!response.ok) console.error('usage forward failed', response.status)
+  } catch (error) {
+    console.error('usage forward failed', error)
+  }
+}
+
+/**
+ * An installed Gui asked the update feed for news: counted as an `update_check`, with the
+ * feed's name, Gui's version (the app sends `Gui/<version>` as its user agent), and the
+ * country. No install ID, so every check is one anonymous ID. Sent after the feed's reply;
+ * nothing here can slow or fail it.
+ * @param {Request} request @param {Env} env @param {Context} ctx @param {string} feed
+ */
+function countUpdateCheck(request, env, ctx, feed) {
+  try {
+    if (!env.POSTHOG_KEY) return
+    const { off, dropped } = usageSwitch(env)
+    if (off || dropped.has('update_check')) return
+    const version = request.headers.get('user-agent')?.match(/\bGui\/([\w.+-]{1,40})/)?.[1] ?? null
+    const event = posthogEvent('update_check', 'update-feed', Date.now(), {
+      feed,
+      version,
+      country: country(request),
+    })
+    ctx.waitUntil(forward(env, [event]))
+  } catch (error) {
+    console.error('update check count failed', error)
+  }
 }
 
 /** The two-letter country Cloudflare gives each request, if any. */

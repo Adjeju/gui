@@ -21,6 +21,11 @@
       "migrations_dir": "migrations"
     }
   ],
+  // The app's usage events (/t/v1) and update-feed counts go on to PostHog with the
+  // POSTHOG_KEY secret (`wrangler secret put POSTHOG_KEY`); without it they are dropped.
+  // ANALYTICS is the kill switch: "on" keeps them, "off" stops every copy of the app from
+  // sending until it next launches, and a comma list of event names drops just those.
+  "vars": { "ANALYTICS": "on" },
   "routes": [
     { "pattern": "usegui.com", "custom_domain": true },
     { "pattern": "www.usegui.com", "custom_domain": true }

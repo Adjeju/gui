@@ -451,3 +451,270 @@ test('pages are not cut into parts', async () => {
   expect(response.headers.get('cache-control')).toBe('no-cache')
   expect(await response.text()).toBe('site')
 })
+
+const INSTALL = '0f8e2a4c-5b1d-4e7f-9a3b-6c2d8e0f1a2b'
+/** What was sent to PostHog: each request's URL and body. */
+let forwarded = /** @type {{ url: string, body: any }[]} */ ([])
+const realFetch = globalThis.fetch
+
+/** PostHog, which takes everything; `fails` makes it unreachable. */
+function posthog({ fails = false } = {}) {
+  forwarded = []
+  globalThis.fetch = /** @type {typeof fetch} */ (
+    /** @type {unknown} */ (
+      async (/** @type {string} */ url, /** @type {RequestInit} */ init) => {
+        if (fails) throw new Error('posthog unreachable')
+        forwarded.push({ url: String(url), body: JSON.parse(String(init.body)) })
+        return new Response('{}')
+      }
+    )
+  )
+}
+
+afterEach(() => {
+  globalThis.fetch = realFetch
+})
+
+/** @param {unknown} body @param {Record<string, string>} [headers] */
+const sendUsage = (body, headers = {}) => {
+  const request = new Request('https://usegui.com/t/v1', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  })
+  Object.defineProperty(request, 'cf', { value: { country: 'NZ' } })
+  return worker.fetch(request, env, ctx)
+}
+
+const sent = async () => {
+  await Promise.all(pending)
+  return forwarded.flatMap((request) => request.body.batch)
+}
+
+test('usage events the app knows go to PostHog under the install ID, with the country', async () => {
+  posthog()
+  env.POSTHOG_KEY = 'phc_test'
+  const at = Date.now() - 60_000
+  const response = await sendUsage({
+    installId: INSTALL,
+    events: [
+      {
+        event: 'app_opened',
+        at,
+        props: { version: '0.1.0-alpha.22', os: 'darwin', osVersion: '26.1', arch: 'arm64' },
+      },
+      {
+        event: 'turn_finished',
+        at,
+        props: { agent: 'claude', outcome: 'done', provider: 'gateway' },
+      },
+      { event: 'project_opened', at },
+    ],
+  })
+  expect(response.status).toBe(204)
+  // After the reply, not before it.
+  expect(pending.length).toBeGreaterThan(0)
+  const events = await sent()
+  expect(forwarded[0].url).toBe('https://us.i.posthog.com/batch/')
+  expect(forwarded[0].body.api_key).toBe('phc_test')
+  expect(events.map((/** @type {any} */ e) => e.event)).toEqual([
+    'app_opened',
+    'turn_finished',
+    'project_opened',
+  ])
+  expect(events[0].distinct_id).toBe(INSTALL)
+  expect(events[0].timestamp).toBe(new Date(at).toISOString())
+  expect(events[0].properties).toEqual({
+    version: '0.1.0-alpha.22',
+    os: 'darwin',
+    osVersion: '26.1',
+    arch: 'arm64',
+    country: 'NZ',
+    $ip: null,
+    $geoip_disable: true,
+    $process_person_profile: false,
+  })
+  expect(events[1].properties.provider).toBe('gateway')
+})
+
+test('unknown events, unknown props and values that do not fit are dropped, not the batch', async () => {
+  posthog()
+  env.POSTHOG_KEY = 'phc_test'
+  const response = await sendUsage({
+    installId: INSTALL,
+    events: [
+      { event: 'file_opened', props: { path: '/Users/someone/secret.txt' } },
+      {
+        event: 'turn_finished',
+        props: {
+          agent: 'claude',
+          outcome: 'exploded',
+          provider: 'https://evil.example/x',
+          prompt: 'hi',
+        },
+      },
+      { event: 'agent_connected', props: { agent: 'Custom Agent With Spaces' } },
+      { event: 'canvas_created', props: { name: 'My canvas' } },
+      { event: 'update_installed', props: { from: 1, to: '0.1.0-alpha.22' } },
+      'nonsense',
+      null,
+    ],
+  })
+  expect(response.status).toBe(204)
+  const events = await sent()
+  expect(events.map((/** @type {any} */ e) => e.event)).toEqual([
+    'turn_finished',
+    'agent_connected',
+    'canvas_created',
+    'update_installed',
+  ])
+  const { $ip, $geoip_disable, $process_person_profile, country, ...turn } = events[0].properties
+  expect(turn).toEqual({ agent: 'claude' })
+  expect(Object.keys(events[1].properties)).not.toContain('agent')
+  expect(Object.keys(events[2].properties)).not.toContain('name')
+  expect(events[3].properties.to).toBe('0.1.0-alpha.22')
+  expect(Object.keys(events[3].properties)).not.toContain('from')
+  expect(JSON.stringify(events)).not.toContain('secret')
+  expect(JSON.stringify(events)).not.toContain('evil')
+})
+
+test('a batch is capped, and an event time that could not be real is now', async () => {
+  posthog()
+  env.POSTHOG_KEY = 'phc_test'
+  const events = Array.from({ length: 150 }, () => ({ event: 'preview_opened', at: 1 }))
+  const before = Date.now()
+  await sendUsage({ installId: INSTALL, events })
+  const kept = await sent()
+  expect(kept).toHaveLength(100)
+  expect(Date.parse(kept[0].timestamp)).toBeGreaterThanOrEqual(before - 1000)
+})
+
+test('a batch that is not one is refused, and nothing is sent', async () => {
+  posthog()
+  env.POSTHOG_KEY = 'phc_test'
+  expect((await sendUsage('not json')).status).toBe(400)
+  expect((await sendUsage({ installId: 'someone@example.com', events: [] })).status).toBe(400)
+  expect((await sendUsage({ installId: INSTALL, events: 'app_opened' })).status).toBe(400)
+  const huge = {
+    installId: INSTALL,
+    events: [{ event: 'app_opened', props: { x: 'a'.repeat(70_000) } }],
+  }
+  expect((await sendUsage(huge)).status).toBe(413)
+  expect(await sent()).toEqual([])
+})
+
+test('the client IP is never forwarded', async () => {
+  posthog()
+  env.POSTHOG_KEY = 'phc_test'
+  await sendUsage(
+    { installId: INSTALL, events: [{ event: 'project_opened' }] },
+    { 'cf-connecting-ip': '203.0.113.7', 'x-forwarded-for': '203.0.113.7' },
+  )
+  await Promise.all(pending)
+  expect(forwarded).toHaveLength(1)
+  expect(JSON.stringify(forwarded)).not.toContain('203.0.113.7')
+  expect(forwarded[0].body.batch[0].properties.$ip).toBeNull()
+})
+
+test('without a PostHog key, events are accepted and dropped', async () => {
+  posthog()
+  const response = await sendUsage({ installId: INSTALL, events: [{ event: 'project_opened' }] })
+  expect(response.status).toBe(204)
+  await Promise.all(pending)
+  expect(forwarded).toEqual([])
+})
+
+test('PostHog failing is logged, not the app’s problem', async () => {
+  posthog({ fails: true })
+  env.POSTHOG_KEY = 'phc_test'
+  const error = console.error
+  console.error = () => {}
+  try {
+    const response = await sendUsage({ installId: INSTALL, events: [{ event: 'project_opened' }] })
+    expect(response.status).toBe(204)
+    await Promise.all(pending)
+  } finally {
+    console.error = error
+  }
+})
+
+test('the kill switch: off tells the app to stop; a list drops just those events', async () => {
+  posthog()
+  env.POSTHOG_KEY = 'phc_test'
+  env.ANALYTICS = 'off'
+  const stopped = await sendUsage({ installId: INSTALL, events: [{ event: 'project_opened' }] })
+  expect(stopped.status).toBe(200)
+  expect(await stopped.json()).toEqual({ stop: true })
+  expect(await sent()).toEqual([])
+
+  env.ANALYTICS = 'turn_finished, project_opened'
+  const response = await sendUsage({
+    installId: INSTALL,
+    events: [{ event: 'project_opened' }, { event: 'canvas_created' }, { event: 'turn_finished' }],
+  })
+  expect(response.status).toBe(204)
+  expect((await sent()).map((/** @type {any} */ e) => e.event)).toEqual(['canvas_created'])
+
+  env.ANALYTICS = 'on'
+  await sendUsage({ installId: INSTALL, events: [{ event: 'project_opened' }] })
+  expect((await sent()).map((/** @type {any} */ e) => e.event)).toEqual([
+    'canvas_created',
+    'project_opened',
+  ])
+})
+
+test('an update check is counted without an install ID, with the version Gui sends', async () => {
+  posthog()
+  env.POSTHOG_KEY = 'phc_test'
+  const request = new Request('https://usegui.com/releases/alpha-mac.yml', {
+    headers: { 'user-agent': 'Gui/0.1.0-alpha.21', 'x-user-staging-id': 'abc' },
+  })
+  Object.defineProperty(request, 'cf', { value: { country: 'NZ' } })
+  const response = await worker.fetch(request, env, ctx)
+  expect(await response.text()).toBe('version: 0.1.0-alpha.15')
+  const [event] = await sent()
+  expect(event.event).toBe('update_check')
+  expect(event.distinct_id).toBe('update-feed')
+  const { $ip, $geoip_disable, $process_person_profile, ...props } = event.properties
+  expect(props).toEqual({ feed: 'alpha-mac.yml', version: '0.1.0-alpha.21', country: 'NZ' })
+  expect($ip).toBeNull()
+  expect($process_person_profile).toBe(false)
+  expect(JSON.stringify(event)).not.toContain('abc')
+})
+
+test('builds and HEADs of the feed are not counted as checks', async () => {
+  posthog()
+  env.POSTHOG_KEY = 'phc_test'
+  await get(`/releases/${ZIP}`)
+  await get('/releases/alpha-mac.yml', {}, 'HEAD')
+  expect(await sent()).toEqual([])
+})
+
+test('the update feed is served when counting it fails, and counts nothing without a key', async () => {
+  posthog({ fails: true })
+  env.POSTHOG_KEY = 'phc_test'
+  const error = console.error
+  console.error = () => {}
+  try {
+    const response = await get('/releases/alpha-mac.yml')
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('version: 0.1.0-alpha.15')
+    await Promise.all(pending)
+    // A waitUntil that throws can't take the feed down either.
+    const throwing = {
+      waitUntil() {
+        throw new Error('no context')
+      },
+    }
+    const request = new Request('https://usegui.com/releases/alpha-mac.yml')
+    const feed = await worker.fetch(request, env, throwing)
+    expect(await feed.text()).toBe('version: 0.1.0-alpha.15')
+  } finally {
+    console.error = error
+  }
+
+  posthog()
+  delete env.POSTHOG_KEY
+  await get('/releases/alpha-mac.yml')
+  expect(await sent()).toEqual([])
+})
