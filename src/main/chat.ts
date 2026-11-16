@@ -55,6 +55,7 @@ import {
   opensWebsites,
   type PermissionPolicy,
 } from './agents'
+import { trackTurn } from './analytics'
 import { autoApproval, isAutoApprove, requestPaths, SENSITIVE_PATH } from './auto-approve'
 import { availableModels, chosenValue, offersChoice, withChoices } from './chat-models'
 import { type EditScope, isFromHome, isOutside, projectEditPath } from './chat-paths'
@@ -1855,6 +1856,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       // Only now is the turn over; reporting it earlier would let a send race the snapshot.
       record.turn.status = status
       record.turn.endedAt = Date.now()
+      trackTurn(this.meta.agentId, status, this.meta.models?.provider?.value)
       if (this.active === record) this.active = null
       if (this.lock === record) this.lock = null
       const retryable = status === 'error' && this.lastSent?.turnId === record.turn.id

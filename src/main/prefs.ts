@@ -44,6 +44,8 @@ export interface Prefs {
   autoNoteSeen: boolean
   /** Installed copies send a report when Gui itself fails (crash-reports.ts) */
   crashReports: boolean
+  /** Installed copies send anonymous usage events (analytics.ts) */
+  shareUsage: boolean
   /** What Enter does while the agent works (ChatMeta.whileWorking) */
   whileWorking: WhileWorking
   /** The rulers and guides over the preview are showing (⇧R) */
@@ -69,6 +71,7 @@ const DEFAULTS: Prefs = {
   askRoots: [],
   autoNoteSeen: false,
   crashReports: true,
+  shareUsage: true,
   whileWorking: 'queue',
   rulers: false,
   guides: {},
@@ -185,6 +188,7 @@ export function getPrefs(): Prefs {
       autoNoteSeen: parsed.autoNoteSeen === true,
       crashReports:
         typeof parsed.crashReports === 'boolean' ? parsed.crashReports : DEFAULTS.crashReports,
+      shareUsage: typeof parsed.shareUsage === 'boolean' ? parsed.shareUsage : DEFAULTS.shareUsage,
       whileWorking: parsed.whileWorking === 'steer' ? 'steer' : 'queue',
       rulers: parsed.rulers === true,
       guides: guides(parsed.guides),
@@ -228,7 +232,7 @@ const writer = new CoalescedFile(
 /**
  * Readers see the change at once (`getPrefs`, `prefsEvents`). The file follows off the main
  * thread, so a busy disk can't hold up a dock or a drag. Its write starts as soon as the
- * caller returns, with no timer to wait for: Auto or crash reports switched off, which a
+ * caller returns, with no timer to wait for: Auto, crash reports or usage data switched off, which a
  * crash mustn't undo, is on disk as soon as any other change. A crash can lose only the
  * change being written; quitting writes it (`flushPrefsSync`).
  */

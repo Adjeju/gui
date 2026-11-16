@@ -47,6 +47,8 @@ function loadUpdater() {
     const { autoUpdater } = module.default
     autoUpdater.autoDownload = true
     autoUpdater.autoInstallOnAppQuit = true
+    // So usegui.com can count update checks by version (www/worker.js); nothing else about the user.
+    autoUpdater.requestHeaders = { 'User-Agent': `Gui/${app.getVersion()}` }
     autoUpdater.on('update-downloaded', (info) => prompts.downloaded(info.version))
     autoUpdater.on('error', failed)
     // electron-updater hands each download to Squirrel.Mac, Electron's own updater, which

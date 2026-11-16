@@ -16,6 +16,8 @@ import {
   requireAgentBinary,
 } from './agent-binaries'
 import { type AgentDefinition, listAgents } from './agents'
+import { track } from './analytics'
+import { usageAgent } from './analytics-queue'
 import { describeError } from './errors'
 import { getPrefs, isAgentEnabled, prefsEvents, savedAgentSettings } from './prefs'
 import type { ChildProcess } from './process'
@@ -44,6 +46,13 @@ const TERMINAL_SIGN_IN = 'gui:terminal'
 const PINNED: readonly AgentId[] = ['claude', 'codex']
 /** Download progress is pushed to every window; a 100 MB download has thousands of chunks. */
 const PROGRESS_INTERVAL_MS = 150
+/** An agent that becomes ready from one of these was just connected (usage data, analytics.ts). */
+const NOT_CONNECTED = new Set<AgentHealth['status']>([
+  'not-installed',
+  'installing',
+  'signed-out',
+  'signing-in',
+])
 
 const noopHandlers = {
   onUpdate: () => undefined,
@@ -439,6 +448,8 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
 
   private async probe(id: AgentId, authenticate: string | undefined) {
     const pinned = pinnedAgent(id)
+    /** It wasn't usable before this check: installing, or signing in. */
+    const connecting = NOT_CONNECTED.has(this.health.get(id)?.status ?? 'unknown')
     if (!pinned && this.health.get(id)?.status === 'not-installed') return
     this.set(id, {
       status: authenticate ? 'signing-in' : 'checking',
@@ -492,6 +503,7 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
         signIn: null,
         models: info.models,
       })
+      if (connecting) track('agent_connected', { agent: usageAgent(id) })
     } catch (error) {
       if (error instanceof AgentAuthError) {
         this.signedOut(id, error)

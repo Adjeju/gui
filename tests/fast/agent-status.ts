@@ -24,6 +24,9 @@ let scanning: Promise<void> = Promise.resolve()
 mock.module('electron', () => ({
   app: { getPath: () => userData },
   shell: { openExternal: async () => undefined },
+  // Usage data (analytics.ts), which a build from source never sends.
+  net: {},
+  powerMonitor: {},
 }))
 mock.module('../../src/main/agents', () => ({
   listAgents: async () => {

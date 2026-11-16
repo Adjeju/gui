@@ -86,6 +86,7 @@ import { registerAccountIpc } from './account-ipc'
 import { killStoppedAgents } from './agent'
 import { agentHealth } from './agent-status'
 import { agentMenuItems, openCustomAgents } from './agents'
+import { sendUsageBeforeQuit, startAnalytics, track } from './analytics'
 import {
   boardIdOf,
   boardRoot,
@@ -154,6 +155,7 @@ import {
   setChatSidebarSide,
   setCrashReports,
   setDefaultAgent,
+  setShareUsage,
   setWhileWorking,
   untrustProject,
   watchSettings,
@@ -547,6 +549,7 @@ async function newBoard(target: ProjectWindow | undefined) {
     // In Gui's data, a canvas's folder is named by its id, whatever it's called.
     const own = inBoardsDir(filePath)
     const root = own ? await createBoard(name) : await createCanvasFolder(filePath, name)
+    track('canvas_created')
     setPrefs({ canvasFolder: own ? null : dirname(root) })
     await openCanvasAt(target, root)
   } catch (error) {
@@ -1429,6 +1432,7 @@ function registerIpc() {
     if (side === 'left' || side === 'right') setChatSidebarSide(side)
   })
   onSettings(Send.setCrashReports, (on) => typeof on === 'boolean' && setCrashReports(on))
+  onSettings(Send.setShareUsage, (on) => typeof on === 'boolean' && setShareUsage(on))
   onSettings(Send.setWhileWorking, (choice) => {
     if (choice === 'queue' || choice === 'steer') setWhileWorking(choice)
   })
@@ -2275,10 +2279,13 @@ if (!app.requestSingleInstanceLock()) {
     if (folder) openSafely(win, folder)
     afterFirstWindow(win.win, () => {
       startUpdates()
+      startAnalytics()
       preloadMcpSdk()
     })
   })
 
+  // First: it holds the quit (for at most a second) while the last usage events go.
+  app.on('before-quit', sendUsageBeforeQuit)
   app.on('before-quit', shutdown)
   app.on('will-quit', shutdown)
 

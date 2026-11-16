@@ -83,6 +83,7 @@ import {
 import { agentHealth } from './agent-status'
 import { AgentViewport, viewportForWidth } from './agent-viewport'
 import { agentChoices, declaresOwnPermissions } from './agents'
+import { track } from './analytics'
 import { isAutoApprove, setAutoApprove as saveAutoApprove } from './auto-approve'
 import { boardIdOf, canvasId, listBoards, viewFile, writeManifest } from './board'
 import { copyFrames, pastedFrames } from './board-clipboard'
@@ -985,6 +986,7 @@ export class ProjectTab implements ChatPanelOwner {
 
       this.patch({ project, setup, devServer: devServer.state, drawer: closedDrawer(), branch })
       this.layout()
+      track('project_opened')
 
       if (!project.devCommand && !choosing) this.watchForApp(project.root)
 
@@ -2154,6 +2156,7 @@ export class ProjectTab implements ChatPanelOwner {
     const wasRunning = this.state.devServer.status === 'running'
     this.patch({ devServer: state })
     if (state.status === 'running' && state.url && !wasRunning) {
+      track('preview_opened')
       void this.loadPreview(state.url)
     } else if (state.status === 'exited') {
       // Its last page no longer updates: it stays dimmed under the card that says it stopped,

@@ -205,6 +205,7 @@ export const Send = {
   setChatDocked: 'settings:chat-docked',
   setChatSidebarSide: 'settings:chat-sidebar-side',
   setCrashReports: 'settings:crash-reports',
+  setShareUsage: 'settings:share-usage',
   setWhileWorking: 'settings:while-working',
   reportError: 'app:report-error',
   openCustomAgentsFile: 'settings:open-agents-file',
@@ -842,6 +843,7 @@ export interface GuiApi {
   setChatDocked(docked: boolean): void
   setChatSidebarSide(side: 'left' | 'right'): void
   setCrashReports(on: boolean): void
+  setShareUsage(on: boolean): void
   /** What Enter does while the agent works: queue the message, or steer the reply under way */
   setWhileWorking(choice: WhileWorking): void
   /** Agents outside Gui may use its tools; resolves once it listens (or failed to: see Settings) */

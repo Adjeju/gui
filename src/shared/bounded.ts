@@ -147,3 +147,10 @@ export function boundedTool<T extends ToolText>(tool: T): T {
   }
   return bounded
 }
+
+/**
+ * Usage events (main/analytics.ts) waiting to be sent, including ones a failed send kept for
+ * the next try; past it the oldest go. One request carries at most a batch of them.
+ */
+export const MAX_QUEUED_USAGE_EVENTS = 500
+export const USAGE_BATCH = 100

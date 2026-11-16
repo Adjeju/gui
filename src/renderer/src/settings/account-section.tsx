@@ -13,7 +13,7 @@ import { IdentityCard, IdentityTile, SettingsGroup } from './settings-group'
 /** Said when the user closes the browser sign-in themselves: not an error. */
 const SIGN_IN_CANCELLED = 'Sign-in was cancelled.'
 
-/** Settings → Account: the Gui account, and the crash reports Gui sends (signed in or not). */
+/** Settings → Account: the Gui account, and the crash reports and usage data Gui sends (signed in or not). */
 export function AccountSection({ settings }: { settings: SettingsState }) {
   return (
     <>
@@ -42,12 +42,12 @@ export function AccountSection({ settings }: { settings: SettingsState }) {
           </a>
         </p>
       </SettingsGroup>
-      <CrashReports on={settings.crashReports} />
+      <Privacy crashReports={settings.crashReports} shareUsage={settings.shareUsage} />
     </>
   )
 }
 
-function CrashReports({ on }: { on: boolean }) {
+function Privacy({ crashReports, shareUsage }: { crashReports: boolean; shareUsage: boolean }) {
   return (
     <SettingsGroup heading="Privacy">
       <List>
@@ -56,10 +56,22 @@ function CrashReports({ on }: { on: boolean }) {
           detail="When Gui has an error, it sends the error and the Gui and macOS versions to the Gui team. Never your code, files, or chats."
           trailing={
             <Switch
-              checked={on}
+              checked={crashReports}
               onCheckedChange={(value) => gui.setCrashReports(value)}
               id="crash-reports"
               label="Send crash reports"
+            />
+          }
+        />
+        <ListItem
+          heading={<label htmlFor="share-usage">Share usage data</label>}
+          detail="Gui counts a few things, like opening a project or finishing a message, under a random ID that isn’t your account. Never your code, files, or chats."
+          trailing={
+            <Switch
+              checked={shareUsage}
+              onCheckedChange={(value) => gui.setShareUsage(value)}
+              id="share-usage"
+              label="Share usage data"
             />
           }
         />

@@ -1395,6 +1395,8 @@ export interface SettingsState {
   home: string
   /** Gui sends a report when it fails */
   crashReports: boolean
+  /** Gui sends anonymous usage events */
+  shareUsage: boolean
   /** What a message sent while the agent works does (see ChatMeta.whileWorking) */
   whileWorking: WhileWorking
   /** Agents outside Gui may use its tools (main/outside-agents.ts) */

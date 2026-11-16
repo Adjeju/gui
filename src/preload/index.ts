@@ -237,6 +237,7 @@ const api: GuiApi = {
   setChatDocked: send(Send.setChatDocked),
   setChatSidebarSide: send(Send.setChatSidebarSide),
   setCrashReports: send(Send.setCrashReports),
+  setShareUsage: send(Send.setShareUsage),
   setWhileWorking: send(Send.setWhileWorking),
   reportError: send(Send.reportError),
   saveCustomAgent: (originalName, entry) =>

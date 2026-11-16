@@ -13,6 +13,7 @@ import {
 } from '../shared/types'
 import { agentHealth } from './agent-status'
 import { customAgentEntries, deleteCustomAgent, saveCustomAgent } from './agents'
+import { clearUsage } from './analytics'
 import { archiveStoredChat, historyFile } from './history'
 import { windowChrome } from './os'
 import { outsideAgentsState } from './outside-agents'
@@ -123,6 +124,7 @@ async function buildState(): Promise<SettingsState> {
     openProjects: openRoots(),
     home: app.getPath('home'),
     crashReports: prefs.crashReports,
+    shareUsage: prefs.shareUsage,
     whileWorking: prefs.whileWorking,
     outsideAgents: outsideAgentsState(),
   }
@@ -166,6 +168,12 @@ export function setChatDocked(docked: boolean) {
 
 export function setCrashReports(on: boolean) {
   setPrefs({ crashReports: on })
+}
+
+/** Off: what's waiting to be sent goes too. */
+export function setShareUsage(on: boolean) {
+  setPrefs({ shareUsage: on })
+  if (!on) clearUsage()
 }
 
 /** Open chats follow it at once (ChatController listens for prefs changes). */
