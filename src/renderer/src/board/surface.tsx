@@ -8,10 +8,11 @@ import {
 } from 'react'
 import type { BoardCamera } from '../../../shared/board'
 import { Card } from '../lib/surface'
+import type { BoardBackend, BoardBackendHooks, BoardSources } from './backend'
 import { BoardRenderer } from './gl/renderer'
-import { readInks } from './gl/theme'
 import { sharpTile } from './intents'
 import type { SceneInput } from './scene'
+import { readInks } from './theme'
 
 /*
  * The canvas the board's pixels are drawn on, and when: React says what's on the board (each
@@ -20,7 +21,8 @@ import type { SceneInput } from './scene'
  * the canvas does, as it did when it drew the frames itself. Each frame's tile in that DOM
  * says which thumbnail the canvas holds for it (`data-thumb`, its width in pixels, 0 for
  * none), and the scale of the sharp tile drawn over it zoomed in (`data-sharp`, sharp.ts, 0
- * for none), for tests and for anyone inspecting the board.
+ * for none), for tests and for anyone inspecting the board. What draws is a backend
+ * (backend.ts); the canvas says which (`data-board-backend`).
  */
 
 /** A spare buffer of the canvas's is given back once nothing has been drawn for this long. */
@@ -113,25 +115,37 @@ export function BoardSurface({
     if (!el) return
     let frame = 0
     let timer: ReturnType<typeof setTimeout> | undefined
+    let trimmer: ReturnType<typeof setTimeout> | undefined
+    let restoring: ReturnType<typeof setTimeout> | undefined
+    let backend: BoardBackend | null = null
     const invalidate = () => {
-      if (!frame) frame = requestAnimationFrame(() => draw())
+      if (!frame && backend) frame = requestAnimationFrame(() => draw())
     }
-    let renderer: BoardRenderer
-    try {
-      renderer = new BoardRenderer(
-        el,
-        (want) =>
-          `${latest.current.thumbs}/${want.id}${want.source === 'small' ? '.small' : ''}?v=${want.version}`,
-        (tile, signal) => sharpTile(latest.current.board, tile, signal),
-        invalidate,
-      )
-    } catch {
-      latest.current.onUnavailable()
-      return
+    const hooks: BoardBackendHooks = {
+      changed: invalidate,
+      lost: () => {
+        invalidate()
+        clearTimeout(restoring)
+        restoring = setTimeout(() => latest.current.onUnavailable(), RESTORE_WAIT_MS)
+      },
+      restored: () => {
+        clearTimeout(restoring)
+        invalidate()
+      },
+      failed: () => {
+        clearTimeout(restoring)
+        latest.current.onUnavailable()
+      },
     }
+    const sources: BoardSources = {
+      thumbUrl: (want) =>
+        `${latest.current.thumbs}/${want.id}${want.source === 'small' ? '.small' : ''}?v=${want.version}`,
+      sharpTile: (tile, signal) => sharpTile(latest.current.board, tile, signal),
+    }
+
     let marked = -1
     /** Each tile says the width of the texture its frame has now, when that may have changed. */
-    const markTiles = () => {
+    const markTiles = (renderer: BoardBackend) => {
       if (!latest.current.rendered && marked === renderer.thumbChanges) return
       latest.current.rendered = false
       marked = renderer.thumbChanges
@@ -145,16 +159,16 @@ export function BoardSurface({
         if (tile.dataset.sharp !== sharp) tile.dataset.sharp = sharp
       }
     }
-    let trimmer: ReturnType<typeof setTimeout> | undefined
-    let restoring: ReturnType<typeof setTimeout> | undefined
     const draw = (trimmed = false) => {
       frame = 0
+      const renderer = backend
+      if (!renderer) return
       const { input, hovered } = latest.current
       const camera = latest.current.camera()
       if (!camera) return
       const lit = hovered && !input.hand && !input.selected.has(hovered) ? hovered : null
       const again = renderer.draw({ ...input, hovered: lit }, camera, performance.now())
-      markTiles()
+      markTiles(renderer)
       clearTimeout(timer)
       if (again === 0) invalidate()
       else if (again !== null) timer = setTimeout(invalidate, again)
@@ -167,46 +181,46 @@ export function BoardSurface({
           draw(true)
         }, TRIM_AFTER_MS)
     }
-    loop.current = { invalidate, frames: (ids) => renderer.keep(ids) }
 
     const theme = () => {
-      renderer.setInks(readInks(el))
+      backend?.setInks(readInks(el))
       invalidate()
     }
-    theme()
     const scheme = matchMedia('(prefers-color-scheme: dark)')
-    scheme.addEventListener('change', theme)
 
     // The canvas in device pixels, exactly: its size or the display's scale changing (the
     // window dragged to another display) both arrive here. Drawn at once, in the same frame
     // the size changes: a canvas resized is a canvas cleared.
+    let size: Parameters<BoardBackend['resize']> | null = null
     const observer = new ResizeObserver(([entry]) => {
       const [device] = entry.devicePixelContentBoxSize
       const [css] = entry.contentBoxSize
-      renderer.resize(
+      size = [
         { width: css.inlineSize, height: css.blockSize },
         { width: device.inlineSize, height: device.blockSize },
-      )
+      ]
+      if (!backend) return
+      backend.resize(...size)
       cancelAnimationFrame(frame)
       draw()
     })
-    observer.observe(el, { box: 'device-pixel-content-box' })
 
-    const lost = (event: Event) => {
-      // Without this the context is never given back.
-      event.preventDefault()
-      renderer.contextLost()
-      invalidate()
-      clearTimeout(restoring)
-      restoring = setTimeout(() => latest.current.onUnavailable(), RESTORE_WAIT_MS)
+    /** The backend is ready: everything that drives it starts. */
+    const start = (made: BoardBackend) => {
+      backend = made
+      el.dataset.boardBackend = made.kind
+      loop.current = { invalidate, frames: (ids) => made.keep(ids) }
+      theme()
+      scheme.addEventListener('change', theme)
+      observer.observe(el, { box: 'device-pixel-content-box' })
+      if (size) made.resize(...size)
     }
-    const restored = () => {
-      clearTimeout(restoring)
-      renderer.contextRestored()
-      invalidate()
+
+    try {
+      start(new BoardRenderer(el, sources, hooks))
+    } catch {
+      latest.current.onUnavailable()
     }
-    el.addEventListener('webglcontextlost', lost)
-    el.addEventListener('webglcontextrestored', restored)
 
     return () => {
       loop.current = null
@@ -216,9 +230,8 @@ export function BoardSurface({
       clearTimeout(restoring)
       observer.disconnect()
       scheme.removeEventListener('change', theme)
-      el.removeEventListener('webglcontextlost', lost)
-      el.removeEventListener('webglcontextrestored', restored)
-      renderer.dispose()
+      backend?.dispose()
+      backend = null
     }
   }, [])
 

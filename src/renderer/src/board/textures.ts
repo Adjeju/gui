@@ -1,7 +1,9 @@
-import type { ThumbWant } from '../scene'
+import type { ThumbWant } from './scene'
 
 /*
- * Frames' thumbnails as textures: one a frame, at the width it's drawn (`thumbTier`). A
+ * Which thumbnails the board holds as textures, and when they're loaded, replaced and freed;
+ * the GPU's part (making and freeing a texture) is the backend's `TextureUpload`. Frames'
+ * thumbnails as textures: one a frame, at the width it's drawn (`thumbTier`). A
  * thumbnail is fetched and decoded off the main thread (`createImageBitmap` on the fetched
  * bytes, resized there to the width wanted), uploaded within a few milliseconds a frame, and
  * its bitmap freed at once. A texture is replaced when the frame wants another width (zoomed
@@ -24,9 +26,9 @@ const LOADS = 8
 /** Uploads stop for this frame once they've taken this long; the rest go in the next. */
 const UPLOAD_BUDGET_MS = 4
 
-interface Entry {
+interface Entry<T> {
   id: string
-  texture: WebGLTexture | null
+  texture: T | null
   /** The texture's own size, in pixels */
   width: number
   height: number
@@ -44,15 +46,41 @@ interface Entry {
 
 const keyOf = (want: ThumbWant) => `${want.width}@${want.version}`
 
-export class ThumbTextures {
+/** A backend's half of a texture: made from decoded pixels, and freed. */
+export interface TextureUpload<T> {
+  /** A texture of the bitmap's pixels, with mip levels when `mips`. The bitmap stays open. */
+  upload(bitmap: ImageBitmap, mips: boolean): T
+  release(texture: T): void
+}
+
+/** Fetches and decodes a thumbnail at the width wanted; throws when there's none. */
+export type ThumbLoad = (want: ThumbWant, signal: AbortSignal) => Promise<ImageBitmap>
+
+/**
+ * A thumbnail from where the board's thumbnails are served, decoded and resized off the main
+ * thread (`createImageBitmap` on the fetched bytes).
+ */
+export const fetchThumb =
+  (url: (want: ThumbWant) => string): ThumbLoad =>
+  async (want, signal) => {
+    const response = await fetch(url(want), { signal })
+    if (!response.ok) throw new Error(`No thumbnail (${response.status})`)
+    const blob = await response.blob()
+    return createImageBitmap(
+      blob,
+      want.width < want.sourceWidth ? { resizeWidth: want.width, resizeQuality: 'high' } : {},
+    )
+  }
+
+export class ThumbTextures<T> {
   /** Bytes of texture kept before those out of view are freed */
   budget = 96 * 1048576
-  private entries = new Map<string, Entry>()
-  private seen: Entry[] = []
+  private entries = new Map<string, Entry<T>>()
+  private seen: Entry<T>[] = []
   /** Frames in the last draw that want a texture loaded, in the order they're drawn */
-  private queue: Entry[] = []
+  private queue: Entry<T>[] = []
   /** Entries whose bitmap is decoded and waits for the next draw to be uploaded */
-  private decoded = new Set<Entry>()
+  private decoded = new Set<Entry<T>>()
   private bytes = 0
   private draws = 0
   private active = 0
@@ -61,14 +89,14 @@ export class ThumbTextures {
   changes = 0
 
   constructor(
-    private readonly gl: WebGL2RenderingContext,
-    private readonly url: (want: ThumbWant) => string,
+    private readonly textures: TextureUpload<T>,
+    private readonly loadThumb: ThumbLoad,
     /** A thumbnail is decoded, or a load ended: there's something to draw or to start */
     private readonly changed: () => void,
   ) {}
 
   /** The texture to draw for a frame now, if it has one; and notes the one it wants. */
-  use(want: ThumbWant) {
+  use(want: ThumbWant): Entry<T> | null {
     let entry = this.entries.get(want.id)
     if (!entry) {
       entry = {
@@ -139,7 +167,7 @@ export class ThumbTextures {
   }
 
   /** Whether a frame wants a texture it neither has nor is on its way to having. */
-  private needs(entry: Entry) {
+  private needs(entry: Entry<T>) {
     if (!entry.want) return false
     const key = keyOf(entry.want)
     return (
@@ -163,19 +191,13 @@ export class ThumbTextures {
     }
   }
 
-  private async load(entry: Entry, want: ThumbWant) {
+  private async load(entry: Entry<T>, want: ThumbWant) {
     const key = keyOf(want)
     const abort = new AbortController()
     entry.loading = { key, abort }
     this.active++
     try {
-      const response = await fetch(this.url(want), { signal: abort.signal })
-      if (!response.ok) throw new Error(`No thumbnail (${response.status})`)
-      const blob = await response.blob()
-      const bitmap = await createImageBitmap(
-        blob,
-        want.width < want.sourceWidth ? { resizeWidth: want.width, resizeQuality: 'high' } : {},
-      )
+      const bitmap = await this.loadThumb(want, abort.signal)
       if (abort.signal.aborted || this.disposed) bitmap.close()
       else {
         entry.ready?.bitmap.close()
@@ -194,25 +216,13 @@ export class ThumbTextures {
     }
   }
 
-  private upload(entry: Entry) {
+  private upload(entry: Entry<T>) {
     const ready = entry.ready
     if (!ready) return
     entry.ready = null
-    const { gl } = this
     const { bitmap } = ready
-    const texture = gl.createTexture()
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bitmap)
     const levels = bitmap.width > MIPS_ABOVE
-    if (levels) gl.generateMipmap(gl.TEXTURE_2D)
-    gl.texParameteri(
-      gl.TEXTURE_2D,
-      gl.TEXTURE_MIN_FILTER,
-      levels ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR,
-    )
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    const texture = this.textures.upload(bitmap, levels)
     this.free(entry)
     entry.texture = texture
     entry.width = bitmap.width
@@ -230,9 +240,9 @@ export class ThumbTextures {
     return entry?.texture ? entry.width : 0
   }
 
-  private free(entry: Entry) {
+  private free(entry: Entry<T>) {
     if (!entry.texture) return
-    this.gl.deleteTexture(entry.texture)
+    this.textures.release(entry.texture)
     this.bytes -= entry.bytes
     this.changes++
     entry.texture = null
@@ -249,7 +259,7 @@ export class ThumbTextures {
     }
   }
 
-  private drop(entry: Entry) {
+  private drop(entry: Entry<T>) {
     entry.loading?.abort.abort()
     entry.loading = null
     entry.ready?.bitmap.close()

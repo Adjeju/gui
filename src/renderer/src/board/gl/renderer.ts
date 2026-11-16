@@ -1,16 +1,8 @@
 import type { BoardCamera } from '../../../../shared/board'
-import {
-  buildScene,
-  INK,
-  INK_COUNT,
-  QUAD,
-  QUAD_STRIDE,
-  QuadList,
-  type SceneInput,
-  type ThumbWant,
-} from '../scene'
-import { type SharpFetch, SharpTextures } from './sharp-textures'
-import { ThumbTextures } from './textures'
+import type { BoardBackend, BoardBackendHooks, BoardSources } from '../backend'
+import { DrawPlan } from '../draw-plan'
+import { INK, INK_COUNT, QUAD, QUAD_STRIDE, type SceneInput } from '../scene'
+import type { TextureUpload } from '../textures'
 
 /*
  * The board's pixels in WebGL2: the dot grid, then every quad of the scene (scene.ts) as an
@@ -19,11 +11,6 @@ import { ThumbTextures } from './textures'
  * pixels); the shader maps them to the canvas, whose backing store is in device pixels, so
  * script never scales a rect itself.
  */
-
-/** Textures are replaced for the zoom there is once it has held still this long. */
-const ZOOM_REST_MS = 120
-/** Frames in view are rendered sharp for the zoom once the camera has held still this long. */
-const SHARP_REST_MS = 150
 
 const QUAD_VERTEX = `#version 300 es
 layout(location = 0) in vec4 a_rect;
@@ -130,23 +117,39 @@ function program(gl: WebGL2RenderingContext, vertex: string, fragment: string) {
   return made
 }
 
-export class BoardRenderer {
+/** Textures made in the context: what the shared texture policy (draw-plan.ts) holds. */
+class GlTextures implements TextureUpload<WebGLTexture> {
+  constructor(private readonly gl: WebGL2RenderingContext) {}
+
+  upload(bitmap: ImageBitmap, mips: boolean) {
+    const { gl } = this
+    const texture = gl.createTexture()
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bitmap)
+    if (mips) gl.generateMipmap(gl.TEXTURE_2D)
+    gl.texParameteri(
+      gl.TEXTURE_2D,
+      gl.TEXTURE_MIN_FILTER,
+      mips ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR,
+    )
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    return texture
+  }
+
+  release(texture: WebGLTexture) {
+    this.gl.deleteTexture(texture)
+  }
+}
+
+export class BoardRenderer implements BoardBackend {
+  readonly kind = 'webgl2'
   private readonly gl: WebGL2RenderingContext
-  private readonly textures: ThumbTextures
-  private readonly sharp: SharpTextures
-  private readonly quads = new QuadList()
+  private readonly plan: DrawPlan<WebGLTexture>
   private inks: Float32Array = new Float32Array(INK_COUNT * 4)
   private view = { width: 0, height: 0 }
   private scale = 1
-  /** The zoom last drawn, and when it last changed */
-  private zoom = 0
-  private zoomedAt = 0
-  /**
-   * Where the camera, the view and the frames were last drawn, and when that last changed: a
-   * frame dragged or a window resized moves what's in view as a pan does.
-   */
-  private placed = ''
-  private movedAt = 0
   private lost = false
   // Everything below is the context's own, made again when a lost one comes back.
   private quadProgram!: WebGLProgram
@@ -160,9 +163,8 @@ export class BoardRenderer {
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    thumbUrl: (want: ThumbWant) => string,
-    sharpTile: SharpFetch,
-    changed: () => void,
+    sources: BoardSources,
+    private readonly hooks: BoardBackendHooks,
   ) {
     const gl = canvas.getContext('webgl2', {
       // Opaque: the board's own colour is the first thing drawn, and nothing shows through.
@@ -174,11 +176,11 @@ export class BoardRenderer {
     })
     if (!gl) throw new Error('This display has no WebGL2')
     this.gl = gl
-    this.textures = new ThumbTextures(gl, thumbUrl, changed)
-    this.sharp = new SharpTextures(gl, sharpTile, changed)
+    this.plan = new DrawPlan(new GlTextures(gl), sources, hooks.changed)
     this.setUp()
+    canvas.addEventListener('webglcontextlost', this.contextLost)
+    canvas.addEventListener('webglcontextrestored', this.contextRestored)
   }
-
   private setUp() {
     const { gl } = this
     this.quadProgram = program(gl, QUAD_VERTEX, QUAD_FRAGMENT)
@@ -224,9 +226,7 @@ export class BoardRenderer {
     this.scale = view.width > 0 ? device.width / view.width : 1
     if (this.canvas.width !== device.width) this.canvas.width = device.width
     if (this.canvas.height !== device.height) this.canvas.height = device.height
-    // What's in view holds at most three times the canvas's pixels (`THUMB_TIERS`), and a
-    // third again in mip levels; the rest is room for what was just looked at.
-    this.textures.budget = device.width * device.height * 4 * 3 * (4 / 3) + 32 * 1048576
+    this.plan.resize(device)
   }
 
   /** Each ink's colour, premultiplied: INK_COUNT × rgba. */
@@ -235,22 +235,19 @@ export class BoardRenderer {
   }
 
   keep(ids: ReadonlySet<string>) {
-    this.textures.keep(ids)
+    this.plan.keep(ids)
   }
 
-  /** The width of the thumbnail texture a frame has, in pixels; 0 while it has none. */
   thumbWidth(id: string) {
-    return this.textures.width(id)
+    return this.plan.thumbWidth(id)
   }
 
-  /** The scale of the sharp tile drawn over a frame's thumbnail (sharp.ts); 0 for none. */
   sharpScale(id: string) {
-    return this.sharp.scale(id)
+    return this.plan.sharpScale(id)
   }
 
-  /** Changes each time a frame's texture, or sharp tile, is made or freed. */
   get thumbChanges() {
-    return this.textures.changes + this.sharp.changes
+    return this.plan.changes
   }
 
   /** Draws the board. Returns how soon it wants drawing again (ms), or null if it doesn't. */
@@ -258,17 +255,7 @@ export class BoardRenderer {
     const { gl, view } = this
     if (this.lost || view.width <= 0 || view.height <= 0) return null
     const px = 1 / this.scale
-    let placed = `${camera.x},${camera.y},${camera.zoom},${view.width},${view.height},${this.scale}`
-    for (const frame of input.frames)
-      placed += `|${frame.id},${frame.x},${frame.y},${frame.width},${frame.height}`
-    const moved = placed !== this.placed
-    if (moved) {
-      this.placed = placed
-      this.movedAt = now
-    }
-    const resting = SHARP_REST_MS - (now - this.movedAt)
-    this.sharp.update(input.frames, camera, view, this.scale, moved, resting <= 0)
-    const scene = buildScene(input, camera, view, this.scale, this.quads, this.sharp.tiles)
+    const { scene, textures: drawn } = this.plan.begin(input, camera, view, this.scale, now)
     const { quads } = scene
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     const canvas = INK.canvas * 4
@@ -285,26 +272,6 @@ export class BoardRenderer {
       gl.uniform1f(this.uniforms.gridPx, px)
       gl.uniform1f(this.uniforms.gridHeight, this.canvas.height)
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
-    }
-
-    // Each frame's texture, and how tall its thumbnail is on screen: as wide as the frame.
-    const drawn: (WebGLTexture | undefined)[] = []
-    for (let index = 0; index < quads.count; index++) {
-      const at = index * QUAD_STRIDE
-      const tile = quads.sharp[index]
-      if (tile) {
-        const texture = this.sharp.texture(tile)
-        if (texture) drawn[index] = texture
-        else quads.data[at + 7] = QUAD.flat
-        continue
-      }
-      const want = quads.thumbs[index]
-      if (!want) continue
-      const held = this.textures.use(want)
-      if (held?.texture) {
-        drawn[index] = held.texture
-        quads.data[at + 10] = (quads.data[at + 2] * held.height) / held.width
-      } else quads.data[at + 7] = QUAD.flat
     }
 
     this.select(this.quadProgram)
@@ -336,14 +303,7 @@ export class BoardRenderer {
     }
     run(first, quads.count - first, this.blank)
 
-    if (camera.zoom !== this.zoom) {
-      this.zoom = camera.zoom
-      this.zoomedAt = now
-    }
-    const again = this.textures.settle(Math.max(0, ZOOM_REST_MS - (now - this.zoomedAt)))
-    // A draw once the camera rests, to ask for the sharp tiles.
-    if (resting <= 0) return again
-    return again === null ? resting : Math.min(again, resting)
+    return this.plan.end(camera, now)
   }
 
   private select(made: WebGLProgram) {
@@ -366,21 +326,25 @@ export class BoardRenderer {
   }
 
   /** The GPU context went (the driver reset, the GPU process restarted): nothing draws. */
-  contextLost() {
+  private readonly contextLost = (event: Event) => {
+    // Without this the context is never given back.
+    event.preventDefault()
     this.lost = true
-    this.textures.lost()
-    this.sharp.lost()
+    this.plan.lost()
+    this.hooks.lost()
   }
 
   /** And came back: its programs and buffers are made again, and textures load as drawn. */
-  contextRestored() {
+  private readonly contextRestored = () => {
     this.setUp()
     this.lost = false
+    this.hooks.restored()
   }
 
   dispose() {
-    this.textures.dispose()
-    this.sharp.dispose()
+    this.canvas.removeEventListener('webglcontextlost', this.contextLost)
+    this.canvas.removeEventListener('webglcontextrestored', this.contextRestored)
+    this.plan.dispose()
     const { gl } = this
     gl.deleteProgram(this.quadProgram)
     gl.deleteProgram(this.gridProgram)

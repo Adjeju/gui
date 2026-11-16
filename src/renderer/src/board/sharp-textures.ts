@@ -1,4 +1,4 @@
-import type { BoardCamera } from '../../../../shared/board'
+import type { BoardCamera } from '../../../shared/board'
 import {
   overlaps,
   planSharp,
@@ -7,7 +7,8 @@ import {
   sameTile,
   tileOfFrame,
   visiblePart,
-} from '../sharp'
+} from './sharp'
+import type { TextureUpload } from './textures'
 
 /*
  * The sharp tiles (sharp.ts) as textures, over the frames' thumbnails. Planned only once the
@@ -21,16 +22,27 @@ import {
 /** A render, as PNG bytes; null when there's none. Aborting it stops it in main. */
 export type SharpFetch = (tile: SharpTile, signal: AbortSignal) => Promise<Blob | null>
 
-interface Held {
+/** A render, decoded; null when there's none. */
+export type SharpLoad = (tile: SharpTile, signal: AbortSignal) => Promise<ImageBitmap | null>
+
+/** Renders from main (`SharpFetch`), decoded off the main thread. */
+export const decodeSharp =
+  (fetchTile: SharpFetch): SharpLoad =>
+  async (tile, signal) => {
+    const blob = await fetchTile(tile, signal)
+    return blob && !signal.aborted ? createImageBitmap(blob) : null
+  }
+
+interface Held<T> {
   tile: SharpTile
-  texture: WebGLTexture
+  texture: T
 }
 
 const keyOf = (tile: SharpTile) =>
   `${tile.id}@${tile.version}:${tile.width}x${tile.height}:${tile.rect.x},${tile.rect.y},${tile.rect.width},${tile.rect.height}@${tile.scale}`
 
-export class SharpTextures {
-  private held = new Map<string, Held>()
+export class SharpTextures<T> {
+  private held = new Map<string, Held<T>>()
   private loading = new Map<string, { tile: SharpTile; abort: AbortController }>()
   private ready = new Map<string, { tile: SharpTile; bitmap: ImageBitmap }>()
   /** By frame, the render that came back with nothing: not asked for again until the plan changes */
@@ -41,8 +53,8 @@ export class SharpTextures {
   changes = 0
 
   constructor(
-    private readonly gl: WebGL2RenderingContext,
-    private readonly fetchTile: SharpFetch,
+    private readonly textures: TextureUpload<T>,
+    private readonly loadTile: SharpLoad,
     /** A render came back: there's something to draw */
     private readonly changed: () => void,
   ) {}
@@ -122,18 +134,17 @@ export class SharpTextures {
     const abort = new AbortController()
     this.loading.set(tile.id, { tile, abort })
     try {
-      const blob = await this.fetchTile(tile, abort.signal)
-      if (abort.signal.aborted || this.disposed) return
-      if (!blob) {
+      const bitmap = await this.loadTile(tile, abort.signal)
+      if (abort.signal.aborted || this.disposed) {
+        bitmap?.close()
+        return
+      }
+      if (!bitmap) {
         this.failed.set(tile.id, keyOf(tile))
         return
       }
-      const bitmap = await createImageBitmap(blob)
-      if (abort.signal.aborted || this.disposed) bitmap.close()
-      else {
-        this.ready.get(tile.id)?.bitmap.close()
-        this.ready.set(tile.id, { tile, bitmap })
-      }
+      this.ready.get(tile.id)?.bitmap.close()
+      this.ready.set(tile.id, { tile, bitmap })
     } catch {
       if (!abort.signal.aborted) this.failed.set(tile.id, keyOf(tile))
     } finally {
@@ -143,16 +154,8 @@ export class SharpTextures {
   }
 
   private upload(tile: SharpTile, bitmap: ImageBitmap) {
-    const { gl } = this
-    const texture = gl.createTexture()
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bitmap)
     // Levels for a pinch out that draws it smaller, before the zoom rests and it's replaced.
-    gl.generateMipmap(gl.TEXTURE_2D)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    const texture = this.textures.upload(bitmap, true)
     this.free(tile.id)
     this.held.set(tile.id, { tile, texture })
     this.changes++
@@ -162,7 +165,7 @@ export class SharpTextures {
   private free(id: string) {
     const held = this.held.get(id)
     if (!held) return
-    this.gl.deleteTexture(held.texture)
+    this.textures.release(held.texture)
     this.held.delete(id)
     this.changes++
   }
