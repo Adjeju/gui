@@ -22,13 +22,7 @@ function run(command: string, args: string[]) {
 
 /** TCP listeners on a port, or null when lsof isn't available. */
 export async function listenersOn(port: number): Promise<Listener[] | null> {
-  if (!IS_MAC) {
-    const pids = (await readdir('/proc').catch(() => [] as string[]))
-      .filter((name) => /^\d+$/.test(name))
-      .map(Number)
-    const found = await procListeners(pids, { unowned: true })
-    return found ? found.filter((listener) => listener.port === port) : null
-  }
+  if (!IS_MAC) return procListeners('all', { unowned: true, port })
   const out = await run('/usr/sbin/lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fpn'])
   if (out === null) return null
   const listeners: Listener[] = []
@@ -144,16 +138,31 @@ async function socketInodes(pid: number, reader: ProcReader) {
   return inodes
 }
 
+/**
+ * TCP listeners held by `pids` ('all': every process), from /proc. With `port`, only that
+ * port's, and no process is read unless a socket listens on it. `unowned` also lists the
+ * sockets no readable process holds, with pid 0. Null when /proc/net can't be read.
+ */
 export async function procListeners(
-  pids: number[],
+  pids: number[] | 'all',
   {
     unowned,
+    port,
     reader = PROC,
     self = process.pid,
-  }: { unowned: boolean; reader?: ProcReader; self?: number },
+  }: { unowned: boolean; port?: number; reader?: ProcReader; self?: number },
 ): Promise<PortListener[] | null> {
   const sockets = await procSockets(reader)
   if (sockets === null) return null
+  if (port !== undefined) {
+    for (const [inode, address] of sockets) if (address.port !== port) sockets.delete(inode)
+  }
+  if (sockets.size === 0) return []
+  if (pids === 'all') {
+    pids = (await reader.readdir('/proc').catch(() => [] as string[]))
+      .filter((name) => /^\d+$/.test(name))
+      .map(Number)
+  }
   const inherited = await socketInodes(self, reader)
   const listeners: PortListener[] = []
   const owned = new Set<string>()

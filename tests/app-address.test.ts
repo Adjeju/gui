@@ -209,4 +209,26 @@ describe('listeners read from /proc', () => {
     const listeners = await procListeners([1], { unowned: false, reader, self: 99 })
     expect(listeners).toEqual([{ pid: 1, host: '127.0.0.1', port: 3000 }])
   })
+
+  test('a port nothing listens on reads no process', async () => {
+    const read: string[] = []
+    const watched: ProcReader = {
+      readFile: reader.readFile,
+      readdir: (path) => {
+        read.push(path)
+        return reader.readdir(path)
+      },
+      readlink: (path) => {
+        read.push(path)
+        return reader.readlink(path)
+      },
+    }
+    expect(await procListeners('all', { unowned: true, port: 5173, reader: watched })).toEqual([])
+    expect(read).toEqual([])
+  })
+
+  test('a port filter keeps only that port, owned or not', async () => {
+    const listeners = await procListeners([1, 99], { unowned: true, port: 8080, reader, self: 99 })
+    expect(listeners).toEqual([{ pid: 99, host: '127.0.0.1', port: 8080 }])
+  })
 })
