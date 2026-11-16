@@ -40,9 +40,9 @@ export interface OpenDeps<T extends OpenableTab, W extends OpenableWindow<T>> {
   closeTab(win: W, tab: T): void
   isDirectory(path: string): Promise<boolean>
   /** A canvas's folder by its id; null for an id that isn't one */
-  boardRoot(id: string): string | null
-  /** The canvas id of a canvas's folder; null for any other folder */
-  boardIdOf(path: string): string | null
+  canvasRoot(id: string): Promise<string | null>
+  /** The folder a canvas opens at, when `path` is one (it holds a canvas.json); null otherwise */
+  canvasAt(path: string): Promise<string | null>
   /** The folder a project opens at: its real path, or its monorepo's root */
   projectRoot(folder: string): Promise<string>
   /** Gui has opened this project before (it's recent, or trusted) */
@@ -85,7 +85,7 @@ export async function openForOutside<T extends OpenableTab, W extends OpenableWi
   let root: string
   let path: string
   if ('canvas' in request) {
-    const board = deps.boardRoot(request.canvas)
+    const board = await deps.canvasRoot(request.canvas)
     if (!board || !(await deps.isDirectory(board)))
       throw new Error(`Gui has no canvas ${request.canvas}. gui_list lists them.`)
     kind = 'canvas'
@@ -93,8 +93,7 @@ export async function openForOutside<T extends OpenableTab, W extends OpenableWi
   } else {
     path = folderPath(request.folder)
     if (!(await deps.isDirectory(path))) throw new Error(`${path} is not a folder.`)
-    const id = deps.boardIdOf(path)
-    const board = id && deps.boardRoot(id)
+    const board = await deps.canvasAt(path)
     kind = board ? 'canvas' : 'project'
     root = board || (await deps.projectRoot(path))
   }

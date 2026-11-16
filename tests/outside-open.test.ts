@@ -15,6 +15,9 @@ import {
 // opened is the user's to agree to first, on that start screen.
 
 const CANVASES = '/data/canvases'
+/** A canvas kept in a folder of the user's, inside a project's repo */
+const IN_REPO = '/work/shop/design/landing'
+const FOLDER_ID = '0123456789ab'
 
 class FakeTab {
   root: string | null = null
@@ -30,7 +33,7 @@ class FakeTab {
   outsideTarget(): OutsideTarget | null {
     if (!this.root) return null
     return {
-      kind: this.root.startsWith(CANVASES) ? 'canvas' : 'project',
+      kind: this.root.startsWith(CANVASES) || this.root === IN_REPO ? 'canvas' : 'project',
       name: this.root.split('/').at(-1) ?? '',
       root: this.root,
       preview: () => '',
@@ -70,7 +73,7 @@ class FakeWindow {
 /** Folders that exist, and those Gui knows (recent or trusted). */
 function world({
   windows = [new FakeWindow('front')],
-  folders = ['/work/shop', '/work/new-app', `${CANVASES}/abcdefabcdef`],
+  folders = ['/work/shop', '/work/new-app', `${CANVASES}/abcdefabcdef`, IN_REPO],
   known = ['/work/shop'],
 }: {
   windows?: FakeWindow[]
@@ -96,8 +99,9 @@ function world({
       closed.push(tab.name)
     },
     isDirectory: async (path) => folders.includes(path),
-    boardRoot: (id) => (/^[a-z0-9]{12}$/.test(id) ? `${CANVASES}/${id}` : null),
-    boardIdOf: (path) => (path.startsWith(`${CANVASES}/`) ? path.slice(CANVASES.length + 1) : null),
+    canvasRoot: async (id) =>
+      id === FOLDER_ID ? IN_REPO : /^[a-z0-9]{12}$/.test(id) ? `${CANVASES}/${id}` : null,
+    canvasAt: async (path) => (path.startsWith(`${CANVASES}/`) || path === IN_REPO ? path : null),
     projectRoot: async (folder) => folder,
     known: async (root) => known.includes(root),
     opening: () => false,
@@ -146,6 +150,17 @@ test('a canvas folder opens as a canvas; one already open shows its tab instead'
   expect(target.kind).toBe('canvas')
   expect(opened).toEqual([])
   expect(front.activeTab.name).toBe('front:1')
+})
+
+test('a canvas in a folder of the user’s opens as a canvas, without asking, by folder or id', async () => {
+  const { windows, opened, open } = world()
+  const target = await open({ folder: IN_REPO })
+  expect(target.kind).toBe('canvas')
+  expect(windows[0].activeTab.asked).toEqual([])
+  expect(opened).toEqual([{ tab: 'front:1', kind: 'canvas', path: IN_REPO }])
+
+  const byId = world()
+  expect((await byId.open({ canvas: FOLDER_ID })).root).toBe(IN_REPO)
 })
 
 test('a recent project opens without asking', async () => {

@@ -12,7 +12,6 @@ import {
 } from '../shared/layout'
 import { IS_MAC } from '../shared/platform'
 import type { RecentBoard, RecentProject, Rect, TabInfo, WindowState } from '../shared/types'
-import { boardIdOf } from './board'
 import { type ClosedTab, ClosedTabs, reopenIndex } from './closed-tabs'
 import { windowChrome } from './os'
 import { guardAppContents, loadRenderer, PRELOAD } from './renderer'
@@ -442,7 +441,7 @@ export class ProjectWindow implements TabHost {
   private remember(tab: ProjectTab) {
     const root = tab.projectRoot
     if (!root) return
-    const kind = boardIdOf(root) ? 'canvas' : 'project'
+    const kind = tab.boardSession ? 'canvas' : 'project'
     this.closed.push({ kind, root, index: this.list.indexOf(tab) })
   }
 

@@ -995,15 +995,15 @@ function OpenActions({ connect }: { connect: boolean }) {
           >
             New project…
           </Button>
-          {/* No folder, install or server: a canvas to design on with the agent, open at once. */}
+          {/* No install or server: a canvas to design on with the agent, in Gui or a folder. */}
           <Button
             icon={Shapes}
             className={cell}
-            title="Design on a canvas without a project folder"
+            title="Design on a canvas, kept in Gui or in a folder of yours"
             shortcut="newBoard"
             onClick={() => gui.newBoard()}
           >
-            New canvas
+            New canvas…
           </Button>
           <Button
             icon={GitHubMark}
@@ -1249,7 +1249,16 @@ function StartScreen({ state }: { state: WindowState }) {
                     flush
                     onClick={() => gui.openBoard(board.id)}
                     heading={board.name}
-                    detail={`${board.frames === 1 ? '1 frame' : `${board.frames} frames`} · ${timeAgo(board.editedAt)}`}
+                    detail={
+                      board.missing ? (
+                        'Moved or deleted'
+                      ) : board.folder ? (
+                        // Kept in a folder of the user's: where, as for a project.
+                        <PathText path={board.folder} home={state.home} />
+                      ) : (
+                        `${board.frames === 1 ? '1 frame' : `${board.frames} frames`} · ${timeAgo(board.editedAt)}`
+                      )
+                    }
                     trailing={
                       <span className="transition-opacity duration-(--motion-pop) motion-reduce:duration-(--motion-fade) group-focus-within:opacity-0 group-hover:opacity-0">
                         {CHEVRON}

@@ -52,6 +52,8 @@ export interface Prefs {
   guides: Record<string, RulerGuide[]>
   /** Agents outside Gui may use its tools (outside-agents.ts); off until the user turns it on */
   outsideAgents: boolean
+  /** Where the last new canvas went, where New Canvas's sheet starts; null for Gui's own data */
+  canvasFolder: string | null
 }
 
 const DEFAULTS: Prefs = {
@@ -71,6 +73,7 @@ const DEFAULTS: Prefs = {
   rulers: false,
   guides: {},
   outsideAgents: false,
+  canvasFolder: null,
 }
 /** More guides than anyone draws; keeps a damaged file from making thousands of views. */
 export const MAX_GUIDES = 50
@@ -186,6 +189,10 @@ export function getPrefs(): Prefs {
       rulers: parsed.rulers === true,
       guides: guides(parsed.guides),
       outsideAgents: parsed.outsideAgents === true,
+      canvasFolder:
+        typeof parsed.canvasFolder === 'string' && isAbsolute(parsed.canvasFolder)
+          ? parsed.canvasFolder
+          : null,
     }
   } catch (error) {
     // A damaged file would otherwise be replaced by defaults on the next save, losing (among

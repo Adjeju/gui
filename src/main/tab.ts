@@ -84,7 +84,7 @@ import { agentHealth } from './agent-status'
 import { AgentViewport, viewportForWidth } from './agent-viewport'
 import { agentChoices, declaresOwnPermissions } from './agents'
 import { isAutoApprove, setAutoApprove as saveAutoApprove } from './auto-approve'
-import { boardIdOf, listBoards, writeManifest } from './board'
+import { boardIdOf, canvasId, listBoards, viewFile, writeManifest } from './board'
 import { copyFrames, pastedFrames } from './board-clipboard'
 import { BoardSession } from './board-session'
 import { createBoardTools } from './board-tool-workflow'
@@ -1010,8 +1010,8 @@ export class ProjectTab implements ChatPanelOwner {
    * one at a time. Nothing runs but the agent: no dev server, terminals or install.
    */
   async openBoard(root: string, { holdChat = false }: OpeningOptions = {}) {
-    const id = boardIdOf(root)
-    if (!id) throw new Error('That folder is not one of Gui’s canvases.')
+    const id = await canvasId(root)
+    if (!id) throw new Error('That folder isn’t a canvas.')
     this.declineOpenRequest()
     const closed = this.closeProject()
     if (this.disposed) return
@@ -1025,7 +1025,7 @@ export class ProjectTab implements ChatPanelOwner {
       if (!current()) return
       const file = await claimHistoryFile(root)
       if (!resources.claim(file) || !current()) return
-      const board = new BoardSession(root, id)
+      const board = new BoardSession(root, id, boardIdOf(root) ? {} : { view: viewFile(id) })
       resources.board = board
       const [saved] = await Promise.all([loadHistory(file), board.open()])
       if (!current()) return
@@ -4548,7 +4548,7 @@ export class ProjectTab implements ChatPanelOwner {
     if (!board) return
     const template: MenuItemConstructorOptions[] = [
       { label: 'Rename Canvas', click: () => this.send(Events.board, { type: 'renameBoard' }) },
-      { label: 'New Canvas', click: newBoard },
+      { label: 'New Canvas…', click: newBoard },
       { type: 'separator' },
       {
         label: 'Export All Frames as PNG…',
@@ -4575,8 +4575,8 @@ export class ProjectTab implements ChatPanelOwner {
     const template: MenuItemConstructorOptions[] = [
       { label: 'Open Project…', click: openPicker },
       { label: 'New Project…', click: openNew },
-      // Opens at once, so no ellipsis (as in the File menu).
-      { label: 'New Canvas', click: openCanvas },
+      // Asks where it goes, as in the File menu.
+      { label: 'New Canvas…', click: openCanvas },
       { label: 'Clone…', click: openClone },
       ...(recent.length
         ? [

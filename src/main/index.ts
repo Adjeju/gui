@@ -8,7 +8,7 @@ import {
   statSync,
 } from 'node:fs'
 import { mkdir, readFile, realpath, rm, stat, symlink } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import {
   app,
@@ -89,9 +89,14 @@ import { agentMenuItems, openCustomAgents } from './agents'
 import {
   boardIdOf,
   boardRoot,
+  boardsDir,
+  canvasAt,
+  canvasRoot,
   createBoard,
+  createCanvasFolder,
   deleteBoard,
-  isBoardId,
+  forgetCanvas,
+  inBoardsDir,
   listBoards,
   registerThumbProtocol,
 } from './board'
@@ -281,6 +286,9 @@ async function openProjectIn(target: ProjectWindow | undefined, root: string, in
     dialog.showErrorBox('Project not found', `${root} is not a folder.`)
     return
   }
+  // A folder holding a canvas.json is a canvas, wherever it is (inside a project's repo too).
+  const canvas = await canvasAt(root)
+  if (canvas) return openCanvasAt(target, canvas, into)
   await openProjectInTab(root, () => tabToOpenIn(target, into))
 }
 
@@ -325,12 +333,14 @@ const outsideOpener: OutsideOpener = {
   list: async () => {
     const [recent, boards] = await Promise.all([loadRecent(), listBoards()])
     return [
-      ...boards.map((board) => ({
-        kind: 'canvas' as const,
-        name: board.name,
-        folder: boardRoot(board.id),
-        id: board.id,
-      })),
+      ...boards
+        .filter((board) => !board.missing)
+        .map((board) => ({
+          kind: 'canvas' as const,
+          name: board.name,
+          folder: board.folder ?? boardRoot(board.id),
+          id: board.id,
+        })),
       ...recent.map((project) => ({
         kind: 'project' as const,
         name: project.name,
@@ -346,8 +356,8 @@ const outsideOpener: OutsideOpener = {
       reveal: (win) => showWindowInactive(win.win),
       closeTab: (win, tab) => win.closeTab(tab.id),
       isDirectory,
-      boardRoot: (id) => (isBoardId(id) ? boardRoot(id) : null),
-      boardIdOf,
+      canvasRoot,
+      canvasAt,
       projectRoot: async (folder) =>
         (await findWorkspaceRoot(folder))?.root ?? (await canonical(folder)),
       known: async (root) =>
@@ -399,7 +409,7 @@ function openSafely(target: ProjectWindow | undefined, root: string, into?: Proj
 async function pickProject(target: ProjectWindow | undefined) {
   const parent = target?.win
   const options = {
-    title: 'Open project',
+    title: 'Open a project or canvas',
     buttonLabel: 'Open',
     properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[],
   }
@@ -446,13 +456,19 @@ async function newProject(
   if (folder) openSafely(target, await createProject(name, folder, template))
 }
 
-/**
- * A canvas in the window's start-screen tab, or a new tab there. One already open in a tab
- * shows that tab instead: two tabs on one canvas would each keep their own layout.
- */
+/** A canvas by its id, as Recent canvases and the start screen name it. */
 async function openBoardIn(target: ProjectWindow | undefined, id: string, into?: ProjectTab) {
-  if (!isBoardId(id) || mustSignIn()) return
-  const root = boardRoot(id)
+  const root = await canvasRoot(id)
+  if (root) await openCanvasAt(target, root, into)
+}
+
+/**
+ * The canvas at `root` (as `canvasAt` gives it) in the window's start-screen tab, or a new tab
+ * there. One already open in a tab shows that tab instead: two tabs on one canvas would each
+ * keep their own layout.
+ */
+async function openCanvasAt(target: ProjectWindow | undefined, root: string, into?: ProjectTab) {
+  if (mustSignIn()) return
   const open = allTabs().find((tab) => tab.projectRoot === root)
   const shown = open && allWindows().find((win) => win.tabs.includes(open))
   if (open && shown) {
@@ -460,8 +476,12 @@ async function openBoardIn(target: ProjectWindow | undefined, id: string, into?:
     focusWindow(shown.win, { steal: true })
     return
   }
-  if (!(await isDirectory(root))) {
-    shareBoards(await listBoards())
+  if (!(await canvasAt(root))) {
+    const boards = await listBoards()
+    shareBoards(boards)
+    // One of the user's folders: say so, as for a project. (Gui's own just leaves the list.)
+    const gone = boards.find((board) => board.folder === root)
+    if (gone) await canvasGone(target, gone.id, root)
     return
   }
   if (isOpening(root)) return
@@ -480,13 +500,55 @@ async function openBoardIn(target: ProjectWindow | undefined, id: string, into?:
   }
 }
 
-/** ⌥⌘N, or the start screen's button: a new canvas, open at once, without a dialog. */
+/** A canvas in a folder of the user's isn't there any more; it can leave Recent canvases. */
+async function canvasGone(target: ProjectWindow | undefined, id: string, root: string) {
+  const options = {
+    type: 'warning' as const,
+    message: 'This canvas moved or was deleted',
+    detail: `There's no canvas at ${root} now. If you moved it, open it where it is with File › Open.`,
+    buttons: ['Remove from Recents', 'Keep'],
+    defaultId: 0,
+    cancelId: 1,
+  }
+  const parent = target?.win
+  const { response } = parent
+    ? await dialog.showMessageBox(parent, options)
+    : await dialog.showMessageBox(options)
+  if (response !== 0) return
+  await forgetCanvas(id)
+  shareBoards(await listBoards())
+}
+
+/**
+ * ⌥⌘N, or the start screen's button: where the new canvas goes, then the canvas, open. The
+ * sheet starts where the last one went (Gui's own data the first time), named Untitled
+ * canvas, so Return alone makes one where it always has; a folder in a project's repo is a
+ * click away, and stays the default once chosen.
+ */
 async function newBoard(target: ProjectWindow | undefined) {
   if (mustSignIn()) return
   try {
-    const root = await createBoard()
-    const id = boardIdOf(root)
-    if (id) await openBoardIn(target, id)
+    await mkdir(boardsDir(), { recursive: true, mode: 0o700 })
+    const last = getPrefs().canvasFolder
+    const folder = last && (await isDirectory(last)) ? last : boardsDir()
+    const options = {
+      title: 'New Canvas',
+      buttonLabel: 'Create',
+      nameFieldLabel: 'Canvas:',
+      defaultPath: join(folder, 'Untitled canvas'),
+      properties: ['createDirectory'] as 'createDirectory'[],
+    }
+    const parent = target?.win
+    const { canceled, filePath } = parent
+      ? await dialog.showSaveDialog(parent, options)
+      : await dialog.showSaveDialog(options)
+    if (canceled || !filePath) return
+    const name = basename(filePath).trim() || 'Untitled canvas'
+    // In Gui's data, a canvas's folder is named by its id, whatever it's called.
+    const own = inBoardsDir(filePath)
+    const root = own ? await createBoard(name) : await createCanvasFolder(filePath, name)
+    setPrefs({ canvasFolder: own ? null : dirname(root) })
+    await openCanvasAt(target, root)
   } catch (error) {
     dialog.showErrorBox(
       "Couldn't make a canvas",
@@ -518,10 +580,29 @@ async function promoteFrame(win: ProjectWindow, tab: ProjectTab, id: string) {
   }
 }
 
-/** The start screen's menu for a canvas: open it, show it in the Finder, or delete it. */
-function showRecentBoardMenu(win: ProjectWindow, id: string) {
-  if (!isBoardId(id)) return
-  const root = boardRoot(id)
+/**
+ * The start screen's menu for a canvas: open it, show it in the Finder, or delete it. One in a
+ * folder of the user's is only taken off the list: the folder is theirs (and maybe in git).
+ */
+async function showRecentBoardMenu(win: ProjectWindow, id: string) {
+  const root = await canvasRoot(id)
+  if (!root) return
+  const reveal = { label: 'Reveal in Finder', click: () => shell.showItemInFolder(root) }
+  if (!boardIdOf(root)) {
+    Menu.buildFromTemplate([
+      { label: 'Open', click: () => void openBoardIn(win, id) },
+      reveal,
+      { type: 'separator' },
+      {
+        label: 'Remove from Recents',
+        click: async () => {
+          await forgetCanvas(id)
+          shareBoards(await listBoards())
+        },
+      },
+    ]).popup({ window: win.win })
+    return
+  }
   Menu.buildFromTemplate([
     { label: 'Open', click: () => void openBoardIn(win, id) },
     { label: 'Reveal in Finder', click: () => shell.showItemInFolder(join(root, 'canvas.json')) },
@@ -559,6 +640,8 @@ function showRecentBoardMenu(win: ProjectWindow, id: string) {
  * folder already open shows its tab instead of starting a second dev server.
  */
 async function openOrShow(root: string) {
+  const canvas = await canvasAt(root)
+  if (canvas) return openCanvasAt(focusedWindow(), canvas)
   const member = await findWorkspaceRoot(root)
   const real = member?.root ?? (await canonical(root))
   const tab = allTabs().find((tab) => {
@@ -1741,8 +1824,7 @@ async function reopenClosedTab() {
       continue
     }
     if (closed.kind === 'canvas') {
-      const id = boardIdOf(closed.root)
-      if (id) await openBoardIn(win, id, tab)
+      await openCanvasAt(win, closed.root, tab)
       // Open in another tab already, which showed instead: the empty one isn't needed.
       if (!tab.hasProject && win.tabs.includes(tab)) win.closeTab(tab.id)
     } else openSafely(win, closed.root, tab)

@@ -85,11 +85,11 @@ export const SHORTCUTS = {
     description: 'Start a project in a new, empty folder',
   },
   newBoard: {
-    label: 'New Canvas',
+    label: 'New Canvas…',
     accelerator: 'Alt+CmdOrCtrl+N',
     menu: 'file',
     group: 'app',
-    description: 'Open a new canvas to design on freely',
+    description: 'Make a canvas to design on freely, in Gui or in a folder of yours',
   },
   cloneRepo: {
     label: 'Clone…',

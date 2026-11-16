@@ -472,6 +472,76 @@ try {
     'A frame address on 127.0.0.1 is not the canvas’s',
   )
   await served.dispose()
+
+  // A canvas in a folder of the user's (inside a repo, beside its .git) is served only from
+  // that folder: its pages and assets, never its manifest, nothing hidden, nothing userRepo it,
+  // links out of it included.
+  const userRepo = await nativeFs.realpath(
+    await nativeFs.mkdtemp(join(tmpdir(), 'gui-canvas-repo-')),
+  )
+  const repoCanvas = join(userRepo, 'design', 'landing')
+  await nativeFs.mkdir(join(repoCanvas, 'frames'), { recursive: true })
+  await nativeFs.mkdir(join(repoCanvas, 'assets'))
+  await nativeFs.mkdir(join(userRepo, '.git'))
+  await nativeFs.mkdir(join(repoCanvas, '.git'))
+  await nativeFs.writeFile(join(userRepo, '.git', 'config'), '[core]')
+  await nativeFs.writeFile(join(repoCanvas, '.git', 'config'), '[core]')
+  await nativeFs.writeFile(join(repoCanvas, '.env'), 'SECRET=1')
+  await nativeFs.writeFile(join(userRepo, 'secret.txt'), 'secret')
+  await nativeFs.writeFile(join(repoCanvas, 'frames', 'page.html'), '<h1>Saved</h1>')
+  await nativeFs.writeFile(join(repoCanvas, 'assets', 'logo.svg'), '<svg/>')
+  await nativeFs.symlink(join(userRepo, 'secret.txt'), join(repoCanvas, 'assets', 'out.svg'))
+  await nativeFs.symlink(join(repoCanvas, 'canvas.json'), join(repoCanvas, 'assets', 'm.json'))
+  await nativeFs.writeFile(
+    join(repoCanvas, 'canvas.json'),
+    JSON.stringify(manifest([{ id: 'page', name: 'Page', x: 0, y: 0, width: 400, height: 300 }])),
+  )
+  const views = join(base, 'views', 'repo.json')
+  const inRepo = new BoardSession(repoCanvas, 'abcdefabcdef', { view: views })
+  openBoards.push(inRepo)
+  await inRepo.open()
+  const at = new URL(inRepo.frameUrl('page'))
+  const status = (path: string) =>
+    new Promise<number>((done, fail) => {
+      const req = request(
+        { host: '127.0.0.1', port: at.port, path, headers: { host: at.host } },
+        (res) => {
+          res.resume()
+          done(res.statusCode ?? 0)
+        },
+      )
+      req.on('error', fail)
+      req.end()
+    })
+  const token = at.pathname.split('/')[1]
+  assert.equal(await status(at.pathname), 200)
+  assert.equal(await status(`/${token}/assets/logo.svg`), 200)
+  for (const path of [
+    'canvas.json',
+    'CANVAS.JSON',
+    'assets/m.json',
+    'assets/out.svg',
+    '.git/config',
+    '%2egit/config',
+    '.env',
+    'frames/../../../secret.txt',
+    '..%2f..%2f..%2fsecret.txt',
+    '%2e%2e/%2e%2e/.git/config',
+  ])
+    assert.equal(await status(`/${token}/${path}`), 404, `${path} must not be served`)
+  // Where its board was looking is the user's own: kept in Gui's data, not the shared folder.
+  inRepo.setCamera({ x: 7, y: 8, zoom: 1 })
+  assert.deepEqual(inRepo.state().camera, { x: 7, y: 8, zoom: 1 })
+  await inRepo.dispose()
+  assert.equal((await persisted(repoCanvas)).camera ?? null, null)
+  assert.deepEqual(JSON.parse(await nativeFs.readFile(views, 'utf8')), { x: 7, y: 8, zoom: 1 })
+  const reopened = new BoardSession(repoCanvas, 'abcdefabcdef', { view: views })
+  openBoards.push(reopened)
+  await reopened.open()
+  assert.deepEqual(reopened.state().camera, { x: 7, y: 8, zoom: 1 })
+  await reopened.dispose()
+  await nativeFs.rm(userRepo, { recursive: true, force: true })
+
   assert.equal(canvasHost('0123456789ab'), '0123456789ab.localhost')
   assert.match(canvasHost('Not A Label!'), /^[0-9a-f]{16}\.localhost$/)
 

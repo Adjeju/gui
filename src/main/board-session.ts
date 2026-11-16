@@ -21,6 +21,7 @@ import {
   frameLimit,
   isFrameId,
   isReadableManifest,
+  parseCamera,
   parseManifest,
   placeFrame,
   placeInSection,
@@ -39,6 +40,7 @@ import {
 } from '../shared/board-clipboard'
 import { MAX_UNDO_BYTES } from '../shared/bounded'
 import type { BoardFrame, BoardState } from '../shared/types'
+import { writeFileAtomic } from './atomic-file'
 import { thumbsDir, thumbsUrl, writeManifest } from './board'
 import { isBoardAsset } from './board-assets'
 import { BoardCaptures } from './board-capture'
@@ -169,11 +171,20 @@ export class BoardSession extends EventEmitter<BoardSessionEvents> {
   private loaded = false
   private disposed = false
   private completion: Promise<void> | null = null
+  /**
+   * Where the board was looking, for a canvas in a folder of the user's: kept in Gui's data
+   * (`view`) rather than its manifest, which they may share through git. Null for one in Gui's
+   * own data, whose manifest keeps it.
+   */
+  private readonly viewFile: string | null
+  private view: BoardCamera | null = null
+  private viewTimer: NodeJS.Timeout | null = null
 
-  constructor(root: string, id: string) {
+  constructor(root: string, id: string, { view }: { view?: string } = {}) {
     super()
     this.root = resolve(root)
     this.id = id
+    this.viewFile = view ?? null
     this.writer = new BoardManifestWriter((manifest) => writeManifest(this.root, manifest))
     this.captures = new BoardCaptures(
       {
@@ -193,6 +204,15 @@ export class BoardSession extends EventEmitter<BoardSessionEvents> {
       this.manifest = await openManifest(this.root)
       this.writer.observe(this.manifest)
       this.loaded = true
+      if (this.viewFile) {
+        const saved = await readFile(this.viewFile, 'utf8').catch(() => null)
+        let camera: unknown = null
+        try {
+          camera = saved ? JSON.parse(saved) : null
+        } catch {}
+        // A manifest that came with a view (written by hand) starts there.
+        this.view = parseCamera(camera) ?? this.manifest.camera
+      }
       if (this.disposed) return
       await this.syncFrames()
       if (this.disposed) return
@@ -271,7 +291,7 @@ export class BoardSession extends EventEmitter<BoardSessionEvents> {
       sections: this.manifest.sections,
       selection: this.selection,
       open: this.openFrame,
-      camera: this.manifest.camera,
+      camera: this.viewFile ? this.view : this.manifest.camera,
       thumbs: thumbsUrl(this.id),
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
@@ -302,6 +322,12 @@ export class BoardSession extends EventEmitter<BoardSessionEvents> {
   setCamera({ x, y, zoom }: BoardCamera) {
     if (this.disposed) return
     const camera = { x: Math.round(x), y: Math.round(y), zoom: clampZoom(zoom) }
+    if (this.viewFile) {
+      this.view = camera
+      if (this.viewTimer) clearTimeout(this.viewTimer)
+      this.viewTimer = setTimeout(() => void this.saveView(), 500)
+      return
+    }
     this.manifest = { ...this.manifest, camera }
     this.manifestRevision++
     // Panning saves often; one write once it rests. Not a change anything else shows.
@@ -1020,6 +1046,18 @@ export class BoardSession extends EventEmitter<BoardSessionEvents> {
     }, delay)
   }
 
+  private async saveView() {
+    if (this.viewTimer) clearTimeout(this.viewTimer)
+    this.viewTimer = null
+    if (!this.viewFile || !this.view) return
+    try {
+      await mkdir(dirname(this.viewFile), { recursive: true, mode: 0o700 })
+      await writeFileAtomic(this.viewFile, JSON.stringify(this.view))
+    } catch (error) {
+      console.error('[gui] failed to save where the canvas was looking', error)
+    }
+  }
+
   async save() {
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = null
@@ -1063,6 +1101,9 @@ export class BoardSession extends EventEmitter<BoardSessionEvents> {
     const prefix = `/${this.token}/`
     if (!path.startsWith(prefix)) return notFound
     const rest = path.slice(prefix.length)
+    // Nothing hidden: a canvas in a repo of its own has `.git` beside its frames, and a folder
+    // of the user's may hold `.env` and the like. Frames never need them.
+    if (rest.split(/[/\\]/).some((part) => part.startsWith('.'))) return notFound
     // Only inside the canvas's folder, symbolic links included, and never its manifest.
     const file = resolve(this.root, rest)
     if (!file.startsWith(this.root + sep) || file === join(this.root, BOARD_MANIFEST))
@@ -1095,6 +1136,7 @@ export class BoardSession extends EventEmitter<BoardSessionEvents> {
     this.timers.clear()
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = null
+    const view = this.viewTimer ? this.saveView() : Promise.resolve()
     const captures = this.captures.dispose()
     // A manifest broken just before closing (its check still settling) is put right by the
     // last save, rather than left for the next open to set aside.
@@ -1108,7 +1150,7 @@ export class BoardSession extends EventEmitter<BoardSessionEvents> {
       } finally {
         this.server?.close()
         this.server = null
-        await captures
+        await Promise.all([captures, view])
       }
     })
     return this.completion

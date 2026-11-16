@@ -8,6 +8,8 @@ import {
   FRAME_MIN,
   fitCamera,
   frameId,
+  isBoardId,
+  isCanvasManifest,
   MAX_FRAMES,
   parseManifest,
   placeFrame,
@@ -42,6 +44,25 @@ test('a manifest round-trips as Gui writes it', () => {
     camera: { x: -64, y: -64, zoom: 0.5 },
   })
   expect(parseManifest(JSON.stringify(manifest), 'Other')).toEqual(manifest)
+})
+
+test('a folder is a canvas when its canvas.json is one of Gui’s manifests, not any file of that name', () => {
+  const made = JSON.stringify({
+    version: 1,
+    name: 'Landing',
+    createdAt: 1,
+    frames: [],
+    sections: [],
+  })
+  expect(isCanvasManifest(made)).toBe(true)
+  // Some other tool's canvas.json in a project, a half-written one, or none at all.
+  expect(isCanvasManifest(JSON.stringify({ width: 800, height: 600 }))).toBe(false)
+  expect(isCanvasManifest(JSON.stringify({ version: 2, frames: [] }))).toBe(false)
+  expect(isCanvasManifest(JSON.stringify([{ frames: [] }]))).toBe(false)
+  expect(isCanvasManifest('{ "version": 1, "frames": [')).toBe(false)
+  expect(isCanvasManifest(null)).toBe(false)
+  expect(isBoardId('0123456789ab')).toBe(true)
+  expect(isBoardId('../canvases')).toBe(false)
 })
 
 test('a corrupt or hand-edited manifest is repaired rather than failing the canvas', () => {

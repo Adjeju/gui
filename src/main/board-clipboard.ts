@@ -7,7 +7,7 @@ import {
   parseCopiedFrames,
 } from '../shared/board-clipboard'
 import { MAX_COPIED_FRAMES_BYTES } from '../shared/bounded'
-import { boardRoot, isBoardId } from './board'
+import { canvasRoot } from './board'
 import type { BoardSession } from './board-session'
 
 /*
@@ -65,8 +65,6 @@ export async function pastedFrames(): Promise<{
   if (!(blob instanceof Blob) || blob.size > MAX_COPIED_FRAMES_BYTES) return null
   const copied = parseCopiedFrames(await blob.text())
   if (!copied) return null
-  return {
-    copied,
-    assets: isBoardId(copied.canvas) ? join(boardRoot(copied.canvas), 'assets') : null,
-  }
+  const from = await canvasRoot(copied.canvas)
+  return { copied, assets: from ? join(from, 'assets') : null }
 }

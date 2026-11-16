@@ -630,6 +630,10 @@ export interface RecentBoard {
   name: string
   frames: number
   editedAt: number
+  /** The user's folder it's kept in; null for one in Gui's own data */
+  folder: string | null
+  /** That folder isn't a canvas any more: moved or deleted outside Gui */
+  missing: boolean
 }
 
 export interface Rect {

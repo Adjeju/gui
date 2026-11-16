@@ -147,6 +147,13 @@ export interface BoardManifest {
 export const ZOOM_MIN = 0.05
 export const ZOOM_MAX = 2
 
+/** A canvas's id: its folder's name in Gui's data, or the one Gui gave a folder of the user's */
+const BOARD_ID = /^[a-z0-9]{12}$/
+
+export function isBoardId(value: unknown): value is string {
+  return typeof value === 'string' && BOARD_ID.test(value)
+}
+
 const FRAME_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
 
 export function isFrameId(value: unknown): value is string {
@@ -183,6 +190,24 @@ export function isReadableManifest(text: string): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Whether a folder's `canvas.json` makes it a canvas: one of Gui's manifests (version 1, a
+ * list of frames), not some other file of that name in a project.
+ */
+export function isCanvasManifest(text: string | null): boolean {
+  if (text === null || !isReadableManifest(text)) return false
+  return (JSON.parse(text) as Record<string, unknown>).version === 1
+}
+
+/** Where a board was looking, as saved; null for anything that isn't one. */
+export function parseCamera(value: unknown): BoardCamera | null {
+  if (!value || typeof value !== 'object') return null
+  const camera = value as Record<string, unknown>
+  return finite(camera.x) && finite(camera.y) && finite(camera.zoom)
+    ? { x: camera.x, y: camera.y, zoom: clampZoom(camera.zoom) }
+    : null
 }
 
 /**
@@ -226,17 +251,13 @@ export function parseManifest(text: string | null, fallbackName: string): BoardM
       frames: section.frames.filter(isFrameId),
     })
   }
-  const camera = raw.camera as Record<string, unknown> | undefined
   return {
     version: 1,
     name: cleanName(raw.name) ?? fallbackName,
     createdAt: finite(raw.createdAt) ? raw.createdAt : Date.now(),
     frames,
     sections: cleanSections(sections, frames),
-    camera:
-      camera && finite(camera.x) && finite(camera.y) && finite(camera.zoom)
-        ? { x: camera.x, y: camera.y, zoom: clampZoom(camera.zoom) }
-        : null,
+    camera: parseCamera(raw.camera),
   }
 }
 

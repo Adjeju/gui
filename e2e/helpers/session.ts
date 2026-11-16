@@ -617,6 +617,15 @@ export async function launchGui(
     // The preload exposes window.gui before page scripts run, but be explicit.
     await chrome.waitForFunction(() => 'gui' in window)
     await chat.waitForFunction(() => 'gui' in window)
+    // No test can answer a native save sheet (New Canvas asks where): each is answered as
+    // pressing Return would, with where it starts. A spec may answer differently.
+    await app.evaluate(({ dialog }) => {
+      const asReturn = (...args: unknown[]) => {
+        const options = args.at(-1) as { defaultPath?: string } | undefined
+        return Promise.resolve({ canceled: false, filePath: options?.defaultPath ?? '' })
+      }
+      dialog.showSaveDialog = asReturn as typeof dialog.showSaveDialog
+    })
     await logMotionEnvironment(app, chrome, chat)
     await chrome.emulateMedia({ reducedMotion })
     await chat.emulateMedia({ reducedMotion })
