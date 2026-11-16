@@ -589,8 +589,8 @@ export interface WindowState {
   focusMode: boolean
   /** Help → Keyboard Shortcuts is open over the window */
   shortcutsOpen: boolean
-  /** The window is in macOS full screen, which hides its traffic lights */
-  fullScreen: boolean
+  /** The window's traffic lights show: macOS, and not in full screen */
+  trafficLights: boolean
 }
 
 /** A frame on a canvas, as the board draws it. */

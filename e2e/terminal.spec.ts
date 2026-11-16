@@ -624,3 +624,43 @@ test('hiding the terminal with the keyboard in it gives the keyboard to the prev
   await sleep(300)
   expect(await asked()).toBe(1)
 })
+
+test('on Linux, plain Ctrl keys reach the shell and Ctrl+Shift keys copy, paste and clear', async ({
+  launch,
+}) => {
+  test.skip(process.platform !== 'linux', 'Linux terminal keys')
+  const session = await launch({ fixture: 'vite', env: { SHELL: '/bin/bash' } })
+  await session.waitForPreview()
+  await clickMenu(session, 'Show Terminal')
+  const id = (await drawerWith(session, 1)).terminals[0]?.id
+  if (!id) throw new Error('No terminal')
+  await waitForFocus(session, id)
+
+  await run(session, 'sleep 30')
+  await sleep(500)
+  await session.chrome.keyboard.press('Control+C')
+  await run(session, 'echo copy-marker-$((40+2))')
+  await waitForOutput(session, id, /copy-marker-42/, 'the shell after ^C')
+  await expect.poll(() => screenText(panel(session, id))).toContain('copy-marker-42')
+
+  await session.app.evaluate(({ clipboard }) => clipboard.clear())
+  await waitFor(
+    async () => {
+      await session.chrome.keyboard.press('Control+Shift+A')
+      await session.chrome.keyboard.press('Control+Shift+C')
+      const text = await session.app.evaluate(({ clipboard }) => clipboard.readText())
+      return text.includes('copy-marker-42')
+    },
+    'the selection to be copied',
+    { timeout: 10_000 },
+  )
+
+  await session.app.evaluate(({ clipboard }) => clipboard.writeText(' echo paste-marker-$((6*7))'))
+  await session.chrome.keyboard.press('Control+Shift+V')
+  await session.chrome.keyboard.press('Enter')
+  await waitForOutput(session, id, /paste-marker-42/, 'the pasted command')
+
+  await session.chrome.keyboard.press('Control+Shift+K')
+  await expect.poll(() => screenText(panel(session, id))).not.toContain('copy-marker-42')
+  expect(await output(session, id)).not.toContain('copy-marker-42')
+})

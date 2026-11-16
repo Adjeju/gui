@@ -119,7 +119,7 @@ export function TabStrip({ state }: { state: WindowState }) {
   const list = useRef<HTMLDivElement>(null)
   // The traffic lights sit in this row, left of the tabs, unless the chat sidebar has them;
   // full screen hides them.
-  useSidebarBar(nav, sidebarRoom(state, !state.fullScreen))
+  useSidebarBar(nav, sidebarRoom(state, state.trafficLights))
   // More tabs than fit: the row scrolls, and the shown one is always in it.
   useScrollingTabs(list, state.tabs.length > 1 ? state.activeTab : null)
   const press = useRef<Press | null>(null)

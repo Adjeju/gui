@@ -157,7 +157,7 @@ export function Toolbar({ state }: { state: WindowState }) {
   // With two or more tabs the traffic lights sit in the tab row above (tab-strip.tsx), and
   // with the chat sidebar in its header.
   const tabbed = state.tabs.length > 1
-  const { header, padding, sliding } = useBar(state, !tabbed && !state.fullScreen)
+  const { header, padding, sliding } = useBar(state, !tabbed && state.trafficLights)
   const { fit, overflowing } = useToolbarFit(header, project ? PROJECT_STEPS : [], {
     min: ADDRESS_MIN,
     padding,
@@ -426,7 +426,7 @@ function BoardToolbar({
   const boardView = useBoardView()
   const boardTool = useBoardTool()
   const [renaming, setRenaming] = useState(false)
-  const { header, padding, sliding } = useBar(state, named && !state.fullScreen)
+  const { header, padding, sliding } = useBar(state, named && state.trafficLights)
   const { fit, overflowing } = useToolbarFit(header, open ? FRAME_STEPS : BOARD_STEPS, {
     min: open ? FRAME_NAME_MIN : BOARD_GAP_MIN,
     padding,

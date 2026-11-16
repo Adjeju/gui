@@ -1,6 +1,7 @@
 {
   "name": "gui",
   "productName": "Gui",
+  "desktopName": "gui.desktop",
   "version": "0.1.0-alpha.20",
   "description": "Design real interfaces with your own AI agents",
   "author": "Bridger Tower <bridgertower@gmail.com>",
@@ -25,6 +26,7 @@
     "check:architecture": "bun scripts/check-architecture.ts",
     "check": "bun run typecheck && bun run lint && bun run check:architecture && bun run test:fast && bun run --cwd accounts typecheck && bun run test:accounts",
     "dist": "bun run build && bunx --bun electron-builder --mac",
+    "dist:linux": "bun run build && bunx --bun electron-builder --linux",
     "install-app": "sh scripts/install-app.sh",
     "release": "sh scripts/release.sh"
   },

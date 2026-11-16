@@ -56,6 +56,14 @@ bun run dev
 
 To install your build as `/Applications/Gui.app`, with the `gui` terminal command that opens a folder in it, run `bun run install-app`. Packaging needs Xcode 26+. Builds from source don't ask for a Gui account, don't take updates from usegui.com, and never send crash reports; only official releases do.
 
+### Linux
+
+On Linux, you need Bun 1.4+, git, and a C++ toolchain (`gcc`, `g++`, `make`, `python3`) to compile `node-pty`. Run `bun install` and `bun run dev` as above.
+
+To package Gui, run `bun run dist:linux`. It writes an AppImage, a `.deb`, and an `.rpm` to `release/`. The `.deb` and `.rpm` builds need `libxcrypt-compat` on Fedora. In Gui, use **Gui → 'gui' Command → Install 'gui' Command…** to add the `gui` command to `~/.local/bin`.
+
+Narrated recordings are not transcribed on Linux.
+
 Connecting GitHub to clone your repositories needs the account service in `accounts/`. Cloning by address works without it. See [account service setup](accounts/README.md).
 
 ## Development

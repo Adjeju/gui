@@ -1,14 +1,9 @@
 import { BrowserWindow, screen, type WebContentsView } from 'electron'
 import { viewportRectFrom, viewRectFromViewport } from '../shared/coords'
 import { Events } from '../shared/ipc'
-import {
-  BUBBLE,
-  PANEL_SHADOW_MARGIN,
-  TAB_ROW_HEIGHT,
-  TOOLBAR_HEIGHT,
-  TRAFFIC_LIGHTS,
-} from '../shared/layout'
+import { BUBBLE, PANEL_SHADOW_MARGIN, TAB_ROW_HEIGHT, TOOLBAR_HEIGHT } from '../shared/layout'
 import { project, SPRINGS, type SpringConfig } from '../shared/motion'
+import { IS_MAC } from '../shared/platform'
 import type {
   ChatFloat,
   ChatForm,
@@ -32,6 +27,7 @@ import {
 } from './chat-presentation'
 import { DockMorph } from './dock-morph'
 import { dockTarget, existingDockTarget } from './dock-target'
+import { windowChrome } from './os'
 import { Flight, prefersReducedMotion } from './panel-flight'
 import { type ChatSize, getPrefs, setPrefs } from './prefs'
 import type { PreviewMorph } from './preview-morph'
@@ -274,8 +270,7 @@ export class ChatPanel {
       minHeight: PANEL_MIN.height,
       show: false,
       title: `${this.tab.title ?? 'Chat'} — Chat`,
-      titleBarStyle: 'hiddenInset',
-      trafficLightPosition: TRAFFIC_LIGHTS,
+      ...windowChrome(),
       fullscreenable: false,
       backgroundColor: surfaceColor(),
     })
@@ -1305,7 +1300,7 @@ export class ChatPanel {
       card: Math.round(card * 1000) / 1000,
       radius: Math.round(shape.radius * card * 100) / 100,
       side: shape.side,
-      trafficLights: shape.side === 'left' && !this.tab.host.win.isFullScreen(),
+      trafficLights: IS_MAC && shape.side === 'left' && !this.tab.host.win.isFullScreen(),
       tabRow: this.tab.host.chromeHeight > TOOLBAR_HEIGHT,
       reveal: shape.reveal,
     })

@@ -20,6 +20,16 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
 
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+
   release-dry-run:
     runs-on: macos-latest
     steps:

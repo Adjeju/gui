@@ -1,6 +1,5 @@
 import { app, BrowserWindow, dialog, type MessageBoxOptions, type WebContents } from 'electron'
 import { Events } from '../shared/ipc'
-import { TRAFFIC_LIGHTS } from '../shared/layout'
 import {
   type AgentId,
   CUSTOM_AGENT_PREFIX,
@@ -15,6 +14,7 @@ import {
 import { agentHealth } from './agent-status'
 import { customAgentEntries, deleteCustomAgent, saveCustomAgent } from './agents'
 import { archiveStoredChat, historyFile } from './history'
+import { windowChrome } from './os'
 import { outsideAgentsState } from './outside-agents'
 import { getPrefs, prefsEvents, setPrefs } from './prefs'
 import {
@@ -71,8 +71,7 @@ export function openSettings(section?: SettingsSection) {
     show: false,
     title: 'Settings',
     fullscreenable: false,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: TRAFFIC_LIGHTS,
+    ...windowChrome(),
     // Solid, not the system's sidebar material: that takes on whatever is behind the window
     // (a dark window darkens it even in light mode), and the sidebar's labels vanished on it.
     backgroundColor: surfaceColor(),

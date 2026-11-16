@@ -35,7 +35,8 @@ files:
   - "!**/node_modules/**/*.{d.ts,d.mts,d.cts,md,markdown}"
   # TypeScript sources some packages ship next to their JS (zod's src/ alone is ~4 MB).
   - "!**/node_modules/**/*.{ts,mts,cts,tsx}"
-  # node-pty: only its JS and the darwin-arm64 prebuild are used at runtime.
+  # node-pty: only its JS and one native build are used at runtime: the darwin-arm64 prebuild
+  # on macOS, or on Linux the build/Release that `bun install` compiles (it has no prebuild).
   - "!**/node_modules/node-pty/{src,deps,third_party,scripts,typings,binding.gyp}"
   - "!**/node_modules/node-pty/prebuilds/{win32-*,darwin-x64}"
   # The Claude Code and Codex CLIs (~530 MB) aren't shipped: Gui uses the user's own
@@ -49,10 +50,6 @@ files:
 extraResources:
   - from: bin/gui
     to: bin/gui
-  # On-device transcription for narrated preview recordings (scripts/build-native.sh). osx-sign
-  # signs it like every other Mach-O in the bundle, with the hardened runtime.
-  - from: native/.build/gui-transcribe
-    to: bin/gui-transcribe
 
 # Where installed copies look for updates (src/main/updates.ts): an R2 bucket served by the
 # usegui.com worker (www/worker.js). An installed copy follows the channel of its own version:
@@ -87,6 +84,11 @@ npmRebuild: false
 
 mac:
   category: public.app-category.developer-tools
+  # On-device transcription for narrated preview recordings (scripts/build-native.sh). osx-sign
+  # signs it like every other Mach-O in the bundle, with the hardened runtime.
+  extraResources:
+    - from: native/.build/gui-transcribe
+      to: bin/gui-transcribe
   # Icon Composer document with light and dark appearances. electron-builder compiles it with
   # Xcode 26+'s actool into Assets.car (macOS 26) plus an .icns fallback for older macOS.
   # Preview an appearance with Xcode's ictool, e.g.: "$(xcode-select -p)/../Applications/Icon
@@ -127,6 +129,18 @@ mac:
         LSHandlerRank: None
         LSItemContentTypes:
           - public.folder
+
+linux:
+  category: Development
+  executableName: gui
+  syncDesktopName: true
+  icon: build/linux-icon.png
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  synopsis: Design real interfaces with your own AI agents
+  target:
+    - target: AppImage
+    - target: deb
+    - target: rpm
 
 # Gatekeeper checks the downloaded DMG as well as the app, and rejects one with no signature
 # even when it's notarized. scripts/release.sh notarizes and staples it after this.

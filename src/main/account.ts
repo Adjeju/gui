@@ -12,6 +12,7 @@ import {
   invalidatesAccountSession,
 } from '../shared/account'
 import { officialBuild } from './official-build'
+import { secureStorageProblem } from './secure-storage'
 
 declare const __GUI_ACCOUNTS_URL__: string
 
@@ -253,8 +254,10 @@ async function begin(link: boolean): Promise<Attempt> {
   if (starting) await starting.catch(() => undefined)
   if (current?.link === link) return current
   await cancelSignIn()
-  if (!safeStorage.isEncryptionAvailable())
-    throw new Error('Secure storage is unavailable. Signing in needs the macOS keychain.')
+  const problem = secureStorageProblem(process.platform, safeStorage.isEncryptionAvailable(), () =>
+    safeStorage.getSelectedStorageBackend(),
+  )
+  if (problem) throw new Error(problem)
   starting = (async () => {
     const server = createServer()
     try {

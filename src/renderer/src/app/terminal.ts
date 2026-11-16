@@ -2,6 +2,7 @@ import { FitAddon, Ghostty, type ITheme, Terminal } from 'ghostty-web'
 import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 import { TERMINAL_SCROLLBACK_BYTES } from '../../../shared/bounded'
 import type { TextMatch } from '../../../shared/find'
+import { IS_MAC } from '../../../shared/platform'
 
 // Ghostty's terminal, compiled to WebAssembly: loaded once, with the module that draws the
 // drawer's terminals. It measures the mono font as it draws, so that loads first too.
@@ -164,7 +165,17 @@ export function mountTerminal(
   const ghosttyKeys = input?.keydownListener
   if (!input || !ghosttyKeys) throw new Error('ghostty-web: no key listener to wrap')
   const keys: Keys = (event) => {
-    if (!event.metaKey || event.code === 'KeyC' || event.code === 'KeyV') return ghosttyKeys(event)
+    if (!IS_MAC) {
+      if (!event.ctrlKey || !event.shiftKey) return ghosttyKeys(event)
+      if (event.code === 'KeyC') {
+        event.preventDefault()
+        document.execCommand('copy')
+        return
+      }
+      if (event.code === 'KeyV') return
+    } else if (!event.metaKey || event.code === 'KeyC' || event.code === 'KeyV') {
+      return ghosttyKeys(event)
+    }
     if (onCommand?.(event)) return event.preventDefault()
     // Edit → Select All selects the terminal's text, as it did the page's.
     if (event.code === 'KeyA') term.selectAll()

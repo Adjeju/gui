@@ -146,7 +146,7 @@ export function App() {
 function FocusBar({ state }: { state: WindowState }) {
   return (
     <header
-      className="drag relative z-chrome flex shrink-0 items-center gap-2 border-b-hairline border-line bg-surface pr-2 pl-20"
+      className={`drag relative z-chrome flex shrink-0 items-center gap-2 border-b-hairline border-line bg-surface pr-2 ${state.trafficLights ? 'pl-20' : 'pl-3'}`}
       style={{ height: FOCUS_BAR_HEIGHT }}
     >
       {/* After the traffic lights, left-aligned like every other title in Gui */}

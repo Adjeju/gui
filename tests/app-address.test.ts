@@ -11,7 +11,14 @@ import {
   SETTLE_MS,
   SLOW_START_MS,
 } from '../src/main/app-address'
-import { listenersOf } from '../src/main/ports'
+import {
+  listenersOf,
+  type ProcReader,
+  processGroups,
+  procIpv4,
+  procIpv6,
+  procListeners,
+} from '../src/main/ports'
 
 const candidate = (
   port: number,
@@ -153,5 +160,75 @@ describe('asking what a port serves', () => {
     const port = await serve((_req, res) => res.end())
     const listeners = await listenersOf(process.pid)
     expect(listeners?.some((l) => l.port === port && l.pid === process.pid)).toBe(true)
+  })
+})
+
+describe('listening addresses in /proc/net', () => {
+  test('IPv4 addresses read back to front, and any address is *', () => {
+    expect(procIpv4('0100007F')).toBe('127.0.0.1')
+    expect(procIpv4('00000000')).toBe('*')
+  })
+
+  test('IPv6 addresses come out as lsof names them, and IPv4-mapped ones as IPv4', () => {
+    expect(procIpv6('00000000000000000000000001000000')).toBe('[::1]')
+    expect(procIpv6('00000000000000000000000000000000')).toBe('[::]')
+    expect(procIpv6('0000000000000000FFFF00000100007F')).toBe('127.0.0.1')
+  })
+})
+
+describe('listeners read from /proc', () => {
+  const TABLE = [
+    '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode',
+    '   0: 0100007F:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 222',
+    '   1: 00000000:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1001        0 111',
+    '   2: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 333',
+  ].join('\n')
+  const denied = () => Promise.reject(new Error('EACCES'))
+  const reader: ProcReader = {
+    readFile: (path) => (path === '/proc/net/tcp' ? Promise.resolve(TABLE) : denied()),
+    readdir: (path) =>
+      ({ '/proc/1/fd': Promise.resolve(['3']), '/proc/99/fd': Promise.resolve(['7']) })[path] ??
+      denied(),
+    readlink: (path) =>
+      ({
+        '/proc/1/fd/3': Promise.resolve('socket:[222]'),
+        '/proc/99/fd/7': Promise.resolve('socket:[333]'),
+      })[path] ?? denied(),
+  }
+
+  test("a listener whose process can't be read stays, with no owner", async () => {
+    const listeners = await procListeners([1, 2, 99], { unowned: true, reader, self: 99 })
+    expect(listeners?.filter((l) => l.port === 3000)).toEqual([
+      { pid: 1, host: '127.0.0.1', port: 3000 },
+      { pid: 0, host: '*', port: 3000 },
+    ])
+    expect(await processGroups([0])).toEqual(new Map())
+  })
+
+  test("a project's own listeners leave out unowned ones", async () => {
+    const listeners = await procListeners([1], { unowned: false, reader, self: 99 })
+    expect(listeners).toEqual([{ pid: 1, host: '127.0.0.1', port: 3000 }])
+  })
+
+  test('a port nothing listens on reads no process', async () => {
+    const read: string[] = []
+    const watched: ProcReader = {
+      readFile: reader.readFile,
+      readdir: (path) => {
+        read.push(path)
+        return reader.readdir(path)
+      },
+      readlink: (path) => {
+        read.push(path)
+        return reader.readlink(path)
+      },
+    }
+    expect(await procListeners('all', { unowned: true, port: 5173, reader: watched })).toEqual([])
+    expect(read).toEqual([])
+  })
+
+  test('a port filter keeps only that port, owned or not', async () => {
+    const listeners = await procListeners([1, 99], { unowned: true, port: 8080, reader, self: 99 })
+    expect(listeners).toEqual([{ pid: 99, host: '127.0.0.1', port: 8080 }])
   })
 })

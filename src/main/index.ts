@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, readlinkSync, renameSync, rmSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readlinkSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from 'node:fs'
 import { mkdir, readFile, realpath, rm, stat, symlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -42,6 +50,7 @@ import {
   type LegacyResult,
 } from '../shared/ipc-requests'
 import { OUTSIDE_CLIENTS } from '../shared/outside-setup'
+import { IS_MAC } from '../shared/platform'
 import { PreviewGuides } from '../shared/preview-guides'
 import { MAX_PREVIEW_TEXT, PreviewText } from '../shared/preview-text'
 import {
@@ -101,6 +110,7 @@ import {
   noRequestArgs,
   stringRequestArgs,
 } from './ipc-handler'
+import { installLinuxLauncher } from './linux-cli'
 import { isLoopback } from './loopback'
 import { preloadMcpSdk } from './mcp-server'
 import { chatWillHide, terminalWillHide } from './menu-toggles'
@@ -564,7 +574,7 @@ async function openOrShow(root: string) {
 }
 
 /** Where the `gui` command lives: on PATH for zsh and bash on every Mac. */
-const CLI_LINK = '/usr/local/bin/gui'
+const CLI_LINK = IS_MAC ? '/usr/local/bin/gui' : join(app.getPath('home'), '.local', 'bin', 'gui')
 const execFileAsync = promisify(execFile)
 
 /** The `gui` script inside this copy of Gui. */
@@ -596,6 +606,13 @@ function runSkillCommand(action: 'setup' | 'remove') {
  * skill included, before it does either.
  */
 async function installCli() {
+  if (!IS_MAC && !app.isPackaged) {
+    dialog.showErrorBox(
+      "Couldn't install the gui command",
+      'Install a packaged build of Gui, such as the AppImage, to use the gui command.',
+    )
+    return
+  }
   const { response } = await dialog.showMessageBox({
     type: 'question',
     message: "Install the 'gui' command?",
@@ -608,16 +625,19 @@ async function installCli() {
   if (response !== 0) return
   const script = cliScript()
   try {
-    try {
-      await mkdir(dirname(CLI_LINK), { recursive: true })
-      await rm(CLI_LINK, { force: true })
-      await symlink(script, CLI_LINK)
-    } catch {
-      const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`
-      const command = `mkdir -p ${quote(dirname(CLI_LINK))} && ln -sf ${quote(script)} ${quote(CLI_LINK)}`
-      const appleScript = `do shell script "${command.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}" with administrator privileges`
-      await execFileAsync('/usr/bin/osascript', ['-e', appleScript])
-    }
+    if (!IS_MAC) {
+      if (!(await installLinuxCli(script))) return
+    } else
+      try {
+        await mkdir(dirname(CLI_LINK), { recursive: true })
+        await rm(CLI_LINK, { force: true })
+        await symlink(script, CLI_LINK)
+      } catch {
+        const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`
+        const command = `mkdir -p ${quote(dirname(CLI_LINK))} && ln -sf ${quote(script)} ${quote(CLI_LINK)}`
+        const appleScript = `do shell script "${command.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}" with administrator privileges`
+        await execFileAsync('/usr/bin/osascript', ['-e', appleScript])
+      }
   } catch (error) {
     // Cancelling the password prompt is the user's choice, not a failure.
     if (error instanceof Error && error.message.includes('User canceled')) return
@@ -635,9 +655,50 @@ async function installCli() {
     message: "Installed the 'gui' command",
     detail: [
       'In a new terminal window, run gui in a project folder to open it here and start its dev server.',
+      ...(IS_MAC ? [] : await linuxPathHint()),
       skill,
     ].join('\n\n'),
   })
+}
+
+function installLinuxCli(script: string) {
+  return installLinuxLauncher({
+    target: CLI_LINK,
+    executable: process.env.APPIMAGE || process.execPath,
+    script,
+    confirmReplace: async () => {
+      const { response } = await dialog.showMessageBox({
+        type: 'warning',
+        message: `Replace ${CLI_LINK}?`,
+        detail: "A gui command that Gui didn't install is already there. Replacing it deletes it.",
+        buttons: ['Replace', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+      })
+      return response === 0
+    },
+  })
+}
+
+async function linuxPathHint() {
+  const dir = dirname(CLI_LINK)
+  const path = (await getShellEnv()).PATH?.split(':') ?? []
+  if (path.includes(dir)) return []
+  return [
+    `${dir} isn't on your PATH yet. Add it in your shell's profile, for example: export PATH="$HOME/.local/bin:$PATH"`,
+  ]
+}
+
+function folderFromArgs(argv: readonly string[], cwd: string) {
+  if (!app.isPackaged) return null
+  for (const arg of argv.slice(1).reverse()) {
+    if (arg.startsWith('-')) continue
+    const path = resolve(cwd, arg)
+    try {
+      if (statSync(path).isDirectory()) return path
+    } catch {}
+  }
+  return null
 }
 
 /** Removes the open-in-gui agent skill, if Gui installed it. */
@@ -1809,12 +1870,16 @@ function buildMenu() {
           ],
         },
         { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
+        ...(IS_MAC
+          ? ([
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+            ] satisfies MenuItemConstructorOptions[])
+          : []),
         { role: 'quit' },
       ],
     },
@@ -1849,7 +1914,9 @@ function buildMenu() {
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
-        { role: 'pasteAndMatchStyle' },
+        IS_MAC
+          ? { role: 'pasteAndMatchStyle' }
+          : { role: 'pasteAndMatchStyle', accelerator: 'CmdOrCtrl+Shift+V' },
         { role: 'delete' },
         { role: 'selectAll' },
         { type: 'separator' },
@@ -1956,7 +2023,7 @@ function buildMenu() {
       role: 'window',
       submenu: [
         { role: 'minimize' },
-        { role: 'zoom' },
+        ...(IS_MAC ? ([{ role: 'zoom' }] satisfies MenuItemConstructorOptions[]) : []),
         { type: 'separator' },
         ...item('previousTab', { click: withTabs((w) => w.showAdjacentTab(-1)) }),
         ...item('nextTab', { click: withTabs((w) => w.showAdjacentTab(1)) }),
@@ -1966,8 +2033,9 @@ function buildMenu() {
           ...synced[MOVE_TAB_ITEM],
           click: withTabs((w) => w.moveToNewWindow(w.activeTab.id)),
         },
-        { type: 'separator' },
-        { role: 'front' },
+        ...(IS_MAC
+          ? ([{ type: 'separator' }, { role: 'front' }] satisfies MenuItemConstructorOptions[])
+          : []),
       ],
     },
     {
@@ -2061,7 +2129,11 @@ if (!app.requestSingleInstanceLock()) {
   // Reading the login shell's environment takes about half a second. Started before `ready`,
   // it's usually done by the time the first project's dev server or agent needs it.
   void getShellEnv()
-  app.on('second-instance', () => focusExistingWindow())
+  app.on('second-instance', (_event, argv, cwd) => {
+    const folder = IS_MAC ? null : folderFromArgs(argv, cwd)
+    if (folder) void app.whenReady().then(() => openOrShow(folder))
+    else focusExistingWindow()
+  })
 
   app.on('open-file', (event, path) => {
     event.preventDefault()
@@ -2109,6 +2181,8 @@ if (!app.requestSingleInstanceLock()) {
     void agentHealth.checkOnLaunch(getPrefs().agentId)
     const initial = !app.isPackaged ? process.env.GUI_OPEN : undefined
     if (initial) openSafely(win, resolve(initial))
+    const folder = IS_MAC ? null : folderFromArgs(process.argv, process.cwd())
+    if (folder) openSafely(win, folder)
     afterFirstWindow(win.win, () => {
       startUpdates()
       preloadMcpSdk()

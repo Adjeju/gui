@@ -2,11 +2,13 @@ import { existsSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { app } from 'electron'
 import { nodeBinDir } from './node-paths'
+import { DEFAULT_SHELL } from './os'
 import { execFile, scrubInheritedEnv } from './process'
 
 const MARKER = '__GUI_ENV__'
 const FALLBACK_PATHS = [
   '/opt/homebrew/bin',
+  '/home/linuxbrew/.linuxbrew/bin',
   '/usr/local/bin',
   '/usr/bin',
   '/bin',
@@ -26,7 +28,7 @@ export function getShellEnv(): Promise<NodeJS.ProcessEnv> {
 }
 
 async function loadShellEnv(): Promise<NodeJS.ProcessEnv> {
-  const shell = process.env.SHELL || '/bin/zsh'
+  const shell = process.env.SHELL || DEFAULT_SHELL
   const base = scrubInheritedEnv(process.env)
   const resolved = await new Promise<string | null>((resolve) => {
     execFile(

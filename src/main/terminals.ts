@@ -3,6 +3,7 @@ import { app } from 'electron'
 import type { IPty } from 'node-pty'
 import type { TerminalOutput } from '../shared/ipc'
 import type { TerminalId, TerminalInfo } from '../shared/types'
+import { DEFAULT_SHELL } from './os'
 import { Output } from './output'
 import { spawnPty } from './process'
 import { endProcessGroups } from './process-groups'
@@ -165,7 +166,7 @@ export class Terminals extends EventEmitter<TerminalsEvents> {
     let proc: IPty
     try {
       // A login shell, as Terminal starts it; on a terminal, it's interactive.
-      proc = spawnPty(env.SHELL || '/bin/zsh', ['-l'], {
+      proc = spawnPty(env.SHELL || DEFAULT_SHELL, ['-l'], {
         name: 'xterm-256color',
         cols: shell.size.cols,
         rows: shell.size.rows,
