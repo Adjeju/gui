@@ -11,6 +11,19 @@ export interface Release {
 
 export const releases: Release[] = [
   {
+    version: '0.1.0-alpha.22',
+    date: '2026-11-17',
+    changes: [
+      'Gui for Linux: download an AppImage or a .deb, for x64 or arm64, from usegui.com. The AppImage updates itself. Thanks, Gabriel Aguiar.',
+      'A canvas can live in any folder, like inside your project’s repo, and opens from there. New Canvas asks where to save it.',
+      'A canvas in a git repo can commit its own folder after a turn that changed it: Commit to Git…, or switch on Commit After Each Turn.',
+      'When your agent offers more than one model provider, like fx (Gateway, Codex, Grok), the model picker switches between them and lists that provider’s models.',
+      'In the model picker, a provider’s name stays in view while you scroll its models.',
+      'Gui shares anonymous usage data, like opening a project or finishing a message, so we can see which parts of Gui people use. It never includes your code, files or chats. Turn it off in Settings → Account → Share usage data.',
+      'Fix: a terminal that met output it couldn’t draw, like emoji in many colors, could stop for good. It now starts again and keeps showing what comes next.',
+    ],
+  },
+  {
     version: '0.1.0-alpha.21',
     date: '2026-11-16',
     changes: [
