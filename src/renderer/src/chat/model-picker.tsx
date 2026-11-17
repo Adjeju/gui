@@ -703,7 +703,9 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
               <GroupLabel
                 as="div"
                 id={`${id}-group-${number}`}
-                className="truncate px-2 pt-1.5 pb-1"
+                // Pinned while its rows scroll under it (flush with the list's top, past its
+                // p-1), so a long provider's models still say whose they are.
+                className="sticky -top-1 z-sticky truncate bg-overlay px-2 pt-1.5 pb-1"
               >
                 {section.label}
               </GroupLabel>

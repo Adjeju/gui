@@ -324,6 +324,24 @@ test('the model picker searches the models, sets the model and effort, and new s
   await expect(anthropic.getByRole('option').first()).toHaveText('Claude Opus 4.1')
   await expectPlaced(session, dialog, button)
 
+  // Scrolled into a provider's models, its header stays pinned at the top of the list, so
+  // every row still says whose model it is.
+  const google = list.getByRole('group', { name: 'Google' })
+  // Its third model at the top of the list: unpinned, the header would be scrolled away.
+  const scrolled = await google.getByRole('option').nth(2).elementHandle()
+  await list.evaluate((el, row) => {
+    if (row) el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top
+  }, scrolled)
+  const header = google.getByText('Google', { exact: true })
+  await expect(header).toBeInViewport()
+  const [listTop, headerTop] = await Promise.all([
+    list.evaluate((el) => el.getBoundingClientRect().top),
+    header.evaluate((el) => el.getBoundingClientRect().top),
+  ])
+  expect(Math.abs(headerTop - listTop)).toBeLessThanOrEqual(1)
+  await session.shot('model-picker-pinned-provider')
+  await list.evaluate((el) => el.scrollTo(0, 0))
+
   // Every typed word matches somewhere in the name, value or provider, in any case.
   await chat.keyboard.type('SON 4')
   await expect(options).toHaveText(['Claude Sonnet 4.5', 'Claude Sonnet 4'])
