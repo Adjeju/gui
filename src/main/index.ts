@@ -138,6 +138,7 @@ import { findWorkspaceRoot } from './project'
 import { loadRecent } from './recent'
 import { type Recordings, registerRecordingProtocol } from './recordings'
 import { isAppContents } from './renderer'
+import { linuxPasswordStore } from './secure-storage'
 import {
   archiveRecentChat,
   clearRecent,
@@ -237,6 +238,10 @@ function adoptGratData(from: string, to: string) {
 // imports above have already run by now, so no module may read userData (prefs included)
 // as it's imported.
 applyDevFlags()
+
+// Before ready, or Chromium has already picked where safeStorage keeps its key.
+const passwordStore = linuxPasswordStore(process.platform, process.argv, process.env)
+if (passwordStore) app.commandLine.appendSwitch('password-store', passwordStore)
 
 if (!app.commandLine.hasSwitch('user-data-dir')) {
   const appData = app.getPath('appData')
