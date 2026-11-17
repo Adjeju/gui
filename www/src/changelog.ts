@@ -11,6 +11,13 @@ export interface Release {
 
 export const releases: Release[] = [
   {
+    version: '0.1.0-alpha.23',
+    date: '2026-11-17',
+    changes: [
+      'Fix: on Linux, signing in works on desktops like Hyprland, Sway, i3 and niri when a keyring such as GNOME Keyring or KeePassXC is running. Before, Gui asked you to set up a keyring even when you had one.',
+    ],
+  },
+  {
     version: '0.1.0-alpha.22',
     date: '2026-11-17',
     changes: [
