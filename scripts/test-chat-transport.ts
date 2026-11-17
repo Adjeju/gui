@@ -39,6 +39,27 @@ const append = send()
 assert.equal(append.kind, 'patch')
 if (append.kind === 'patch')
   assert.deepEqual(append.items, [{ kind: 'append', id: 'text', text: ' world' }])
+// Thinking streamed with the reply: the item before the last grows too, in place.
+turn.items.push({ id: 'thinking', kind: 'thought', text: 'hmm' })
+send()
+for (const [index, more] of [
+  [0, '!'],
+  [1, ' ok'],
+] as const) {
+  const item = turn.items[index]
+  if (item.kind === 'text' || item.kind === 'thought') item.text += more
+}
+const both = send()
+assert.equal(both.kind, 'patch')
+if (both.kind === 'patch') {
+  assert.deepEqual(both.items, [
+    { kind: 'append', id: 'text', text: '!' },
+    { kind: 'append', id: 'thinking', text: ' ok' },
+  ])
+  assert.equal(both.order, undefined)
+}
+turn.items.splice(1, 1)
+send()
 // Rewrites, permissions, nested mutable plan updates and removals must still converge.
 turn.items[0] = { id: 'text', kind: 'thought', text: 'rewritten' }
 send()

@@ -21,7 +21,7 @@ import { expect, test } from './helpers/test'
  * fails the first time with the provider's raw overloaded error, and answers the next. EDIT
  * asks to edit package.json, with the change it would make. PLAN finishes a two-item plan.
  * BIG writes a file with a heredoc command of about 80 KB that prints as much, and reads 250
- * files in one step.
+ * files in one step. MIXED streams its thinking and its answer interleaved, a few words each.
  */
 const AGENT_SCRIPT = String.raw`
 const { appendFileSync } = require('node:fs')
@@ -121,6 +121,16 @@ const prompt = async ({ sessionId, prompt }) => {
     tool('many-1', 'Read files', 'read', { locations })
     done('many-1')
     say('Written.')
+  } else if (text.includes('MIXED')) {
+    const think = (words) =>
+      notify(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: words } })
+    const answer = ['I’m checking token usage', ', shared component', ' coverage', ' before answering.']
+    const thinking = ['Base resets', ' and old comments', ' are not relevant', ' here.']
+    for (const [i, words] of answer.entries()) {
+      think(thinking[i])
+      say(words)
+      await sleep(60)
+    }
   } else if (text.includes('LONG')) {
     const lines = Array.from({ length: 60 }, (_, i) => 'Line ' + (i + 1) + ' of the answer.')
     say(lines.join('\n\n'))
@@ -351,6 +361,19 @@ test('a turn reads as steps, permission cards ask in macOS order, effort levels 
     /^Run a command\s*cat > src\/data\.txt <<'EOF'/,
     /^Read File0\.tsx and 249 more\s*src\/File0\.tsx, .*, and 150 more/,
   ])
+
+  // Thinking streamed together with the answer: one Thinking row, and the answer in one piece.
+  expect(await send(chat, 'MIXED Check the tokens.')).toBe(true)
+  const { turn: mixed } = await session.waitForTurn(7)
+  expect(mixed.items.map((item) => ('text' in item ? [item.kind, item.text] : item.kind))).toEqual([
+    ['thought', 'Base resets and old comments are not relevant here.'],
+    ['text', 'I’m checking token usage, shared component coverage before answering.'],
+  ])
+  const answered = chat.getByRole('article').last()
+  await expect(answered.getByRole('button', { name: 'Thinking' })).toHaveCount(1)
+  await expect(
+    answered.getByText('I’m checking token usage, shared component coverage before answering.'),
+  ).toBeVisible()
 })
 
 test('the transcript stays at its newest line as the queue appears; a re-logged error counts once', async ({
