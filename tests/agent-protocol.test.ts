@@ -6,6 +6,7 @@ import {
   errorDetail,
   formQuestions,
   GEMINI_MODE_NOTICE,
+  mcpServersFor,
   modeNoticeUpdate,
   plainAgentError,
   questionRequest,
@@ -319,5 +320,26 @@ describe('plainAgentError', () => {
   test('anything else keeps the agent\u2019s own words', () => {
     expect(plainAgentError('Tool execution failed: no such file src/App.tsx')).toBeNull()
     expect(plainAgentError('Port 5173 is in use')).toBeNull()
+  })
+})
+
+describe('mcpServersFor', () => {
+  const http: acp.McpServer = {
+    type: 'http',
+    name: 'gui',
+    url: 'http://127.0.0.1:1/mcp',
+    headers: [{ name: 'Authorization', value: 'Bearer t' }],
+  }
+  const stdio: acp.McpServer = { name: 'local', command: 'tool', args: [], env: [] }
+
+  test('HTTP servers go to an agent that advertises them', () => {
+    // As @bex-co/muse-code-acp 0.11.0 advertises it.
+    expect(mcpServersFor({ mcpCapabilities: { http: true } }, [http, stdio])).toEqual([http, stdio])
+  })
+
+  test('none to an agent that turns HTTP off or says nothing', () => {
+    // pi-acp 0.0.34 advertises { http: false, sse: false }.
+    expect(mcpServersFor({ mcpCapabilities: { http: false, sse: false } }, [http])).toEqual([])
+    expect(mcpServersFor(undefined, [http, stdio])).toEqual([stdio])
   })
 })

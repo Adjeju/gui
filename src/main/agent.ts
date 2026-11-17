@@ -18,6 +18,7 @@ import {
   errorDetail,
   findSetting,
   formQuestions,
+  mcpServersFor,
   modeNoticeUpdate,
   type PermissionRequest,
   parseModelSettings,
@@ -153,6 +154,21 @@ export interface StartOptions {
    * (PermissionControls.sessionMeta). Health checks, which never prompt, leave it out.
    */
   permissions?: PermissionPolicy
+}
+
+/** One session start: the MCP servers Gui had for the agent, and those it passed on. */
+export interface McpOffer {
+  agentId: AgentId
+  offered: string[]
+  sent: string[]
+}
+
+/** Sees what each session start passed on; only dev builds set one (dev-flags.ts). */
+let offerObserver: ((offer: McpOffer) => void) | null = null
+
+/** Reports which of Gui's MCP servers each agent session is given, from now on. */
+export function observeMcpOffers(observe: (offer: McpOffer) => void) {
+  offerObserver = observe
 }
 
 export interface AuthMethod {
@@ -463,11 +479,12 @@ export class AgentSession {
     this.signInError = (error) =>
       new AgentAuthError(signInMessage(definition, error, methods.length > 0), methods)
 
-    // ACP clients may only pass HTTP MCP servers to agents that advertise support.
-    const httpMcp = init.agentCapabilities?.mcpCapabilities?.http === true
-    const servers = mcpServers.filter(
-      (server) => httpMcp || !('type' in server && server.type === 'http'),
-    )
+    const servers = mcpServersFor(init.agentCapabilities, mcpServers)
+    offerObserver?.({
+      agentId: this.agentId,
+      offered: mcpServers.map((server) => server.name),
+      sent: servers.map((server) => server.name),
+    })
 
     if (authenticate) {
       await this.untilExit(

@@ -7,7 +7,11 @@ export interface SmokeResult {
   name: string
   /** Null when the run stopped before Gui said */
   installed: boolean | null
-  result: 'pass' | 'fail' | 'skipped'
+  /**
+   * `no-tools`: the turn finished with the right reply, but Gui sent the agent none of its
+   * tool servers, as its adapter says it can't take them. Not a failure of the run.
+   */
+  result: 'pass' | 'no-tools' | 'fail' | 'skipped'
   seconds: number
   /** Why it failed or was skipped */
   reason: string | null
@@ -40,7 +44,7 @@ export function formatTable(results: SmokeResult[]): string {
   const rows = results.map((r) => [
     r.version ? `${r.name} ${r.version}` : r.name,
     r.installed === null ? '?' : r.installed ? 'yes' : 'no',
-    r.result.toUpperCase(),
+    r.result.replace('-', ' ').toUpperCase(),
     `${r.seconds.toFixed(0)}s`,
     r.model ?? '',
     r.tools.length ? [...new Set(r.tools)].join(', ') : '',

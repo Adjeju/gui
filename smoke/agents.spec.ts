@@ -57,6 +57,15 @@ interface McpTraceEntry {
   tool: string | null
 }
 
+/** Which of Gui's MCP servers a session start had for the agent, and passed on (agent.ts). */
+interface McpOffer {
+  agentId: AgentId
+  offered: string[]
+  sent: string[]
+}
+
+const NO_TOOLS = "Its adapter doesn't pass tool servers to it"
+
 class Skip extends Error {}
 
 /** Waits for Gui's own check of the agent (it starts a session, without a prompt). */
@@ -136,6 +145,19 @@ async function runTurn(session: GuiSession): Promise<Turn> {
 const mcpTrace = (session: GuiSession) =>
   session.app.evaluate(() => (globalThis as { guiMcpTrace?: McpTraceEntry[] }).guiMcpTrace ?? [])
 
+/**
+ * Whether Gui had tool servers for the agent's turn but passed it none, because the agent
+ * said it can't take them. Read from what Gui sent, so it follows the adapter, not a list.
+ */
+async function sentNoTools(session: GuiSession, id: AgentId): Promise<boolean> {
+  const offers = await session.app.evaluate(
+    () => (globalThis as { guiMcpOffers?: McpOffer[] }).guiMcpOffers ?? [],
+  )
+  // Gui's own check of the agent starts a session with no servers; the chat's carries them.
+  const last = offers.filter((offer) => offer.agentId === id && offer.offered.length).at(-1)
+  return last !== undefined && last.sent.length === 0
+}
+
 const replyText = (turn: Turn) =>
   turn.items.flatMap((item) => (item.kind === 'text' ? [item.text] : [])).join('')
 
@@ -171,6 +193,13 @@ async function smoke(id: AgentId, copy: FixtureCopy, testInfo: TestInfo, result:
     // In order, so the reason names the first step that broke.
     if (turn.status !== 'done' || turn.error) {
       throw new Error(`The turn ended ${turn.status}: ${turn.error ?? 'no error given'}`)
+    }
+    if (await sentNoTools(session, id)) {
+      // It can't list tools it was never given; the turn still has to come out right.
+      if (!result.titleInReply) throw new Error(`${NO_TOOLS}, and the reply didn't name "${TITLE}"`)
+      result.result = 'no-tools'
+      result.reason = NO_TOOLS
+      return
     }
     if (!trace.some((entry) => entry.method === 'tools/list')) {
       throw new Error("The agent never listed Gui's MCP tools")

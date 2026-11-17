@@ -130,6 +130,18 @@ export function resumeMethods(
   return methods
 }
 
+/**
+ * The MCP servers Gui may pass the agent: ACP lets a client send HTTP servers only to an
+ * agent that advertises `mcpCapabilities.http`, so one without it gets none of Gui's tools.
+ */
+export function mcpServersFor(
+  capabilities: acp.AgentCapabilities | null | undefined,
+  servers: acp.McpServer[],
+): acp.McpServer[] {
+  const http = capabilities?.mcpCapabilities?.http === true
+  return servers.filter((server) => http || !('type' in server && server.type === 'http'))
+}
+
 /** A question Gui can ask on its permission card: one pick from a list. */
 export interface FormQuestion {
   id: string

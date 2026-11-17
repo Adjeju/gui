@@ -8,7 +8,8 @@ import { AGENTS, type AgentId } from '../src/shared/types'
  *
  *   pass         lists Gui's tools, screenshots the preview, replies with the page title
  *   list-only    lists Gui's tools but calls none
- *   no-mcp       says it can't take HTTP MCP servers, so Gui's tools never reach it
+ *   no-mcp       says it can't take HTTP MCP servers, so Gui sends it none; still names the
+ *                page title, as an agent that read the page's source would
  *   turn-error   fails the prompt with an error
  *   hang         never finishes the prompt (the turn times out)
  *   crash        exits as soon as it starts (Gui's own check fails)
@@ -87,7 +88,7 @@ const prompt = async ({ sessionId }) => {
     if (result.isError) throw new Error('preview_screenshot failed')
     notify(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed' })
   }
-  const text = behavior === 'pass' ? TITLE : 'I did not look at the page. (' + model + ')'
+  const text = behavior === 'pass' || behavior === 'no-mcp' ? TITLE : 'I did not look at the page. (' + model + ')'
   notify(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } })
   return { stopReason: 'end_turn' }
 }

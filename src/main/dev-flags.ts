@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import { setFrameLimitForDevelopment } from '../shared/board'
+import { type McpOffer, observeMcpOffers } from './agent'
 import { observeMcpRequests } from './mcp-server'
 
 /** One message an agent sent Gui's MCP server: its JSON-RPC method, and the tool it called. */
@@ -18,7 +19,9 @@ const MCP_TRACE_LIMIT = 1000
  *
  *   GUI_DEV_MAX_FRAMES=1000  a canvas may hold that many frames (users get MAX_FRAMES)
  *   GUI_E2E_MCP_TRACE=1      what agents ask Gui's MCP server goes in globalThis.guiMcpTrace
- *                            (McpTraceEntry[]), for the agent smoke test (smoke/)
+ *                            (McpTraceEntry[]), and which servers each agent session was
+ *                            given in globalThis.guiMcpOffers (McpOffer[]), for the agent
+ *                            smoke test (smoke/)
  */
 export function applyDevFlags() {
   if (app.isPackaged) return
@@ -29,7 +32,11 @@ export function applyDevFlags() {
 
 function traceMcpRequests() {
   const trace: McpTraceEntry[] = []
-  ;(globalThis as { guiMcpTrace?: McpTraceEntry[] }).guiMcpTrace = trace
+  const offers: McpOffer[] = []
+  Object.assign(globalThis, { guiMcpTrace: trace, guiMcpOffers: offers })
+  observeMcpOffers((offer) => {
+    if (offers.length < MCP_TRACE_LIMIT) offers.push(offer)
+  })
   observeMcpRequests((message) => {
     if (trace.length >= MCP_TRACE_LIMIT || typeof message !== 'object' || message === null) return
     const { method, params } = message as { method?: unknown; params?: { name?: unknown } }
