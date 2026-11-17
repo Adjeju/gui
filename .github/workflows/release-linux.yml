@@ -7,7 +7,7 @@
 # Each architecture builds on its own runner (node-pty compiles for the runner's architecture)
 # and is checked before anything is uploaded: the packaged modules load and the AppImage starts,
 # shows its window and quits cleanly. Only then does the publish job, the one job with the
-# Cloudflare secrets, upload both to the gui-releases R2 bucket and attach them to the release.
+# R2 secrets, upload both to the gui-releases R2 bucket and attach them to the release.
 name: Release Linux
 
 on:
@@ -126,14 +126,6 @@ jobs:
           ref: refs/tags/${{ env.TAG }}
           persist-credentials: false
 
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.4.2
-
-      # Wrangler, at the version www/bun.lock pins.
-      - run: bun install --frozen-lockfile
-        working-directory: www
-
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: linux-*
@@ -152,9 +144,9 @@ jobs:
 
       - name: Publish to usegui.com
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          WRANGLER_SEND_METRICS: 'false'
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: sh scripts/publish-linux.sh dist "${TAG#v}"
 
       - name: Attach to the GitHub Release
