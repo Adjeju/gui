@@ -455,8 +455,13 @@ export class ChatController extends EventEmitter<ChatEvents> {
     return true
   }
 
-  /** What the meta says about the chat's agent, for a chat that switches to `agentId`. */
+  /**
+   * What the meta says about the chat's agent, for a chat that opens on or switches to
+   * `agentId`. Until a session starts, its models are its last check's, so one that hasn't
+   * been checked since launch (a chat restored on an agent other than the default) is now.
+   */
   private agentFields(agentId: AgentId) {
+    agentHealth.ensureChecked(agentId)
     return {
       agentId,
       agentName: agentName(agentId),
@@ -2218,6 +2223,8 @@ export class ChatController extends EventEmitter<ChatEvents> {
    * ends, so the next message starts one that has it.
    */
   private refreshAgent = () => {
+    // An agent from agents.json is only known once the first scan has found it.
+    agentHealth.ensureChecked(this.meta.agentId)
     const agent = agentHealth.list().find((health) => health.id === this.meta.agentId) ?? null
     const was = this.meta.agent?.status
     if (JSON.stringify(agent) !== JSON.stringify(this.meta.agent)) this.patchMeta({ agent })

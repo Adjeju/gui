@@ -355,6 +355,8 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
   const [asked, setView] = useState<'models' | 'agents'>('models')
   // An agent with no models to choose has only the agents to show.
   const view = model ? asked : 'agents'
+  // Its models come from its check (the picker turns to them once it's done).
+  const checking = meta.agent?.status === 'checking' || meta.agent?.status === 'unknown'
   const hasTurns = useChat((s) => s.turnIds.length > 0)
   // Said or waiting to be said: the chat keeps its agent.
   const started = hasTurns || meta.queue.length > 0
@@ -406,8 +408,12 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
             value: agent.id,
             label: agent.name,
             name: agent.name,
-            // What picking it does; while it can't be picked, the line above says why.
-            note: agent.note ?? (other && !busy ? 'New chat' : null),
+            // What picking it does; while it can't be picked, the line above says why. The
+            // chat's own agent, still being checked, has models to list once it's done.
+            note:
+              agent.note ??
+              (other && !busy ? 'New chat' : null) ??
+              (agent.id === agentId && !model && checking ? 'Checking' : null),
             group: null,
             agentId: agent.id,
             disabled: other && busy,
