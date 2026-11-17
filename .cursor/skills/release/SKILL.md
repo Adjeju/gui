@@ -1,6 +1,6 @@
 ---
 name: release
-description: Sign, notarize, and publish a Gui macOS build. Use when cutting a version, debugging Gatekeeper or notarization, or changing electron-builder / scripts/release.sh.
+description: Sign, notarize, and publish a Gui macOS build, and the Linux build GitHub Actions makes from it. Use when cutting a version, debugging Gatekeeper, notarization or the Linux release workflow, or changing electron-builder / scripts/release.sh / .github/workflows/release-linux.yml.
 ---
 
 # Release Gui
@@ -21,5 +21,15 @@ Do not publish from an agent session. Do not put certificates or notary password
 8. Uploads: the zip first. Then the blockmap and the DMG, as `Gui-<version>-arm64.dmg` and `Gui-<channel>-arm64.dmg`; a stable release also as `Gui-arm64.dmg`, which `usegui.com/download` serves in place of the alpha's once it exists. Every `release/*-mac.yml` goes last and is read back from the site before anything is tagged.
 9. Before running it, add the release to the top of `www/src/changelog.ts` (the site's /changelog): the version the script will release, today's date, and a few plain bullets of what a user would notice. The script stops before building if that entry is missing, and after pushing the tag it creates a GitHub Release with those bullets as its notes (`--prerelease` for alphas). Deploy the site (`cd www && bun run deploy`) so /changelog shows it.
 10. CI `release-dry-run` only packs when `CSC_LINK` is set; without secrets it checks `electron-builder.yml` and that `scripts/release.sh` parses.
+
+## Linux
+
+The Linux build is made in GitHub Actions from the tag, by `.github/workflows/release-linux.yml`; nothing runs on the Mac.
+
+11. The GitHub Release that `scripts/release.sh` creates last starts it. On `ubuntu-24.04` (x64) and `ubuntu-24.04-arm` (arm64), each build job checks that `package.json` at the tag has the tag's version, runs `bun run check`, builds with `GUI_OFFICIAL_BUILD=1` (as `release.sh` does) and packages an AppImage and a `.deb` (`electron-builder --linux`; node-pty compiles on the runner). Then `scripts/check-packaged-app.sh` imports each adapter and main-process module from `release/linux-unpacked` (`linux-arm64-unpacked`), and `scripts/check-launch.ts` starts the AppImage under xvfb, waits for its window to load and quits it with SIGTERM, which must end it with exit code 0. A failed check stops the run before anything is uploaded.
+12. One publish job then attests build provenance for the AppImages and `.deb`s, writes `SHA256SUMS`, and runs `scripts/publish-linux.sh`. It refuses a version that `usegui.com/releases/<channel>-mac.yml` doesn't name: Linux follows the Mac's newest release on its channel, so re-running an old tag can't roll anyone back. It uploads `Gui-<version>-x86_64.AppImage`, `Gui-<version>-arm64.AppImage`, `Gui-<version>-amd64.deb` and `Gui-<version>-arm64.deb`, checks that the site answers a Range request with 206, uploads the copies `/download/<file>` serves (`Gui-<channel>-x86_64.AppImage` and so on; a stable release also `Gui-x86_64.AppImage` and so on), and uploads the feeds `<channel>-linux.yml` (x64) and `<channel>-linux-arm64.yml` last, reading them back from the site. Last, it attaches the AppImages, `.deb`s and `SHA256SUMS` to the GitHub Release.
+13. Repository secrets, read only by the publish step: `CLOUDFLARE_API_TOKEN`, an API token with R2 Object Read & Write on the `gui-releases` bucket only, and `CLOUDFLARE_ACCOUNT_ID` (the account in `www/wrangler.jsonc`).
+14. To run it again, re-run the failed jobs in Actions (same workflow file), or `gh workflow run release-linux.yml -f tag=v<version>`, which uses `main`'s workflow file to build the tag. Uploads overwrite what an earlier run put there.
+15. The AppImage updates itself from the Linux feeds. A `.deb` install never checks; Check for Updates tells the user to download the new version (`src/main/updates.ts`). On Linux, `usegui.com/download` is the download page for the browser's processor (`www/src/pages/download/[page].astro`), whose links are the worker's `/download/<file>`. Deploy the site with that page only once a Linux build is in the bucket.
 
 Human review before changing this path.

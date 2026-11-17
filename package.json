@@ -4,6 +4,7 @@
   "desktopName": "gui.desktop",
   "version": "0.1.0-alpha.21",
   "description": "Design real interfaces with your own AI agents",
+  "homepage": "https://usegui.com",
   "author": "Bridger Tower <bridgertower@gmail.com>",
   "private": true,
   "license": "Apache-2.0",

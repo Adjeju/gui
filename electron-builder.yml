@@ -130,6 +130,11 @@ mac:
         LSItemContentTypes:
           - public.folder
 
+# Linux: built and published by .github/workflows/release-linux.yml for x64 and arm64, one
+# runner each (node-pty compiles for the runner's own architecture). `bun run dist:linux` builds
+# the same for this machine. The AppImage updates itself (src/main/updates.ts); the .deb doesn't.
+# Names: Gui-<version>-x86_64.AppImage, Gui-<version>-arm64.AppImage, Gui-<version>-amd64.deb,
+# Gui-<version>-arm64.deb; update feeds <channel>-linux.yml (x64) and <channel>-linux-arm64.yml.
 linux:
   category: Development
   executableName: gui
@@ -137,10 +142,17 @@ linux:
   icon: build/linux-icon.png
   artifactName: ${productName}-${version}-${arch}.${ext}
   synopsis: Design real interfaces with your own AI agents
+  # The .deb's Maintainer; otherwise package.json's author. Its homepage is package.json's.
+  maintainer: Gui <hello@usegui.com>
   target:
     - target: AppImage
     - target: deb
-    - target: rpm
+
+# The AppImage's static runtime opens with the FUSE 3 every current desktop has. The default
+# (0.0.0) needs libfuse2, which Ubuntu 22.04+ doesn't install, and on arm64 also libz.so, which
+# only zlib's development package has.
+toolsets:
+  appimage: "1.0.3"
 
 # Gatekeeper checks the downloaded DMG as well as the app, and rejects one with no signature
 # even when it's notarized. scripts/release.sh notarizes and staples it after this.

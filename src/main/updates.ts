@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { app, dialog, autoUpdater as squirrel } from 'electron'
 import type { AppUpdater } from 'electron-updater'
+import { IS_MAC } from '../shared/platform'
 import { officialBuild } from './official-build'
 import { updatePrompts } from './update-prompts'
 
@@ -11,6 +12,13 @@ const CHECK_EVERY = 4 * 60 * 60 * 1000
 const RESTART_WAIT = 60 * 1000
 
 let updater: Promise<AppUpdater> | null = null
+
+/**
+ * Whether this copy can replace itself with a new version: the Mac app (Squirrel.Mac installs
+ * it) and the Linux AppImage (electron-updater swaps the file; the AppImage runtime sets
+ * APPIMAGE). A .deb is updated by installing the new one, so it never looks for one.
+ */
+const updatesItself = IS_MAC || Boolean(process.env.APPIMAGE)
 
 /** The downloaded version a restart installs, once there is one; 'change' when it's offered. */
 let ready: string | null = null
@@ -23,7 +31,7 @@ const prompts = updatePrompts({
   updater: { check, quitAndInstall: async () => (await loadUpdater()).quitAndInstall() },
   dialog,
   version: () => app.getVersion(),
-  inApplications: () => app.isInApplicationsFolder(),
+  inApplications: () => !IS_MAC || app.isInApplicationsFolder(),
   // Only ever says the restart didn't happen; unref'd so it can't hold a quitting Gui open.
   afterRestartWait: (run) => void setTimeout(run, RESTART_WAIT).unref(),
   offer: (version) => {
@@ -51,8 +59,9 @@ function loadUpdater() {
     autoUpdater.requestHeaders = { 'User-Agent': `Gui/${app.getVersion()}` }
     autoUpdater.on('update-downloaded', (info) => prompts.downloaded(info.version))
     autoUpdater.on('error', failed)
-    // electron-updater hands each download to Squirrel.Mac, Electron's own updater, which
-    // installs it. Only Squirrel.Mac's events say whether a restart can happen.
+    // On a Mac, electron-updater hands each download to Squirrel.Mac, Electron's own updater,
+    // which installs it. Only Squirrel.Mac's events say whether a restart can happen. On Linux
+    // they never fire: electron-updater replaces the AppImage itself when Gui restarts.
     squirrel.on('update-downloaded', () => prompts.installReady())
     squirrel.on('error', (error) => prompts.installFailed(error))
     return autoUpdater
@@ -69,10 +78,11 @@ function failed(error: Error) {
  * Keeps an installed Gui up to date from the feed in electron-builder.yml (`publish`). New
  * versions download in the background; once one is ready Gui offers Restart to Update, quietly
  * in the app menu and the toolbar, and otherwise installs it when the user next quits. Squirrel.Mac only applies an update signed
- * by the same Developer ID, so only official releases check; builds from source never do.
+ * by the same Developer ID, so only official releases check; builds from source never do, and
+ * neither does a copy that can't replace itself (`updatesItself`).
  */
 export function startUpdates() {
-  if (!officialBuild) return
+  if (!officialBuild || !updatesItself) return
   void check()
   setInterval(() => void check(), CHECK_EVERY).unref()
 }
@@ -83,6 +93,13 @@ export async function checkForUpdatesByHand() {
     await dialog.showMessageBox({
       message: 'Updates are off in builds from source',
       detail: 'Pull the latest main and rebuild instead.',
+    })
+    return
+  }
+  if (!updatesItself) {
+    await dialog.showMessageBox({
+      message: 'Gui installed from a .deb doesn’t update itself',
+      detail: 'Download the newest version from https://usegui.com/download and install it.',
     })
     return
   }

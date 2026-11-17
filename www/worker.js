@@ -1,7 +1,9 @@
 // Sends www.usegui.com and http:// to https://usegui.com, so search engines see one site.
 // /releases/ is the app's update feed and builds, from the gui-releases R2 bucket
-// (scripts/release.sh publishes there), and /download is the newest DMG, whatever its channel,
-// counted in the gui-www D1 database. Both send the part of a file a Range header asks for, so
+// (scripts/release.sh and scripts/publish-linux.sh publish there), and /download is the newest
+// DMG, whatever its channel, counted in the gui-www D1 database; on Linux it is the download page,
+// whose /download/<file> links are counted the same way. Both send the part of a file a Range
+// header asks for, so
 // an update downloads only what changed and an interrupted download can resume. /downloads is
 // that count as one number, for the homepage. /waitlist adds an address to the Windows and
 // Linux waitlist in the same database, and /crash keeps the crash reports installed copies send
@@ -10,10 +12,18 @@
 // new app; update feed requests are counted the same way. Everything else is the static site in dist/ (with dist/404.html
 // for pages that don't exist); its videos are sent in parts too.
 
-/** What /download serves: the copy of the newest DMG every release uploads, alpha or stable. */
+/**
+ * What /download serves: the newest stable release's DMG. Until a stable release has uploaded
+ * it, the newest alpha's, Gui-alpha-arm64.dmg (`newest`).
+ */
 const DOWNLOAD = 'Gui-arm64.dmg'
-/** What /download serves until a release has uploaded that copy: the newest alpha DMG. */
-const DOWNLOAD_ALPHA = 'Gui-alpha-arm64.dmg'
+/** The Linux builds the download page links to as /download/<name>, chosen the same way. */
+const LINUX_DOWNLOADS = new Set([
+  'Gui-x86_64.AppImage',
+  'Gui-arm64.AppImage',
+  'Gui-amd64.deb',
+  'Gui-arm64.deb',
+])
 
 /**
  * @typedef {{ offset: number, length: number }} ByteRange
@@ -57,20 +67,22 @@ export default {
       return Response.redirect(url.toString(), 301)
     }
     if (url.pathname === '/download') {
-      // Gui is a Mac app. A phone goes back to the page, which says so, and is not counted.
-      // (iPadOS says it is a Mac; the page's script handles it.)
-      if (/iPhone|iPod|Android/.test(request.headers.get('user-agent') ?? '')) {
+      const agent = request.headers.get('user-agent') ?? ''
+      // Gui is for Macs and Linux computers. A phone goes back to the page, which says so, and
+      // is not counted. (iPadOS says it is a Mac; the page's script handles it.)
+      if (/iPhone|iPod|Android/.test(agent)) {
         return Response.redirect(new URL('/#mac-only', request.url).toString(), 303)
       }
-      let file = DOWNLOAD
-      let response = await release(request, env, file, 'Gui.dmg')
-      if (response.status === 404) {
-        file = DOWNLOAD_ALPHA
-        response = await release(request, env, file, 'Gui.dmg')
+      // Linux gets the download page for its processor. Chrome always says x86_64, so that is
+      // the default, and the page links to the other.
+      if (/Linux/.test(agent)) {
+        const page = /aarch64|arm64/i.test(agent) ? '/download/linux-arm64' : '/download/linux'
+        return Response.redirect(new URL(page, request.url).toString(), 303)
       }
-      if (response.ok && startsDownload(request)) ctx.waitUntil(countDownload(request, env, file))
-      return response
+      return newest(request, env, ctx, DOWNLOAD, 'Gui.dmg')
     }
+    const linux = url.pathname.match(/^\/download\/([\w.-]+)$/)?.[1]
+    if (linux && LINUX_DOWNLOADS.has(linux)) return newest(request, env, ctx, linux, linux)
     if (url.pathname === '/downloads') return countedDownloads(request, env, ctx)
     if (url.pathname === '/waitlist' && request.method === 'POST') return waitlist(request, env)
     if (url.pathname === '/crash' && request.method === 'POST') return crash(request, env)
@@ -126,6 +138,23 @@ async function inParts(request, asset) {
   headers.set('content-length', String(range.length))
   const part = bytes.slice(range.offset, range.offset + range.length)
   return new Response(part, { status: 206, headers })
+}
+
+/**
+ * The newest release's copy of a download, Gui-<name>, as an attachment named `filename`, and
+ * counted. A stable release uploads that copy; until there is one, it is the newest alpha's,
+ * Gui-alpha-<name>.
+ * @param {Request} request @param {Env} env @param {Context} ctx @param {string} file
+ * @param {string} filename
+ */
+async function newest(request, env, ctx, file, filename) {
+  let response = await release(request, env, file, filename)
+  if (response.status === 404) {
+    file = file.replace(/^Gui-/, 'Gui-alpha-')
+    response = await release(request, env, file, filename)
+  }
+  if (response.ok && startsDownload(request)) ctx.waitUntil(countDownload(request, env, file))
+  return response
 }
 
 /**

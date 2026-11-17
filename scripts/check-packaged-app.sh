@@ -1,18 +1,22 @@
 #!/bin/sh
-# Checks that a packaged Gui.app has every module it loads from node_modules: a dependency that
+# Checks that a packaged Gui has every module it loads from node_modules: a dependency that
 # didn't reach the package, or a file that `files` in electron-builder.yml left out, stops here
-# and not in an agent or the updater on someone's Mac. scripts/release.sh runs it on the built
-# app before it uploads anything.
+# and not in an agent or the updater on someone's computer. scripts/release.sh runs it on the
+# built app before it uploads anything, and .github/workflows/release-linux.yml on each Linux build.
 #
 #   sh scripts/check-packaged-app.sh release/mac-arm64/Gui.app
+#   sh scripts/check-packaged-app.sh release/linux-unpacked      (linux-arm64-unpacked on arm64)
 #
 # Each module is imported with the system's node, never the app's own binary, from a copy of
 # the package's node_modules in a temporary folder. Node looks for a module in every
 # node_modules above the file that imports it; from release/ that reaches the repo's own, where
 # everything is installed and nothing would ever be missing.
 set -eu
-app=${1:?usage: check-packaged-app.sh <Gui.app>}
-packaged="$app/Contents/Resources/app.asar.unpacked/node_modules"
+app=${1:?usage: check-packaged-app.sh <Gui.app or linux-unpacked folder>}
+# A Mac app keeps its resources in Contents/Resources; a Linux build, in resources.
+resources="$app/Contents/Resources"
+[ -d "$resources" ] || resources="$app/resources"
+packaged="$resources/app.asar.unpacked/node_modules"
 [ -d "$packaged" ] || { echo "$packaged isn't there." >&2; exit 1; }
 work=$(cd "$(mktemp -d)" && pwd -P)
 trap 'rm -rf "$work"' EXIT

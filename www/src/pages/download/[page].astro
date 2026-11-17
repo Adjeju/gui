@@ -1,0 +1,74 @@
+---
+import TextPage from '../../components/TextPage.astro'
+
+// Where /download sends a Linux browser (worker.js): /download/linux, or /download/linux-arm64
+// when the browser says it runs on ARM. Chrome always says x86_64, so each page links the other.
+// The files are the worker's /download/<name>, the newest release's copy.
+export function getStaticPaths() {
+  return [
+    { params: { page: 'linux' }, props: { arch: 'x86_64', deb: 'amd64', other: 'linux-arm64' } },
+    { params: { page: 'linux-arm64' }, props: { arch: 'arm64', deb: 'arm64', other: 'linux' } },
+  ]
+}
+
+const { arch, deb, other } = Astro.props
+const appImage = `Gui-${arch}.AppImage`
+const processor = arch === 'arm64' ? 'ARM (arm64)' : 'Intel and AMD (x86_64)'
+const otherProcessor = arch === 'arm64' ? 'Intel or AMD' : 'ARM'
+---
+
+<TextPage
+  title="Gui for Linux"
+  description="Download Gui for Linux: an AppImage that updates itself, or a .deb package."
+  path={`/download/${Astro.params.page}`}
+>
+  <p>For computers with {processor} processors.</p>
+  <p>
+    <a class="download" href={`/download/${appImage}`}>
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+        <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" />
+      </svg>
+      Download the AppImage
+    </a>
+  </p>
+  <p>Make it executable, then open it: <code>chmod +x {appImage} && ./{appImage}</code>. It updates itself.</p>
+  <p>
+    On Debian or Ubuntu, you can install the <a href={`/download/Gui-${deb}.deb`}>.deb package</a>{' '}
+    instead. It does not update itself.
+  </p>
+  <p>On an {otherProcessor} computer? <a href={`/download/${other}`}>Download Gui for {otherProcessor}</a>.</p>
+</TextPage>
+
+<style>
+  .download {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding: 0.625rem 1.125rem 0.625rem 0.875rem;
+    border-radius: 999px;
+    background: #0066ff;
+    color: #fff;
+    font-weight: 420;
+    text-decoration: none;
+    transition: opacity 120ms cubic-bezier(0.2, 0, 0, 1), transform 120ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .download svg {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .download:hover {
+      opacity: 0.86;
+    }
+  }
+  .download:active {
+    transform: scale(0.97);
+  }
+  .download:focus-visible {
+    outline: 2px solid var(--fg);
+    outline-offset: 3px;
+  }
+</style>
