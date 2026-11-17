@@ -83,7 +83,7 @@ import {
 } from '../shared/types'
 import { agentHealth } from './agent-status'
 import { AgentViewport, viewportForWidth } from './agent-viewport'
-import { agentChoices, declaresOwnPermissions } from './agents'
+import { declaresOwnPermissions } from './agents'
 import { track } from './analytics'
 import { isAutoApprove, setAutoApprove as saveAutoApprove } from './auto-approve'
 import { boardIdOf, canvasId, listBoards, viewFile, writeManifest } from './board'
@@ -94,6 +94,7 @@ import { branchStatus } from './branch'
 import { CanvasGit, type CommitOutcome, commitMessage } from './canvas-git'
 import { mergeLayout, nextFrameName, sameLayout } from './canvas-layout'
 import { availableModels, type BoardLayout, ChatController } from './chat'
+import { listedModels, modelsUnder, offersChoice, pickerFields } from './chat-models'
 import { Checkpoints } from './checkpoints'
 import { DevServer } from './dev-server'
 import { type DeveloperToolsStatus, developerTools } from './developer-tools'
@@ -119,7 +120,7 @@ import { nodeRuntime } from './node-runtime'
 import type { OutsideTarget } from './outside-mcp'
 import { prefersReducedMotion } from './panel-flight'
 import { type Outlined, Picker } from './picker'
-import { getPrefs, setPrefs } from './prefs'
+import { getPrefs, recordRecentModel, saveAgentSetting, setPrefs } from './prefs'
 import type { AgentPointer } from './preview-interactions'
 import { PreviewMorph } from './preview-morph'
 import { PreviewTools, SETTLE_MS } from './preview-tools'
@@ -902,7 +903,7 @@ export class ProjectTab implements ChatPanelOwner {
         error: null,
         errorDetail: null,
         agent: agentHealth.list().find((agent) => agent.id === this.state.agentId) ?? null,
-        agents: agentChoices(agentHealth.list(), this.state.agentId),
+        ...pickerFields(this.state.agentId, availableModels(this.state.agentId)),
         modeName: null,
         modeIsUsual: false,
         commands: [],
@@ -3888,17 +3889,50 @@ export class ProjectTab implements ChatPanelOwner {
 
   /**
    * Archives the chat and starts an empty one, on `agentId` (the picker's other agents) or the
-   * chat's own. From the picker it waits for the agent to finish and the queue to empty, so a
-   * running turn or a queued message isn't lost.
+   * chat's own. From the picker it leaves a working chat or one with messages queued alone
+   * unless the user said to `stop` it, so a running turn or a queued message isn't lost unasked.
    */
-  newChat(agentId?: AgentId) {
+  newChat(agentId?: AgentId, stop = false) {
     const chat = this.resources.chat
     if (!chat) return
     if (agentId === undefined) return void chat.reset()
-    if (!agentHealth.has(agentId) || chat.meta.status === 'working' || chat.meta.queue.length)
-      return
+    if (!agentHealth.has(agentId)) return
+    if (!stop && (chat.meta.status === 'working' || chat.meta.queue.length)) return
     agentHealth.ensureChecked(agentId)
     void chat.reset(agentId)
+  }
+
+  /**
+   * A model from the picker, of any agent it lists, under `provider` for an agent with more
+   * than one. The chat's own agent switches to it; another agent takes the chat while nothing
+   * has been said in it, and starts a new chat on that model after that: not while the chat
+   * works or has messages queued, unless the user said to `stop` it.
+   */
+  async pickModel(agentId: AgentId, model: string, provider: string | null, stop: boolean) {
+    const chat = this.resources.chat
+    if (!chat) return
+    if (agentId === chat.meta.agentId) {
+      const own = chat.meta.models?.provider
+      if (provider !== null && own && provider !== own.value) {
+        if (!offersChoice(chat.meta.models, own.id, provider)) return
+        const refusal = await chat.setProvider(provider)
+        if (refusal !== null || this.resources.chat !== chat) return
+      }
+      const setting = chat.meta.models?.model
+      if (setting && chat.meta.agentId === agentId) chat.setAgentSetting(setting.id, model)
+      return
+    }
+    if (!chat.meta.agents.some((agent) => agent.id === agentId)) return
+    const list = listedModels(agentId)
+    const offered = modelsUnder(agentId, provider)?.options.some(({ value }) => value === model)
+    if (!list || !offered) return
+    const busy = chat.meta.status === 'working' || chat.meta.queue.length > 0
+    if (chat.started && busy && !stop) return
+    if (provider !== null && list.provider) saveAgentSetting(agentId, list.provider.id, provider)
+    saveAgentSetting(agentId, list.model.id, model)
+    recordRecentModel({ agentId, model, provider })
+    if (chat.started) this.newChat(agentId, true)
+    else this.setAgent(agentId)
   }
 
   /** Archives the open chat, as New chat does; false when it couldn't be. */

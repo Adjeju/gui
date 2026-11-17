@@ -50,7 +50,6 @@ import { AgentMissingError } from './agent-binaries'
 import { type PermissionRequest, parseModelSettings, QUESTION_KIND } from './agent-protocol'
 import { agentHealth } from './agent-status'
 import {
-  agentChoices,
   declaresOwnPermissions,
   opensWebsites,
   type PermissionPolicy,
@@ -58,7 +57,13 @@ import {
 } from './agents'
 import { trackTurn } from './analytics'
 import { autoApproval, isAutoApprove, requestPaths, SENSITIVE_PATH } from './auto-approve'
-import { availableModels, chosenValue, offersChoice, withChoices } from './chat-models'
+import {
+  availableModels,
+  chosenValue,
+  offersChoice,
+  pickerFields,
+  withChoices,
+} from './chat-models'
 import { type EditScope, isFromHome, isOutside, projectEditPath } from './chat-paths'
 import { asksFirst, GUI_TOOL_LABELS, previewTool } from './chat-tools'
 import type { Checkpoints } from './checkpoints'
@@ -72,7 +77,14 @@ import {
   type SavedQueued,
 } from './history'
 import type { McpSessionAccess } from './mcp-server'
-import { getPrefs, prefsEvents, saveAgentSetting, savedAgentSettings, setPrefs } from './prefs'
+import {
+  getPrefs,
+  prefsEvents,
+  recordRecentModel,
+  saveAgentSetting,
+  savedAgentSettings,
+  setPrefs,
+} from './prefs'
 import {
   buildPrompt,
   describeFollowUp,
@@ -474,13 +486,14 @@ export class ChatController extends EventEmitter<ChatEvents> {
    */
   private agentFields(agentId: AgentId) {
     agentHealth.ensureChecked(agentId)
+    const models = availableModels(agentId)
     return {
       agentId,
       agentName: agentName(agentId),
-      models: availableModels(agentId),
+      models,
       commands: this.commandsFor(agentId),
       agent: agentHealth.list().find((agent) => agent.id === agentId) ?? null,
-      agents: agentChoices(agentHealth.list(), agentId),
+      ...pickerFields(agentId, models),
       ownPermissions: declaresOwnPermissions(agentId),
     }
   }
@@ -736,8 +749,20 @@ export class ChatController extends EventEmitter<ChatEvents> {
     this.refused.delete(configId)
     saveAgentSetting(this.meta.agentId, configId, value)
     this.refreshModels()
+    if (configId === this.meta.models?.model.id) this.rememberModel()
     const agent = this.agent
     if (agent && this.agentInfo && !this.active) void this.applySettings(agent, null)
+  }
+
+  /** The chat's model goes first in the picker's Recent. */
+  private rememberModel() {
+    const models = this.meta.models
+    if (!models) return
+    recordRecentModel({
+      agentId: this.meta.agentId,
+      model: models.model.value,
+      provider: models.provider?.value ?? null,
+    })
   }
 
   /**
@@ -881,7 +906,9 @@ export class ChatController extends EventEmitter<ChatEvents> {
     followUpId: string | null = null,
     steer = false,
   ): boolean {
-    return this.submit(text, images, recordings, this.followUpFor(followUpId), null, steer)
+    const sent = this.submit(text, images, recordings, this.followUpFor(followUpId), null, steer)
+    if (sent) this.rememberModel()
+    return sent
   }
 
   /**
@@ -2276,8 +2303,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
     const was = this.meta.agent?.status
     if (JSON.stringify(agent) !== JSON.stringify(this.meta.agent)) this.patchMeta({ agent })
     // Installed, signed in or switched on or off in Settings since: the picker lists them so.
-    const agents = agentChoices(agentHealth.list(), this.meta.agentId)
-    if (JSON.stringify(agents) !== JSON.stringify(this.meta.agents)) this.patchMeta({ agents })
+    this.refreshPicker()
     const signedIn = (was === 'signed-out' || was === 'signing-in') && agent?.status === 'ready'
     if (signedIn && this.agent && !this.active) this.stopAgent()
     if (this.meta.queuePauseReason === 'setup' && agent?.status === 'ready') this.sendQueuedNow()
@@ -2286,6 +2312,18 @@ export class ChatController extends EventEmitter<ChatEvents> {
   private refreshModels = () => {
     const models = this.nextModels()
     if (JSON.stringify(models) !== JSON.stringify(this.meta.models)) this.patchMeta({ models })
+    this.refreshPicker()
+  }
+
+  /** The other agents' models and the recent ones, as checks, Settings and picks change them. */
+  private refreshPicker() {
+    const { agents, recentModels } = pickerFields(this.meta.agentId, this.meta.models)
+    const patch: Partial<ChatMeta> = {}
+    if (JSON.stringify(agents) !== JSON.stringify(this.meta.agents)) patch.agents = agents
+    if (JSON.stringify(recentModels) !== JSON.stringify(this.meta.recentModels)) {
+      patch.recentModels = recentModels
+    }
+    if (patch.agents || patch.recentModels) this.patchMeta(patch)
   }
 
   /**

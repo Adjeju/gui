@@ -74,6 +74,17 @@ export const MAX_TOOL_LOCATIONS = 100
 /** One of those paths; macOS has none longer. */
 export const MAX_TOOL_LOCATION = 1024
 
+/** Models the picker's Recent remembers, across agents (prefs.json); past it the oldest go. */
+export const MAX_RECENT_MODELS = 8
+/**
+ * Agents whose model list is remembered between launches (agent-models.json), and models per
+ * list: OpenCode with every provider signed in lists a few hundred.
+ */
+export const MAX_CACHED_MODEL_AGENTS = 64
+export const MAX_CACHED_MODELS = 1000
+/** A model's or provider's name or value, as kept in that file and in Recent. */
+export const MAX_MODEL_TEXT = 200
+
 /** Newest `max` items, in the same order. */
 export function bounded<T>(items: readonly T[], max: number): T[] {
   if (max <= 0) return []

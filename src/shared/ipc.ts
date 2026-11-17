@@ -190,6 +190,7 @@ export const Send = {
   clearQueued: 'chat:queue-clear',
   setAutoApprove: 'chat:auto-approve',
   setAgentSetting: 'chat:agent-setting',
+  pickModel: 'chat:pick-model',
   newTab: 'tabs:new',
   selectTab: 'tabs:select',
   closeTab: 'tabs:close',
@@ -714,6 +715,13 @@ export interface GuiApi {
    */
   setAgentSetting(settingId: string, value: string): void
   /**
+   * A model from the picker, of the chat's agent or another one it lists (`ChatMeta.agents`),
+   * under `provider` for an agent with providers. Another agent takes the chat while nothing
+   * has been said in it, else starts a new chat on that model; while the chat works or has
+   * messages queued, only with `stop`. Ignored unless that agent lists the model.
+   */
+  pickModel(agentId: AgentId, model: string, provider: string | null, stop: boolean): void
+  /**
    * The user's pick of `ChatMeta.models.provider`, which brings that provider's models.
    * Resolves to the agent's reason when it turns the provider down (it stays on its own),
    * else null. Starts the agent first when the chat hasn't yet.
@@ -734,9 +742,9 @@ export interface GuiApi {
   /**
    * Archives this chat and starts an empty one (`ChatMeta.archived` offers it back), on
    * `agentId` or this chat's agent. With an agent, nothing happens while the chat is working
-   * or has messages queued.
+   * or has messages queued, unless `stop` (the user said to stop it first).
    */
-  newSession(agentId?: AgentId): void
+  newSession(agentId?: AgentId, stop?: boolean): void
   /** The project's archived chats, newest first */
   listChats(): Promise<ChatSummary[]>
   /** Reopens an archived chat, archiving this one; rejects with a message to show */

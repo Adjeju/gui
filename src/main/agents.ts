@@ -555,7 +555,13 @@ function statusNote(agent: AgentHealth) {
 export function agentChoices(agents: AgentHealth[], current: AgentId | null): AgentChoice[] {
   const listed = agents.filter((agent) => isListed(agent, current))
   return [...listed.filter((agent) => !isCustom(agent)), ...listed.filter(isCustom)].map(
-    (agent) => ({ id: agent.id, name: agent.name, note: statusNote(agent) }),
+    (agent) => ({
+      id: agent.id,
+      name: agent.name,
+      note: statusNote(agent),
+      status: agent.status,
+      models: null,
+    }),
   )
 }
 

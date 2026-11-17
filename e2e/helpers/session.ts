@@ -554,6 +554,8 @@ function launchEnv(extra: Record<string, string>): Record<string, string> {
     NEXT_TELEMETRY_DISABLED: '1',
     GUI_E2E_BACKGROUND: '1',
     GUI_ACCOUNT_REQUIRED: '0',
+    // Not every installed agent's CLI started after launch (src/main/index.ts AGENT_SWEEP).
+    GUI_AGENT_SWEEP: '0',
     ...extra,
   }
 }

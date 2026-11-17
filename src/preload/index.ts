@@ -211,6 +211,7 @@ const api: GuiApi = {
   sendQueued: send(Send.sendQueued),
   setAutoApprove: send(Send.setAutoApprove),
   setAgentSetting: send(Send.setAgentSetting),
+  pickModel: send(Send.pickModel),
   loadCommands: () => legacyInvoke(Invoke.loadCommands),
   setProvider: (value) => legacyInvoke(Invoke.setProvider, value),
   startRecording: (narrate) => legacyInvoke(Invoke.startRecording, narrate === true),

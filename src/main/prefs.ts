@@ -7,9 +7,11 @@ import {
   DEFAULT_AGENT_ID,
   isAgentId,
   type PanelCorner,
+  type RecentModel,
   type RulerGuide,
   type WhileWorking,
 } from '../shared/types'
+import { parseRecents, withRecent } from '../shared/recent-models'
 import { asidePath } from './atomic-file'
 import { CoalescedFile, diskFile } from './coalesced-file'
 
@@ -35,6 +37,8 @@ export interface Prefs {
   disabledAgents: AgentId[]
   /** The model and effort the user chose per agent: agent → the agent's config id → value */
   agentSettings: Record<AgentId, Record<string, string>>
+  /** The models the user picked or sent a message on, newest first (ChatMeta.recentModels) */
+  recentModels: RecentModel[]
   /** Project roots the user switched Auto mode off for; every other project is in Auto (see ChatMeta.autoApprove) */
   askRoots: string[]
   /**
@@ -70,6 +74,7 @@ const DEFAULTS: Prefs = {
   apps: {},
   disabledAgents: [],
   agentSettings: {},
+  recentModels: [],
   askRoots: [],
   autoNoteSeen: false,
   crashReports: true,
@@ -187,6 +192,7 @@ export function getPrefs(): Prefs {
         ? parsed.disabledAgents.filter(isAgentId)
         : [],
       agentSettings: agentSettings(parsed.agentSettings),
+      recentModels: parseRecents(parsed.recentModels),
       askRoots: roots(parsed.askRoots),
       autoNoteSeen: parsed.autoNoteSeen === true,
       crashReports:
@@ -220,6 +226,7 @@ export function getPrefs(): Prefs {
       chatCorner: { ...DEFAULTS.chatCorner },
       apps: {},
       agentSettings: {},
+      recentModels: [],
       guides: {},
     }
   }
@@ -264,4 +271,17 @@ export function savedAgentSettings(id: AgentId): Record<string, string> {
 export function saveAgentSetting(id: AgentId, configId: string, value: string) {
   const all = getPrefs().agentSettings
   setPrefs({ agentSettings: { ...all, [id]: { ...savedAgentSettings(id), [configId]: value } } })
+}
+
+/** The user picked `entry`, or sent a message on it: it goes first in Recent. */
+export function recordRecentModel(entry: RecentModel) {
+  const list = getPrefs().recentModels
+  const first = list[0]
+  if (
+    first?.agentId === entry.agentId &&
+    first.model === entry.model &&
+    first.provider === entry.provider
+  )
+    return
+  setPrefs({ recentModels: withRecent(list, entry) })
 }

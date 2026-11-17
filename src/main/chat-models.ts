@@ -1,12 +1,74 @@
-import type { AgentId, AgentSetting, ModelSettings } from '../shared/types'
+import { listedRecents } from '../shared/recent-models'
+import type {
+  AgentChoice,
+  AgentId,
+  AgentModelList,
+  AgentSetting,
+  ChatMeta,
+  ModelSettings,
+} from '../shared/types'
 import { reportedModels } from './agent'
 import { agentHealth } from './agent-status'
-import { savedAgentSettings } from './prefs'
+import { agentChoices } from './agents'
+import { listOf } from './model-cache'
+import { getPrefs, savedAgentSettings } from './prefs'
 
 /** The agent's models before a session starts: its last check's list, with the user's choices. */
 export function availableModels(agentId: AgentId): ModelSettings | null {
   const models = agentHealth.list().find((agent) => agent.id === agentId)?.models ?? null
   return models && withChoices(models, agentId, null)
+}
+
+/**
+ * Another agent's models for the picker: its list (its check's, or the last one remembered)
+ * with the user's saved provider and model applied. Null while it can't be listed.
+ */
+export function listedModels(agentId: AgentId): AgentModelList | null {
+  const models = agentHealth.listedModels(agentId)
+  if (!models) return null
+  const { model, provider } = withChoices({ effort: null, ...models }, agentId, null)
+  return listOf({ model, provider })
+}
+
+/**
+ * The models `agentId` lists under `provider` (null for an agent without providers): the
+ * chat's own list for its agent, else the agent's listed one, or a provider's list a session
+ * reported this launch. Null when not known.
+ */
+export function modelsUnder(
+  agentId: AgentId,
+  provider: string | null,
+  own: { agentId: AgentId; models: ModelSettings | null } | null = null,
+): AgentSetting | null {
+  const lists = [own?.agentId === agentId ? own.models : null, agentHealth.listedModels(agentId)]
+  for (const list of lists) {
+    if (!list) continue
+    if ((list.provider?.value ?? null) === provider) return list.model
+  }
+  if (provider === null) return null
+  return reportedModels(agentId, provider)?.model ?? null
+}
+
+/**
+ * What the chat's picker lists besides its own agent's models: the agents with theirs, and the
+ * recent models still on offer.
+ */
+export function pickerFields(
+  agentId: AgentId,
+  models: ModelSettings | null,
+): Pick<ChatMeta, 'agents' | 'recentModels'> {
+  const health = agentHealth.list()
+  const agents: AgentChoice[] = agentChoices(health, agentId).map((choice) =>
+    choice.id === agentId ? choice : { ...choice, models: listedModels(choice.id) },
+  )
+  const enabled = (id: AgentId) =>
+    agents.some((agent) => agent.id === id) &&
+    (health.find((agent) => agent.id === id)?.enabled ?? false)
+  const own = { agentId, models }
+  const recentModels = listedRecents(getPrefs().recentModels, enabled, (id, provider) =>
+    modelsUnder(id, provider, own),
+  )
+  return { agents, recentModels }
 }
 
 /** Whether `value` is one of the choices `models` lists for its setting `settingId`. */

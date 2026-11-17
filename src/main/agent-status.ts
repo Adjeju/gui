@@ -2,7 +2,13 @@ import { EventEmitter } from 'node:events'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, shell } from 'electron'
-import { AGENTS, type AgentHealth, type AgentId, type ModelSettings } from '../shared/types'
+import {
+  AGENTS,
+  type AgentHealth,
+  type AgentId,
+  type AgentModelList,
+  type ModelSettings,
+} from '../shared/types'
 import { AgentAuthError, AgentSession, type AuthMethod } from './agent'
 import {
   AgentMissingError,
@@ -18,7 +24,9 @@ import {
 import { type AgentDefinition, listAgents } from './agents'
 import { track } from './analytics'
 import { usageAgent } from './analytics-queue'
+import { diskFile } from './coalesced-file'
 import { describeError } from './errors'
+import { ModelCache } from './model-cache'
 import { getPrefs, isAgentEnabled, prefsEvents, savedAgentSettings } from './prefs'
 import type { ChildProcess } from './process'
 import { killProcessGroup, spawnProcess } from './process'
@@ -44,6 +52,11 @@ const SIGN_IN_METHODS = [
 const TERMINAL_SIGN_IN = 'gui:terminal'
 /** Agents whose CLI Gui pins and can install; checked on every launch. */
 const PINNED: readonly AgentId[] = ['claude', 'codex']
+/**
+ * The other enabled agents are checked after launch, this many at a time: each check starts
+ * that agent's CLI.
+ */
+const BACKGROUND_CHECKS = 2
 /** Download progress is pushed to every window; a 100 MB download has thousands of chunks. */
 const PROGRESS_INTERVAL_MS = 150
 /** An agent that becomes ready from one of these was just connected (usage data, analytics.ts). */
@@ -115,6 +128,11 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
   private terminalSignIns = new Map<AgentId, NonNullable<AgentDefinition['terminalSignIn']>>()
   /** Signing in in Terminal right now; checked again when the user comes back to Gui */
   private awaitingTerminal = new Set<AgentId>()
+  /** Each agent's model list from its last check, this launch's or an earlier one's */
+  private modelCache = new ModelCache(
+    () => join(app.getPath('userData'), 'agent-models.json'),
+    diskFile(() => join(app.getPath('userData'), 'agent-models.json')),
+  )
 
   constructor() {
     super()
@@ -191,6 +209,38 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
         return undefined
       }),
     )
+  }
+
+  /**
+   * After launch: every other enabled agent, a few at a time, so the picker can list and search
+   * every agent's models. Only agents whose state isn't known yet; no prompt is sent.
+   */
+  async checkInBackground() {
+    if (this.disposed) return
+    await this.rescan()
+    const queue = this.list()
+      .filter((agent) => agent.enabled && agent.status === 'unknown' && this.checkable(agent))
+      .map((agent) => agent.id)
+    const next = async () => {
+      for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+        const agent = this.health.get(id)
+        if (this.disposed) return
+        if (agent?.enabled && agent.status === 'unknown') await this.check(id)
+      }
+    }
+    await Promise.all(Array.from({ length: BACKGROUND_CHECKS }, next))
+  }
+
+  /**
+   * The agent's models to list: its check's, or while it hasn't been checked this launch (or
+   * is being checked), the last list a check found. Null once a check finds it can't run.
+   */
+  listedModels(id: AgentId): AgentModelList | ModelSettings | null {
+    const agent = this.health.get(id)
+    if (!agent) return null
+    if (agent.models) return agent.models
+    const waiting = agent.status === 'unknown' || agent.status === 'checking'
+    return waiting ? this.modelCache.get(id) : null
   }
 
   /** Checks an agent the user just picked, unless its state is already known. */
@@ -329,6 +379,7 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
 
   /** Stops every check, download and sign-in in progress (a sign-in would outlive Gui). */
   dispose() {
+    this.modelCache.flushSync()
     this.disposed = true
     for (const session of this.sessions) session.dispose()
     this.sessions.clear()
@@ -581,6 +632,7 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
     const current = this.health.get(id)
     if (!current) return
     this.health.set(id, { ...current, ...patch })
+    if (patch.models) this.modelCache.set(id, patch.models)
     this.emit('change', this.list())
   }
 }

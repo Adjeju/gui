@@ -83,6 +83,29 @@ export interface AgentChoice {
   name: string
   /** Why it can't take a message yet ("Not signed in"); null when nothing's known to be wrong */
   note: string | null
+  status: AgentHealth['status']
+  /**
+   * Its models, to list and search in the picker: from its last check, or from the one before
+   * this launch while it's checked again (model-cache.ts). Null for the chat's own agent (its
+   * list is `ChatMeta.models`) and for one that isn't ready to take a message.
+   */
+  models: AgentModelList | null
+}
+
+/** An agent's models for listing: its model setting, and its provider setting when it has one. */
+export interface AgentModelList {
+  model: AgentSetting
+  provider: AgentSetting | null
+}
+
+/**
+ * A model the user picked or sent a message on, from any agent: its value, and its provider's
+ * for an agent with more than one (ModelSettings.provider).
+ */
+export interface RecentModel {
+  agentId: AgentId
+  model: string
+  provider: string | null
 }
 
 /**
@@ -1058,6 +1081,11 @@ export interface ChatMeta {
    * it, and a new chat after that.
    */
   agents: AgentChoice[]
+  /**
+   * The models picked or used most recently, newest first, across the listed agents, with the
+   * name each agent gives it; ones whose agent is switched off or no longer lists them are left out.
+   */
+  recentModels: (RecentModel & { name: string })[]
   /** The running session's own mode as the agent reports it (shown in the chat header) */
   modeName: string | null
   /**

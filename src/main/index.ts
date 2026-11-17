@@ -1552,9 +1552,13 @@ function registerIpc() {
   on(Send.stopSubagent, (tab, turnId, subagent) => {
     if (isString(turnId) && isString(subagent)) tab.stopSubagent(turnId, subagent)
   })
-  on(Send.newSession, (tab, agentId) => {
+  on(Send.newSession, (tab, agentId, stop) => {
     if (agentId === undefined) tab.newChat()
-    else if (isAgentId(agentId)) tab.newChat(agentId)
+    else if (isAgentId(agentId)) tab.newChat(agentId, stop === true)
+  })
+  on(Send.pickModel, (tab, agentId, model, provider, stop) => {
+    if (!isAgentId(agentId) || !isString(model) || !(provider === null || isString(provider))) return
+    void tab.pickModel(agentId, model, provider, stop === true)
   })
   on(Send.clearSelection, (tab) => tab.clearSelection())
   on(Send.removeSelection, (tab, id) => isString(id) && tab.removeSelection(id))
@@ -1700,6 +1704,13 @@ async function editHistory(direction: 'undo' | 'redo') {
   if (await tab.undoBoard(direction)) return
   await (direction === 'undo' ? tab.undoLastChange() : tab.redoLastChange())
 }
+
+/**
+ * Every enabled agent is checked in the background after launch, so the picker can search
+ * their models. The end-to-end tests turn it off (GUI_AGENT_SWEEP=0) in unpackaged builds, so
+ * a run doesn't start the CLIs installed on the Mac it runs on.
+ */
+const AGENT_SWEEP = app.isPackaged || process.env.GUI_AGENT_SWEEP !== '0'
 
 const AUTO_MODE_ITEM = 'auto-mode'
 const MOVE_TAB_ITEM = 'move-tab'
@@ -2281,12 +2292,14 @@ if (!app.requestSingleInstanceLock()) {
     // again. Offline, Gui stays signed in.
     if (accountState().signedIn) void getAccount().catch(() => undefined)
     // Know up front whether the likely agents are ready or need sign-in; costs no usage.
-    void agentHealth.checkOnLaunch(getPrefs().agentId)
+    const launchChecks = agentHealth.checkOnLaunch(getPrefs().agentId)
     const initial = !app.isPackaged ? process.env.GUI_OPEN : undefined
     if (initial) openSafely(win, resolve(initial))
     const folder = IS_MAC ? null : folderFromArgs(process.argv, process.cwd())
     if (folder) openSafely(win, folder)
     afterFirstWindow(win.win, () => {
+      // Then every other enabled agent, for the picker's search (see AGENT_SWEEP).
+      if (AGENT_SWEEP) void launchChecks.then(() => agentHealth.checkInBackground())
       startUpdates()
       startAnalytics()
       preloadMcpSdk()
