@@ -140,7 +140,7 @@ export function LogsView(props: ViewProps) {
   const term = useRef<Terminal | null>(null)
   const dark = useDark()
   const mounted = useRef<ReturnType<typeof mountTerminal> | null>(null)
-  const [generation, remount] = useReducer(nextGeneration, 0)
+  const [made, remount] = useReducer(madeAgain, FIRST)
   const hadFocus = useRef(false)
 
   useEffect(() => {
@@ -148,7 +148,6 @@ export function LogsView(props: ViewProps) {
     if (!el) return
     // Made again, in the new colors, when the appearance changes; or when it asks to be.
     void dark
-    void generation
     const terminal = mountTerminal(el, {
       interactive: false,
       onResize: (cols, rows) => gui.resizeLogs(cols, rows),
@@ -161,6 +160,7 @@ export function LogsView(props: ViewProps) {
       terminal,
       { snapshot: gui.getLogs, subscribe: gui.onLogs, ack: gui.ackOutput },
       remount,
+      made,
     )
 
     return () => {
@@ -170,13 +170,13 @@ export function LogsView(props: ViewProps) {
       term.current = null
       terminal.dispose()
     }
-  }, [dark, generation])
+  }, [dark, made])
   // After the terminal is made, which a tab that's new asks for in the same render.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new terminal starts drawing.
   useEffect(() => {
     if (props.active) mounted.current?.resume()
     else mounted.current?.pause()
-  }, [props.active, dark, generation])
+  }, [props.active, dark, made])
   useFocus(term, props)
   const find = useTerminalFind(term, scope)
 
@@ -195,7 +195,7 @@ export function ShellView({ id, ...props }: ViewProps & { id: TerminalId }) {
   const term = useRef<Terminal | null>(null)
   const dark = useDark()
   const mounted = useRef<ReturnType<typeof mountTerminal> | null>(null)
-  const [generation, remount] = useReducer(nextGeneration, 0)
+  const [made, remount] = useReducer(madeAgain, FIRST)
   const hadFocus = useRef(false)
 
   useEffect(() => {
@@ -203,7 +203,6 @@ export function ShellView({ id, ...props }: ViewProps & { id: TerminalId }) {
     if (!el) return
     // Made again, in the new colors, when the appearance changes; or when it asks to be.
     void dark
-    void generation
     // ⌘K clears it, as in Terminal; the shell isn't told. ⌘⌫ deletes the line being typed, as
     // in a text field (the shell's ⌃U, as in iTerm); handled here, it never answers a waiting
     // permission card from the terminal. ⌘↩ and the rest go on to the app.
@@ -239,6 +238,7 @@ export function ShellView({ id, ...props }: ViewProps & { id: TerminalId }) {
         ack: gui.ackOutput,
       },
       remount,
+      made,
     )
     const input = terminal.term.onData((data) => {
       // An answer to a query in old output, which starts with ESC as answers do, stays here.
@@ -254,12 +254,12 @@ export function ShellView({ id, ...props }: ViewProps & { id: TerminalId }) {
       term.current = null
       terminal.dispose()
     }
-  }, [id, dark, generation])
+  }, [id, dark, made])
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new terminal starts drawing.
   useEffect(() => {
     if (props.active) mounted.current?.resume()
     else mounted.current?.pause()
-  }, [props.active, dark, id, generation])
+  }, [props.active, dark, id, made])
   useFocus(term, props)
   const find = useTerminalFind(term, scope)
 
@@ -271,7 +271,13 @@ export function ShellView({ id, ...props }: ViewProps & { id: TerminalId }) {
   )
 }
 
-const nextGeneration = (generation: number) => generation + 1
+/** How a view's terminal was last made: from main's snapshot, or after what it couldn't draw. */
+interface Made {
+  fromSnapshot: boolean
+}
+const FIRST: Made = { fromSnapshot: true }
+/** A new object each time, so the terminal is made again even when made the same way. */
+const madeAgain = (_: Made, fromSnapshot: boolean): Made => ({ fromSnapshot })
 
 /** Ghostty makes the host editable for its keys; the page's caret mustn't show in it. */
 const HOST = 'size-full caret-transparent'

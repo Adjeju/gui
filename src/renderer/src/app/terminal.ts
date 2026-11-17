@@ -3,6 +3,7 @@ import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 import { TERMINAL_SCROLLBACK_BYTES } from '../../../shared/bounded'
 import type { TextMatch } from '../../../shared/find'
 import { IS_MAC } from '../../../shared/platform'
+import { guardGhosttyWrites } from './ghostty-write'
 
 // Ghostty's terminal, compiled to WebAssembly: loaded once, with the module that draws the
 // drawer's terminals. It measures the mono font as it draws, so that loads first too.
@@ -12,13 +13,14 @@ const [wasm] = await Promise.all([
     .then((bytes) => WebAssembly.compile(bytes)),
   document.fonts.ready,
 ])
+guardGhosttyWrites()
 
 /**
  * Past this, a terminal is made again from main's output (`drawOutput`). Its WebAssembly
  * memory only grows, and Ghostty 0.4 leaks in it: a few KB a line once the lines it keeps have
- * more than about a hundred distinct colors (syntax-highlighted diffs, an agent's output). At 2 GB
- * its pointers turn negative in JavaScript, and every write throws "offset is out of bounds".
- * A terminal needs a few MB.
+ * more than about a hundred distinct colors (syntax-highlighted diffs, an agent's output); a
+ * dev server's colorful log reaches 100 MB in 40,000 lines. At 2 GB its pointers turn negative
+ * in JavaScript and no write can go in. A terminal needs a few MB.
  */
 const MAX_TERMINAL_MEMORY = 128 * 1024 * 1024
 

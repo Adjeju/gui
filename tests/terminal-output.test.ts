@@ -52,11 +52,11 @@ afterEach(() => {
 })
 
 describe('drawing a terminal’s output', () => {
-  test('a write that throws is still acknowledged, reported once, and the view is made again', async () => {
+  test('a write that throws is still acknowledged, reported once, and the view is made again from main’s snapshot', async () => {
     const main = fakeMain(chunk('$ ', 2))
     const { terminal, target } = fakeTerminal()
-    let remounts = 0
-    drawOutput(target, main.source, () => remounts++)
+    const remounts: boolean[] = []
+    drawOutput(target, main.source, (fromSnapshot) => remounts.push(fromSnapshot))
     await settle()
     expect(main.acks).toEqual([2])
 
@@ -64,44 +64,113 @@ describe('drawing a terminal’s output', () => {
     main.send(chunk('ls\r\n', 6))
     // Main isn't left holding the shell for a view that can't draw.
     expect(main.acks).toEqual([2, 6])
-    expect(remounts).toBe(1)
+    expect(remounts).toEqual([true])
     expect(reports).toHaveLength(1)
     expect(reports[0]).toMatchObject({ message: 'offset is out of bounds' })
 
     // Until it's made again, what comes is acknowledged, not drawn, and not asked for again.
     main.send(chunk('a\r\n', 9))
     expect(main.acks).toEqual([2, 6, 9])
-    expect(remounts).toBe(1)
+    expect(remounts).toEqual([true])
     expect(reports).toHaveLength(1)
   })
 
-  test('a new terminal that can’t draw main’s snapshot isn’t made again in a loop', async () => {
+  test('a terminal that can’t draw main’s snapshot is made again after it', async () => {
     const main = fakeMain(chunk('$ ', 2))
     const { terminal, target } = fakeTerminal()
     terminal.throws = true
-    let remounts = 0
-    drawOutput(target, main.source, () => remounts++)
+    const remounts: boolean[] = []
+    drawOutput(target, main.source, (fromSnapshot) => remounts.push(fromSnapshot))
     await settle()
     main.send(chunk('ls\r\n', 6))
     main.send(chunk('a\r\n', 9))
     expect(main.acks).toEqual([2, 6, 9])
-    expect(remounts).toBe(0)
+    expect(remounts).toEqual([false])
     expect(reports).toHaveLength(1)
   })
 
-  test('a terminal past its memory is made again once', async () => {
+  test('made after main’s snapshot, a terminal draws only what comes after it', async () => {
+    const main = fakeMain(chunk('$ ls\r\n', 7))
+    const { terminal, target } = fakeTerminal()
+    drawOutput(target, main.source, () => {}, { fromSnapshot: false })
+    // Sent before the snapshot came, and in it.
+    main.send(chunk('ls\r\n', 7))
+    await settle()
+    main.send(chunk('a\r\n', 10))
+    expect(terminal.written).toEqual(['', 'a\r\n'])
+    expect(main.acks).toEqual([7, 10])
+  })
+
+  test('a fresh terminal whose first output fails is made again after it', async () => {
+    // A terminal that hadn't printed yet: main's snapshot is empty.
+    const main = fakeMain(chunk('', 0))
+    const { terminal, target } = fakeTerminal()
+    const remounts: boolean[] = []
+    drawOutput(target, main.source, (fromSnapshot) => remounts.push(fromSnapshot))
+    await settle()
+    terminal.throws = true
+    main.send(chunk('ls\r\n', 4))
+    expect(remounts).toEqual([false])
+  })
+
+  test('a terminal past its memory is made again once, from main’s snapshot', async () => {
     const main = fakeMain(chunk('$ ', 2))
     const { terminal, target } = fakeTerminal()
-    let remounts = 0
-    drawOutput(target, main.source, () => remounts++)
+    const remounts: boolean[] = []
+    drawOutput(target, main.source, (fromSnapshot) => remounts.push(fromSnapshot))
     await settle()
     terminal.outgrown = true
     main.send(chunk('ls\r\n', 6))
     main.send(chunk('a\r\n', 9))
     expect(terminal.written).toEqual(['$ ', 'ls\r\n'])
     expect(main.acks).toEqual([2, 6, 9])
-    expect(remounts).toBe(1)
+    expect(remounts).toEqual([true])
     expect(reports).toHaveLength(0)
+  })
+
+  test('a terminal whose snapshot alone is past its memory isn’t made again in a loop', async () => {
+    const main = fakeMain(chunk('$ ', 2))
+    const { terminal, target } = fakeTerminal()
+    terminal.outgrown = true
+    const remounts: boolean[] = []
+    drawOutput(target, main.source, (fromSnapshot) => remounts.push(fromSnapshot))
+    await settle()
+    expect(remounts).toEqual([])
+  })
+
+  test('output Ghostty can’t draw costs only itself: the view goes on drawing what follows', async () => {
+    // Like Ghostty 0.4: a write with what it can't take fails, and so does every one after it.
+    const main = fakeMain(chunk('$ ', 2))
+    let output = '$ '
+    const send = (data: string) => {
+      output += data
+      main.send(chunk(data, output.length))
+    }
+    main.source.snapshot = async () => chunk(output, output.length)
+    const views: ReturnType<typeof fakeTerminal>['terminal'][] = []
+    const mount = (fromSnapshot: boolean) => {
+      const { terminal, target } = fakeTerminal()
+      views.push(terminal)
+      const write = target.write
+      target.write = (data: string) => {
+        if (data.includes('POISON')) terminal.throws = true
+        write(data)
+      }
+      drawOutput(target, main.source, (again) => void settle().then(() => mount(again)), {
+        fromSnapshot,
+      })
+    }
+    mount(true)
+    await settle()
+    send('ok\r\n')
+    send('POISON\r\n')
+    // Made again from main's snapshot, which holds it; made again after that.
+    for (let i = 0; i < 10; i++) await settle()
+    send('after\r\n')
+    expect(views).toHaveLength(3)
+    expect(views[2].written).toEqual(['', 'after\r\n'])
+    expect(reports).toHaveLength(2)
+    expect(main.acks.at(-1)).toBe(output.length)
   })
 })
 

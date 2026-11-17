@@ -28,34 +28,44 @@ export interface OutputSource {
  * the queries in it (cursor position, colors) as if just asked, and those answers mustn't
  * reach the shell.
  *
- * A terminal that can't draw, or has outgrown its memory, asks to be made again (`remount`):
- * a new one draws main's snapshot, so nothing on screen is lost. A chunk is acknowledged even
- * when drawing it failed, so main never waits on a view that can't draw. Only a terminal that
- * has drawn before is made again, so one that can't draw main's snapshot doesn't loop.
+ * A terminal that can't draw, or has outgrown its memory, asks to be made again (`remount`).
+ * Once Ghostty has failed a write it fails every one after it, so a terminal that threw is
+ * always made again. The new one draws main's snapshot, so nothing on screen is lost; but when
+ * this one threw before it drew any output, the snapshot is what it couldn't draw, and the new
+ * one starts after it (`fromSnapshot` false) rather than fail on it again: what is lost is only
+ * what Ghostty can't draw. A chunk is acknowledged even when drawing it failed, so main never
+ * waits on a view that can't draw.
  */
-export function drawOutput(target: OutputTarget, source: OutputSource, remount: () => void) {
+export function drawOutput(
+  target: OutputTarget,
+  source: OutputSource,
+  remount: (fromSnapshot: boolean) => void,
+  { fromSnapshot = true } = {},
+) {
   /** Drawn, or on its way to the terminal, up to here; null until the snapshot is */
   let at: number | null = null
   /** Sent before the snapshot came, which main sends after them on the same channel */
   const early: OutputChunk[] = []
   let replaying = false
   let disposed = false
+  /** Some output drew into it */
   let drawn = false
   let failed = false
   let remounting = false
 
   const draw = (chunk: OutputChunk, data: string, replay: boolean) => {
     at = chunk.end
-    const drewBefore = drawn
+    // Waiting to be made again: what it draws now goes with it.
+    if (remounting) {
+      if (!disposed) source.ack(chunk.id, chunk.end)
+      return
+    }
     let threw = false
     try {
-      // Waiting to be made again: what it draws now goes with it.
-      if (remounting) return
       replaying = replay
       // Ghostty reads it all now, answering any queries in it as it goes; its callback waits
       // for a frame, which a hidden window never draws, and main would hold the shell meanwhile.
       target.write(data)
-      drawn = true
     } catch (error) {
       threw = true
       // Once per terminal: one that keeps failing doesn't send a report per chunk.
@@ -65,9 +75,17 @@ export function drawOutput(target: OutputTarget, source: OutputSource, remount: 
       replaying = false
       if (!disposed) source.ack(chunk.id, chunk.end)
     }
-    if (!remounting && drewBefore && (threw || target.outgrown())) {
+    if (threw) {
       remounting = true
-      remount()
+      remount(drawn)
+      return
+    }
+    // Outgrown only after drawing more than main's snapshot, so that alone can't loop.
+    const drewBefore = drawn
+    if (data) drawn = true
+    if (drewBefore && target.outgrown()) {
+      remounting = true
+      remount(true)
     }
   }
   const receive = (chunk: OutputChunk) => {
@@ -85,7 +103,7 @@ export function drawOutput(target: OutputTarget, source: OutputSource, remount: 
   const off = source.subscribe(receive)
   void source.snapshot().then((snapshot) => {
     if (disposed) return
-    draw(snapshot, snapshot.data, true)
+    draw(snapshot, fromSnapshot ? snapshot.data : '', true)
     for (const chunk of early.splice(0)) receive(chunk)
   })
   return {
