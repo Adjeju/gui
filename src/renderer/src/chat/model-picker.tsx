@@ -10,11 +10,18 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { ariaShortcut, withShortcut } from '../../../shared/shortcuts'
-import type { AgentId, AgentSetting, ChatMeta } from '../../../shared/types'
+import {
+  type AgentChoice,
+  type AgentId,
+  type AgentModelList,
+  type AgentSetting,
+  agentName,
+  type ChatMeta,
+} from '../../../shared/types'
 import { AgentIcon } from '../agents/agent-icon'
 import { gui } from '../lib/api'
 import { cn } from '../lib/cn'
-import { ChevronDown, ChevronLeft, ChevronRight } from '../lib/icons'
+import { ArrowRight, ChevronDown, Clock, Settings } from '../lib/icons'
 import { motionMs, usePresence } from '../lib/motion'
 import {
   GroupLabel,
@@ -25,14 +32,17 @@ import {
   PopoverSearch,
   placePopover,
 } from '../lib/surface'
-import { Button, HIT_AREA, OPEN, SegmentedControl } from '../lib/ui'
-import { matchesWords, searchWords } from './model-search'
+import { Button, HIT_AREA, IconButton, OPEN, SegmentedControl } from '../lib/ui'
+import {
+  modelEntries,
+  rowKey,
+  type Section,
+  searchSections,
+  sections,
+  shortName,
+} from './model-search'
 import { useChat, whenPanelShown } from './store'
 
-type Choice = AgentSetting['options'][number]
-
-/** Lists longer than this get a search field. */
-const SEARCH_AFTER = 8
 /**
  * Whether the effort levels fit side by side in a picker this wide without cutting any
  * label short; if not, they go one per row. A cautious estimate of the 12px medium text,
@@ -148,77 +158,6 @@ function effortName(setting: AgentSetting) {
 }
 
 /**
- * "OpenCode Zen/Big Pickle" reads as "Big Pickle", and "Default (recommended)" as "Default";
- * the picker keeps the full name.
- */
-function shortName(name: string) {
-  const last = name.split('/').at(-1)?.trim() || name
-  return last.replace(/\s*\(recommended\)$/i, '') || last
-}
-
-/** Under its provider's header, "Anthropic/Claude Sonnet 4" reads as "Claude Sonnet 4". */
-function rowName(choice: Choice) {
-  const prefix = choice.group && `${choice.group}/`
-  if (!prefix || !choice.name.startsWith(prefix)) return choice.name
-  return choice.name.slice(prefix.length).trim() || choice.name
-}
-
-/**
- * Ungrouped models all named `provider/model` (fx's "openai/gpt-5") are grouped by that
- * provider, so each row reads as the model alone under its provider's header.
- */
-function withProviderGroups(choices: Choice[]): Choice[] {
-  if (choices.some((choice) => choice.group !== null || !/^[^/\s]+\/./.test(choice.name))) {
-    return choices
-  }
-  return choices.map((choice) => ({ ...choice, group: choice.name.split('/')[0] }))
-}
-
-/**
- * A row of the picker's list, whichever it lists: a model, or an agent, with why that agent
- * can't take a message yet (`note`).
- */
-interface Entry {
-  value: string
-  /** In its row */
-  label: string
-  /** In full, for the tooltip and the search */
-  name: string
-  note: string | null
-  group: string | null
-  /** The agent it is, in the agents' list: its mark starts the row */
-  agentId?: AgentId
-  /** Shown, but can't be picked now (`title` says why) */
-  disabled?: boolean
-  /** The tooltip, when it isn't `name` */
-  title?: string
-}
-
-/** Every typed word appears somewhere in the name, value or group (see matchesWords). */
-function matches(entry: Entry, words: string[]) {
-  return matchesWords([entry.name, entry.value, entry.group ?? ''], words)
-}
-
-/**
- * Entries under their group's header, groups in the order they first appear, each row
- * numbered in that order. Without groups there's one section and no header.
- */
-function sections(entries: Entry[], grouped: boolean) {
-  const byGroup = new Map<string | null, Entry[]>()
-  for (const entry of entries) {
-    const list = byGroup.get(entry.group)
-    if (list) list.push(entry)
-    else byGroup.set(entry.group, [entry])
-  }
-  let index = 0
-  return [...byGroup].map(([group, list]) => ({
-    group,
-    label: grouped ? (group ?? 'Other') : null,
-    rows: list.map((entry) => ({ entry, index: index++ })),
-  }))
-}
-
-/**
  * What the next turn runs on: the agent's model and effort, or the agent alone when it has
  * no models to choose. Opens the picker, which changes the model, the effort and the agent.
  */
@@ -326,61 +265,102 @@ interface ModelPickerProps {
   onClose: (refocus: boolean) => void
 }
 
+/** Another agent the user picked while the chat works: asked about before it's stopped. */
+interface Switch {
+  agentId: AgentId
+  /** The model to start it on; null for the agent alone */
+  model: string | null
+  modelName: string | null
+  provider: string | null
+}
+
+/** What a not-ready agent's tab says in place of its models. */
+function stateText(choice: AgentChoice, hasModels: boolean) {
+  switch (choice.status) {
+    case 'unknown':
+    case 'checking':
+      return 'Checking'
+    case 'installing':
+      return 'Installing…'
+    case 'signing-in':
+      return 'Signing in…'
+    default:
+      return choice.note ?? (hasModels ? null : 'No models to choose')
+  }
+}
+
 /**
- * What the chat runs on, in one place. First the agent's models under their provider,
- * searchable when the list is long, and its effort levels when it has them: a model applies
- * on pick and closes the picker; an effort level applies and leaves it open. An agent that
- * takes its models from more than one provider (fx) offers those above the list: picking one
- * asks the agent, which lists that provider's models in place, or says why it can't. The row above
- * them names the agent and opens the agents in the same picker (Esc or ← comes back). Another
- * agent takes this chat while nothing has been said in it, and leaves the default agent as
- * Settings has it. Once the chat has started it keeps its agent: another one starts a new chat,
- * and not while this one is working or has messages queued. Agent Settings… sets them up.
+ * What the chat runs on, in one place. A strip of tabs across the top: Recent (the models used
+ * last, from any agent), then each agent, then Agent Settings…. An agent's tab lists its
+ * models under their provider; the chat's own agent also has its Provider row (fx) and effort
+ * levels. Typing searches every agent's models at once. A model of the chat's agent applies on
+ * pick; another agent's takes this chat while nothing has been said in it, and starts a new
+ * chat on it after that. While the chat works or has messages queued, that asks first: yes
+ * stops it, archives it, and starts the other agent.
  */
 function ModelPicker({ id, instant, open, meta, placement, button, onClose }: ModelPickerProps) {
-  const { models, agents, agentId } = meta
+  const { models, agents, agentId, recentModels } = meta
   const model = models?.model ?? null
   const effort = models?.effort ?? null
   const provider = models?.provider ?? null
   const root = useRef<HTMLDivElement>(null)
   const searchField = useRef<HTMLInputElement>(null)
-  const list = useRef<HTMLDivElement>(null)
+  const strip = useRef<HTMLDivElement>(null)
+  const cancel = useRef<HTMLButtonElement>(null)
   const listId = `${id}-list`
   const effortId = `${id}-effort`
   const providerId = `${id}-provider`
+  const questionId = `${id}-question`
   /** The provider asked for, until the agent answers */
   const [switching, setSwitching] = useState<string | null>(null)
   /** Why the agent turned the last provider down */
   const [refusal, setRefusal] = useState<string | null>(null)
-  const [asked, setView] = useState<'models' | 'agents'>('models')
-  // An agent with no models to choose has only the agents to show.
-  const view = model ? asked : 'agents'
-  // Its models come from its check (the picker turns to them once it's done).
-  const checking = meta.agent?.status === 'checking' || meta.agent?.status === 'unknown'
+  /** The tab: an agent, or null for Recent. It opens on Recent once there's something in it. */
+  const [tab, setTab] = useState<AgentId | null>(recentModels.length ? null : agentId)
+  const [query, setQuery] = useState('')
+  const [asking, setAsking] = useState<Switch | null>(null)
   const hasTurns = useChat((s) => s.turnIds.length > 0)
   // Said or waiting to be said: the chat keeps its agent.
   const started = hasTurns || meta.queue.length > 0
-  // A new chat now would cut the turn short or drop the queue.
+  // Another agent now would cut the turn short or drop the queue: asked about first.
   const busy = meta.status === 'working' || meta.queue.length > 0
-  const [query, setQuery] = useState('')
-  const current = view === 'models' ? (model?.value ?? null) : agentId
-  /** The highlighted row's value; null for the first match. */
-  const [active, setActive] = useState<string | null>(current)
-  // Another list (the other view, or another agent's, switched to elsewhere) starts from
-  // the top: nothing typed for the last one filters it, and its current choice is the one on.
-  const listing = `${view}:${agentId}`
-  const [listed, setListed] = useState(listing)
-  if (listed !== listing) {
-    setListed(listing)
+  const searching = query.trim() !== ''
+  const currentKey = model ? rowKey(agentId, provider?.value ?? null, model.value) : null
+  /** The highlighted row's key; null for the first. */
+  const [active, setActive] = useState<string | null>(currentKey)
+
+  // An agent switched off meanwhile has no tab: its agent's own instead.
+  const shownTab = tab === null || agents.some((agent) => agent.id === tab) ? tab : agentId
+  const nameOf = (agent: AgentId) =>
+    agent === agentId
+      ? meta.agentName
+      : (agents.find((choice) => choice.id === agent)?.name ?? agentName(agent))
+  /** Each agent's models: the chat's own from its settings, the others' from their checks. */
+  const listOf = (choice: AgentChoice): AgentModelList | null =>
+    choice.id === agentId
+      ? models && { model: models.model, provider: models.provider }
+      : choice.models
+  const entriesOf = (choice: AgentChoice) => {
+    const list = listOf(choice)
+    return list ? modelEntries(choice, list) : []
+  }
+  const dimmed = (choice: AgentChoice) =>
+    !listOf(choice) && choice.status !== 'ready' && !(choice.id === agentId && !meta.agent)
+
+  // Another agent picked elsewhere (another window, the menu): its list, from the top.
+  const [listedAgent, setListedAgent] = useState(agentId)
+  if (listedAgent !== agentId) {
+    setListedAgent(agentId)
     setQuery('')
-    setActive(current)
+    setAsking(null)
+    setActive(currentKey)
   }
   // Another provider's models: what's typed still filters them; with nothing typed, the
   // current model is the one on.
   const [listedProvider, setListedProvider] = useState(provider?.value ?? null)
   if (listedProvider !== (provider?.value ?? null)) {
     setListedProvider(provider?.value ?? null)
-    setActive(query.trim() ? null : current)
+    setActive(searching ? null : currentKey)
   }
 
   const pickProvider = (value: string) => {
@@ -393,66 +373,82 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
       .finally(() => setSwitching(null))
   }
 
-  const entries: Entry[] =
-    view === 'models'
-      ? withProviderGroups(model?.options ?? []).map((choice) => ({
-          value: choice.value,
-          label: rowName(choice),
-          name: choice.name,
-          note: null,
-          group: choice.group,
-        }))
-      : agents.map((agent) => {
-          const other = started && agent.id !== agentId
-          return {
-            value: agent.id,
-            label: agent.name,
-            name: agent.name,
-            // What picking it does; while it can't be picked, the line above says why. The
-            // chat's own agent, still being checked, has models to list once it's done.
-            note:
-              agent.note ??
-              (other && !busy ? 'New chat' : null) ??
-              (agent.id === agentId && !model && checking ? 'Checking' : null),
-            group: null,
-            agentId: agent.id,
-            disabled: other && busy,
-            title: other ? `Start a new chat to use ${agent.name}` : undefined,
-          }
-        })
-  const searchable = entries.length > SEARCH_AFTER
-  // Without a search field there's nothing typed to go by, and nowhere to clear it.
-  const words = searchable ? searchWords(query) : []
-  const grouped = entries.some((entry) => entry.group !== null)
-  const shown = sections(
-    entries.filter((entry) => matches(entry, words)),
-    grouped,
-  )
-  const rows = shown.flatMap((section) => section.rows)
+  const tabChoice =
+    shownTab === null ? null : (agents.find((agent) => agent.id === shownTab) ?? null)
+  const tabList = tabChoice && listOf(tabChoice)
+  let shown: Section[] = []
+  if (searching) {
+    // The chat's own agent first: its models apply in place.
+    const own = agents.filter((agent) => agent.id === agentId)
+    const others = agents.filter((agent) => agent.id !== agentId)
+    shown = searchSections(
+      [...own, ...others].map((agent) => ({ ...agent, entries: entriesOf(agent) })),
+      query,
+    )
+  } else if (shownTab === null) {
+    const rows = recentModels.map((recent, index) => ({
+      entry: {
+        key: rowKey(recent.agentId, recent.provider, recent.model),
+        agentId: recent.agentId,
+        agentName: nameOf(recent.agentId),
+        value: recent.model,
+        provider: recent.provider,
+        label: shortName(recent.name),
+        name: recent.name,
+        group: null,
+      },
+      index,
+    }))
+    shown = rows.length ? [{ key: 'recent', agentId: null, label: null, rows }] : []
+  } else if (tabChoice && tabList) {
+    shown = sections(entriesOf(tabChoice))
+  }
+  const rows = asking ? [] : shown.flatMap((section) => section.rows)
   const activeIndex = Math.max(
     0,
-    rows.findIndex((row) => row.entry.value === active),
+    rows.findIndex((row) => row.entry.key === active),
   )
   const optionId = (index: number) => `${id}-option-${index}`
   const activeId = rows[activeIndex] ? optionId(activeIndex) : undefined
-  const what = view === 'models' ? 'models' : 'agents'
+  // The chat's own model's effort, beside the chat's own models.
+  const ownRows = searching
+    ? rows.length > 0 && rows.every((row) => row.entry.agentId === agentId)
+    : shownTab === null || shownTab === agentId
+  const showEffort = !asking && effort && ownRows
+  const showProvider = !asking && provider && !searching && shownTab === agentId
+  // Why a model of another agent starts a new chat, said before the pick rather than after.
+  const showHint = !asking && !searching && started && rows.length > 0 && shownTab !== agentId
 
-  /** Shows the models or the agents, with the keyboard in the list again. */
-  const show = setView
-  // After the list it shows changes, as on opening: the search field or the list takes the keys.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `view` is what changed
-  useEffect(() => {
-    if (open) (searchField.current ?? list.current)?.focus()
-  }, [view])
+  /** The tabs, Recent first, as the arrow keys go through them. */
+  const tabs: (AgentId | null)[] = [null, ...agents.map((agent) => agent.id)]
+  const tabId = (value: AgentId | null) => `${id}-tab-${value === null ? 0 : tabs.indexOf(value)}`
+
+  const selectTab = (value: AgentId | null) => {
+    setTab(value)
+    setQuery('')
+    setAsking(null)
+    setActive(currentKey)
+  }
 
   // On opening, and on opening again while it closed.
   useEffect(() => {
-    if (open) (searchField.current ?? list.current)?.focus()
+    if (open) searchField.current?.focus()
   }, [open])
 
   useEffect(() => {
     if (activeId) document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' })
   }, [activeId])
+
+  // The tab it shows stays in sight in a strip that scrolls.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on another tab
+  useEffect(() => {
+    const on = strip.current?.querySelector('[aria-selected="true"]')
+    on?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [shownTab])
+
+  useEffect(() => {
+    if (asking) cancel.current?.focus()
+  }, [asking])
 
   // A click elsewhere in the chat, or anywhere outside it (the view loses focus), closes
   // it; so does a resize, which moves the button.
@@ -475,51 +471,83 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
     }
   }, [open, button, onClose])
 
-  const pick = (entry: Entry) => {
-    if (entry.disabled) return
-    if (view === 'models') {
-      if (model) gui.setAgentSetting(model.id, entry.value)
-    } else if (entry.value !== agentId) {
-      const other = entry.agentId ?? agentId
-      if (started) gui.newSession(other)
-      else gui.setAgent(other)
-    } else if (model) {
-      // The agent it's on already: back to its models.
-      show('models')
-      return
+  /** Another agent: now, or once the user says to stop this chat's work. */
+  const switchTo = (next: Switch) => {
+    if (started && busy) return setAsking(next)
+    if (next.model !== null) gui.pickModel(next.agentId, next.model, next.provider, false)
+    else if (started) gui.newSession(next.agentId)
+    else gui.setAgent(next.agentId)
+    onClose(true)
+  }
+
+  const stopAndSwitch = (next: Switch) => {
+    if (next.model !== null) gui.pickModel(next.agentId, next.model, next.provider, true)
+    else gui.newSession(next.agentId, true)
+    onClose(true)
+  }
+
+  const closeQuestion = () => {
+    setAsking(null)
+    searchField.current?.focus()
+  }
+
+  const pick = ({ entry }: (typeof rows)[number]) => {
+    if (entry.agentId !== agentId) {
+      const modelName = shortName(entry.name)
+      return switchTo({ ...entry, model: entry.value, modelName })
     }
+    // Under another provider (a recent one): the agent switches to it first.
+    if (entry.provider !== (provider?.value ?? null)) {
+      gui.pickModel(agentId, entry.value, entry.provider, false)
+    } else if (model) gui.setAgentSetting(model.id, entry.value)
     onClose(true)
   }
 
   const onSearch = (text: string) => {
     setQuery(text)
+    setAsking(null)
     // The first match; with the search cleared, the current choice again.
-    setActive(text.trim() ? null : current)
+    setActive(text.trim() ? null : currentKey)
   }
 
-  /** ↑/↓ and Enter, from the search field or (without one) the list. */
+  /** ↑/↓ and Enter, from the search field. */
   const onListKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       const step = event.key === 'ArrowDown' ? 1 : -1
       const next = rows[Math.min(Math.max(activeIndex + step, 0), rows.length - 1)]
-      if (next) setActive(next.entry.value)
+      if (next) setActive(next.entry.key)
     } else if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
       event.preventDefault()
       const row = rows[activeIndex]
-      if (row) pick(row.entry)
-    } else if (event.key === 'ArrowLeft' && view === 'agents' && model && !query) {
-      // Back to the models, as the row at the top does; with text typed, ← moves the caret.
-      event.preventDefault()
-      show('models')
+      if (row) pick(row)
     }
+  }
+
+  /** ←/→, Home and End along the tabs, each shown as it's reached. */
+  const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const at = tabs.indexOf(searching ? null : shownTab)
+    const to =
+      event.key === 'ArrowRight'
+        ? Math.min(at + 1, tabs.length - 1)
+        : event.key === 'ArrowLeft'
+          ? Math.max(at - 1, 0)
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? tabs.length - 1
+              : null
+    if (to === null) return
+    event.preventDefault()
+    selectTab(tabs[to])
+    document.getElementById(tabId(tabs[to]))?.focus()
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
       event.preventDefault()
-      // From the agents, back to the models it came from; from there, closed.
-      if (view === 'agents' && model) show('models')
+      // The question goes back to the list; otherwise the picker closes.
+      if (asking) closeQuestion()
       else onClose(true)
       return
     }
@@ -531,7 +559,7 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
     }
   }
 
-  // Focus stays in the search field (or list) when clicking rows and headers.
+  // Focus stays in the search field when clicking rows and headers.
   const onMouseDown = (event: MouseEvent<HTMLDivElement>) => {
     if (!(event.target instanceof Element && event.target.closest('input, button'))) {
       event.preventDefault()
@@ -544,40 +572,130 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
     if (!button.current?.contains(next)) onClose(false)
   }
 
-  const renderRow = ({ entry, index }: (typeof rows)[number]) => {
-    const selected = entry.value === current
+  const renderRow = (row: (typeof rows)[number]) => {
+    const { entry, index } = row
+    const selected = entry.key === currentKey
+    const other = entry.agentId !== agentId
+    // Recent says whose each model is; search results say what picking another agent's does.
+    const note =
+      !searching && shownTab === null
+        ? entry.agentName
+        : searching && other && started
+          ? 'New chat'
+          : null
     return (
-      // Focus stays on the search field (or list), which handles the keys and points at
-      // the highlighted option through aria-activedescendant.
+      // Focus stays on the search field, which handles the keys and points at the
+      // highlighted option through aria-activedescendant.
       <MenuRow
-        key={entry.value}
+        key={entry.key}
         id={optionId(index)}
         role="option"
         aria-selected={selected}
-        aria-disabled={entry.disabled || undefined}
-        title={entry.title ?? (entry.note ? `${entry.name} · ${entry.note}` : entry.name)}
+        title={[entry.name, other ? entry.agentName : null, note === 'New chat' ? note : null]
+          .filter(Boolean)
+          .join(' · ')}
         highlighted={index === activeIndex}
         selected={selected}
-        // With the keyboard in the list, the row the arrows are on is ringed, so it reads
-        // apart from a row the pointer only passes over.
-        className={cn(
-          'hover:bg-accent-soft hover:text-accent-text hover:**:text-accent-text',
-          entry.disabled && 'opacity-50',
-          index === activeIndex &&
-            'group-focus-visible/list:outline-2 group-focus-visible/list:-outline-offset-2 group-focus-visible/list:outline-muted',
-        )}
-        onClick={() => pick(entry)}
+        className="hover:bg-accent-soft hover:text-accent-text hover:**:text-accent-text"
+        onClick={() => pick(row)}
       >
-        {entry.agentId ? (
+        {note !== null || shownTab === null ? (
           <span className="flex min-w-0 items-center gap-2">
-            <AgentIcon agentId={entry.agentId} small />
+            {!searching && shownTab === null && <AgentIcon agentId={entry.agentId} small />}
             <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-            {entry.note && <span className="shrink-0 text-subtle">{entry.note}</span>}
+            {note && <span className="shrink-0 text-subtle">{note}</span>}
           </span>
         ) : (
           entry.label
         )}
       </MenuRow>
+    )
+  }
+
+  const tabButton = (value: AgentId | null, index: number) => {
+    const on = !searching && value === shownTab
+    const choice = value === null ? null : agents.find((agent) => agent.id === value)
+    const name = choice ? choice.name : 'Recent'
+    return (
+      <button
+        key={value ?? ''}
+        type="button"
+        role="tab"
+        id={tabId(value)}
+        aria-selected={on}
+        aria-label={name}
+        title={name}
+        // One stop for Tab: the tab shown, or Recent while searching.
+        tabIndex={on || (searching && index === 0) ? 0 : -1}
+        onClick={() => {
+          selectTab(value)
+          searchField.current?.focus()
+        }}
+        className={cn(
+          'relative flex h-8 w-7 shrink-0 items-center justify-center rounded-md text-muted outline-none hover:bg-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-muted',
+          on &&
+            'text-fg after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent',
+        )}
+      >
+        {choice ? (
+          <AgentIcon agentId={choice.id} small className={cn(dimmed(choice) && 'opacity-35')} />
+        ) : (
+          <Clock className="size-4" aria-hidden="true" />
+        )}
+      </button>
+    )
+  }
+
+  const question = asking && (
+    <section
+      aria-labelledby={questionId}
+      className="flex min-h-0 flex-col gap-2 overflow-y-auto px-4 pt-5 pb-4"
+    >
+      <div className="mb-1 flex items-center gap-2">
+        <AgentIcon agentId={agentId} small />
+        <ArrowRight className="size-3.5 text-subtle" aria-hidden="true" />
+        <AgentIcon agentId={asking.agentId} small />
+      </div>
+      <p id={questionId} className="text-body font-medium text-pretty">
+        Stop {meta.agentName} and start a new chat with {nameOf(asking.agentId)}
+        {asking.modelName ? ` on ${asking.modelName}` : ''}?
+      </p>
+      <p className="text-small text-pretty text-muted">{whyAsked(meta)}</p>
+      <div className="mt-2 flex justify-end gap-2">
+        <Button ref={cancel} onClick={closeQuestion}>
+          Cancel
+        </Button>
+        <Button variant="primary" onClick={() => stopAndSwitch(asking)}>
+          Stop and Switch
+        </Button>
+      </div>
+    </section>
+  )
+
+  /** A tab with no models to list: why, and how to use the agent anyway. */
+  const agentState = (choice: AgentChoice) => {
+    const text = stateText(choice, false)
+    const checking = choice.status === 'unknown' || choice.status === 'checking'
+    return (
+      <div className="flex shrink-0 flex-col items-start gap-2 pb-2">
+        {text &&
+          (checking ? (
+            <PopoverNote loading>{text}</PopoverNote>
+          ) : (
+            <PopoverNote>{text}</PopoverNote>
+          ))}
+        {choice.id !== agentId && (
+          <Button
+            size="sm"
+            className="mx-3"
+            onClick={() =>
+              switchTo({ agentId: choice.id, model: null, modelName: null, provider: null })
+            }
+          >
+            {started ? `New Chat with ${choice.name}` : `Use ${choice.name}`}
+          </Button>
+        )}
+      </div>
     )
   }
 
@@ -588,62 +706,69 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
       id={id}
       open={open}
       role="dialog"
-      aria-label={view === 'models' ? 'Choose a model' : 'Choose an agent'}
+      aria-label="Choose a model"
       onKeyDown={onKeyDown}
       onMouseDown={onMouseDown}
       onBlur={onBlur}
       placement={placement}
     >
-      {view === 'models' ? (
-        // The agent these models are: its row opens the agents, here.
-        <div className="shrink-0 border-b-hairline border-line p-1">
-          <MenuRow
-            as="button"
-            selected={false}
-            aria-label={`Agent: ${meta.agentName}. Switch agent`}
-            title="Switch agent"
-            className="w-full"
-            onClick={() => show('agents')}
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <AgentIcon agentId={agentId} small />
-              <span className="min-w-0 flex-1 truncate font-medium text-fg">{meta.agentName}</span>
-              <ChevronRight className="size-3 shrink-0 text-subtle" aria-hidden="true" />
-            </span>
-          </MenuRow>
+      <div className="flex shrink-0 items-center gap-0.5 px-1.5 pt-1.5">
+        <div
+          ref={strip}
+          role="tablist"
+          aria-label="Agents"
+          onKeyDown={onTabKeyDown}
+          className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+        >
+          {tabs.map(tabButton)}
         </div>
-      ) : (
-        <div className="flex shrink-0 flex-col border-b-hairline border-line p-1">
-          {model ? (
-            <MenuRow
-              as="button"
-              selected={false}
-              aria-label="Back to models"
-              className="w-full"
-              onClick={() => show('models')}
-            >
-              <span className="flex min-w-0 items-center gap-1.5">
-                <ChevronLeft className="size-3 shrink-0 text-subtle" aria-hidden="true" />
-                <span className="min-w-0 flex-1 truncate font-medium text-fg">Agent</span>
-              </span>
-            </MenuRow>
-          ) : (
-            <GroupLabel className="px-2 pt-1.5 pb-1">Agent</GroupLabel>
-          )}
-          {/* Why the others start a new chat, said before the pick rather than after. */}
-          {started && (
-            <p className="px-2 pb-1 text-caption text-pretty text-subtle">
-              {busy
-                ? 'Start a new chat to use another agent, once this one is done.'
-                : 'Start a new chat to use another agent.'}
-            </p>
+        <IconButton
+          label="Agent Settings…"
+          icon={Settings}
+          className="h-8 w-7"
+          onClick={() => {
+            gui.openAgentSettings()
+            onClose(false)
+          }}
+        />
+      </div>
+      <div className="mt-1.5 border-t-hairline border-line">
+        <PopoverSearch
+          ref={searchField}
+          role="combobox"
+          aria-label="Search all models"
+          aria-controls={listId}
+          aria-expanded
+          aria-autocomplete="list"
+          aria-activedescendant={activeId}
+          placeholder="Search all models…"
+          value={query}
+          onChange={(event) => onSearch(event.target.value)}
+          onKeyDown={onListKeyDown}
+        />
+      </div>
+      {question}
+      {!asking && showHint && (
+        <p className="shrink-0 px-3 pt-2 pb-0.5 text-caption text-pretty text-subtle">
+          A model from another agent starts a new chat.
+        </p>
+      )}
+      {!asking && !searching && tabChoice && (
+        <div className="flex shrink-0 items-baseline justify-between gap-2 px-3 pt-2 pb-0.5 text-small font-medium">
+          <span className="min-w-0 truncate">{tabChoice.name}</span>
+          {tabList && (
+            <span className="shrink-0 font-normal text-subtle">
+              {tabList.model.options.length === 1
+                ? '1 model'
+                : `${tabList.model.options.length} models`}
+            </span>
           )}
         </div>
       )}
-      {view === 'models' && provider && (
+      {showProvider && (
         <div
           aria-busy={switching !== null || undefined}
-          className="flex shrink-0 flex-col gap-1.5 border-b-hairline border-line p-2"
+          className="flex shrink-0 flex-col gap-1.5 p-2"
         >
           <GroupLabel id={providerId} className="px-1">
             Provider
@@ -665,33 +790,15 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
           )}
         </div>
       )}
-      {searchable && (
-        <PopoverSearch
-          ref={searchField}
-          role="combobox"
-          aria-label={`Search ${what}`}
-          aria-controls={listId}
-          aria-expanded
-          aria-autocomplete="list"
-          aria-activedescendant={activeId}
-          placeholder={`Search ${what}…`}
-          value={query}
-          onChange={(event) => onSearch(event.target.value)}
-          onKeyDown={onListKeyDown}
-        />
-      )}
+      {!asking && !searching && tabChoice && !tabList && agentState(tabChoice)}
       <div
-        ref={list}
         id={listId}
         role="listbox"
-        aria-label={view === 'models' ? 'Models' : 'Agents'}
-        // With a search field, focus stays there; without one, the list takes it.
-        tabIndex={searchable ? -1 : 0}
-        aria-activedescendant={searchable ? undefined : activeId}
-        onKeyDown={searchable ? undefined : onListKeyDown}
-        // The list's own focus ring would wrap the whole popover: the highlighted row shows it.
+        aria-label="Models"
+        tabIndex={-1}
+        hidden={!!asking}
         className={cn(
-          'group/list min-h-0 overflow-y-auto scroll-stable overscroll-contain outline-none',
+          'min-h-0 overflow-y-auto scroll-stable overscroll-contain outline-none',
           rows.length > 0 && 'p-1',
         )}
       >
@@ -701,7 +808,7 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
           ) : (
             // biome-ignore lint/a11y/useSemanticElements: a listbox groups its options with ARIA groups
             <div
-              key={section.group ?? ''}
+              key={section.key}
               role="group"
               aria-labelledby={`${id}-group-${number}`}
               className="not-first:mt-1"
@@ -711,32 +818,21 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
                 id={`${id}-group-${number}`}
                 // Pinned while its rows scroll under it (flush with the list's top, past its
                 // p-1), so a long provider's models still say whose they are.
-                className="sticky -top-1 z-sticky truncate bg-overlay px-2 pt-1.5 pb-1"
+                className="sticky -top-1 z-sticky flex items-center gap-1.5 truncate bg-overlay px-2 pt-1.5 pb-1"
               >
-                {section.label}
+                {section.agentId && <AgentIcon agentId={section.agentId} tiny />}
+                <span className="min-w-0 truncate">{section.label}</span>
               </GroupLabel>
               {section.rows.map(renderRow)}
             </div>
           ),
         )}
       </div>
-      {rows.length === 0 && <PopoverNote>No {what} match</PopoverNote>}
-      {view === 'agents' && (
-        <div className="shrink-0 border-t-hairline border-line p-1">
-          <MenuRow
-            as="button"
-            selected={false}
-            className="w-full"
-            onClick={() => {
-              gui.openAgentSettings()
-              onClose(false)
-            }}
-          >
-            Agent Settings…
-          </MenuRow>
-        </div>
+      {!asking && searching && rows.length === 0 && <PopoverNote>No models match</PopoverNote>}
+      {!asking && !searching && shownTab === null && rows.length === 0 && (
+        <PopoverNote>No recent models</PopoverNote>
       )}
-      {view === 'models' && effort && (
+      {showEffort && (
         <div className="flex shrink-0 flex-col gap-1.5 border-t-hairline border-line p-2">
           <GroupLabel id={effortId} className="px-1">
             Effort
@@ -756,4 +852,17 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
     </Popover>,
     document.body,
   )
+}
+
+/** The second line of the question: what stopping the chat costs. */
+function whyAsked(meta: ChatMeta) {
+  const queued = meta.queue.length
+  const dropped =
+    queued === 1 ? 'its queued message is dropped' : `its ${queued} queued messages are dropped`
+  if (meta.status === 'working') {
+    return queued
+      ? `${meta.agentName} is still working. This chat is archived with what it has done so far, and ${dropped}.`
+      : `${meta.agentName} is still working. This chat is archived with what it has done so far.`
+  }
+  return `This chat is archived, and ${dropped}.`
 }

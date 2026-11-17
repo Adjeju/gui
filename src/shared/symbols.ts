@@ -57,6 +57,7 @@ export const SYMBOLS = {
   Reply: 'arrowshape.turn.up.left',
   RotateCw: 'arrow.clockwise',
   Search: 'magnifyingglass',
+  Settings: 'gearshape',
   Shapes: 'square.on.circle',
   Shield: 'shield',
   ShieldCheck: 'checkmark.shield',
