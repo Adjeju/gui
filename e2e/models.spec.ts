@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import type { Locator, Page } from '@playwright/test'
@@ -9,7 +10,7 @@ import {
   type ModelSettings,
 } from '../src/shared/types'
 import { electronExecutable, waitFor } from './helpers/env'
-import type { GuiSession } from './helpers/session'
+import { type GuiSession, standInsFile } from './helpers/session'
 import { expect, test } from './helpers/test'
 
 // The composer's model button and its picker, against a stand-in ACP agent: a small Node
@@ -24,11 +25,12 @@ const AGENT: AgentId = `${CUSTOM_AGENT_PREFIX}Models`
  * effort is flat, and refuses "max". A `mode` setting stands in for the categories Gui
  * ignores. "signed-out" turns every session down until the user signs in. "providers" adds a
  * provider setting, as fx has: Gateway lists the long list, Codex two models of its own, and
- * Grok isn't signed in. A message saying SLOW keeps its turn running until it's stopped.
+ * Grok isn't signed in. A message saying SLOW keeps its turn running until it's stopped. With
+ * a `gate` file, its health check's session waits for that file to exist.
  */
 const AGENT_SCRIPT = String.raw`
-const { appendFileSync } = require('node:fs')
-const [log, size] = process.argv.slice(2)
+const { appendFileSync, existsSync } = require('node:fs')
+const [log, size, gate] = process.argv.slice(2)
 const state = { provider: 'gateway', llm: 'swift', depth: 'medium' }
 const CODEX = [{ value: 'gpt-5-codex', name: 'GPT-5 Codex' }, { value: 'gpt-5', name: 'GPT-5' }]
 let held = null
@@ -89,7 +91,15 @@ const handle = ({ id, method, params }) => {
     if (size === 'signed-out') {
       return write({ id, error: { code: -32000, message: 'Authentication required' } })
     }
-    return write({ id, result: { sessionId: 'session-' + process.pid, configOptions: configOptions() } })
+    const answer = () =>
+      write({ id, result: { sessionId: 'session-' + process.pid, configOptions: configOptions() } })
+    if (!gate || !params.cwd.includes('agent-check')) return answer()
+    const wait = setInterval(() => {
+      if (!existsSync(gate)) return
+      clearInterval(wait)
+      answer()
+    }, 50)
+    return
   }
   if (method === 'session/set_config_option') {
     if (params.value === 'max') return write({ id, error: { code: -32602, message: 'Max is not on this plan' } })
@@ -858,4 +868,84 @@ test('an agent with no models: the button names it, the picker and ⇧⌘M open 
     find(Menu.getApplicationMenu()?.items ?? [])?.click()
   })
   await expect(agents.list).toBeVisible()
+})
+
+test('a chat reopened on an agent not checked since launch lists its models, saying so while it checks', async ({
+  launch,
+}) => {
+  // OpenCode is neither pinned nor the default agent, so launching doesn't check it. Its
+  // stand-in's check waits for the gate, so the picker can be seen in the meantime.
+  const session = await launch({
+    fixture: 'vite',
+    open: 'recent',
+    prefs: { agentSettings: { opencode: { llm: 'sage' } } },
+  })
+  const { root, base, userData } = session.fixture
+  const script = join(base, 'models-agent.cjs')
+  const gate = join(base, 'check-gate')
+  writeFileSync(script, AGENT_SCRIPT)
+  writeFileSync(
+    standInsFile(session.fixture),
+    JSON.stringify({
+      opencode: {
+        command: electronExecutable(),
+        args: [script, join(base, 'agent-calls.ndjson'), 'long', gate],
+        env: { ELECTRON_RUN_AS_NODE: '1' },
+      },
+    }),
+  )
+  // A started chat on it, as the last launch left it: one turn, and its session.
+  const chats = join(userData, 'chats')
+  mkdirSync(chats, { recursive: true })
+  const name = createHash('sha1').update(realpathSync(root)).digest('hex').slice(0, 16)
+  writeFileSync(
+    join(chats, `${name}.json`),
+    JSON.stringify({
+      version: 1,
+      agentId: 'opencode',
+      sessionId: 'old-session',
+      checkpoints: {},
+      redo: null,
+      turns: [
+        {
+          id: 'turn-1',
+          index: 0,
+          prompt: 'Change the heading',
+          context: [],
+          items: [{ kind: 'text', id: 'reply', text: 'Done.' }],
+          status: 'done',
+          error: null,
+          reverted: false,
+          startedAt: 1,
+          endedAt: 2,
+          changes: [],
+        },
+      ],
+    }),
+  )
+  await session.chrome.evaluate((at) => window.gui.openRecent(at), root)
+  await agentIs(session, 'opencode')
+  const { chat } = session
+
+  // While it's checked: no models yet, and its own row says it's being checked rather than
+  // looking like an agent without any.
+  const button = chat.getByRole('button', { name: 'Agent: OpenCode' })
+  await button.click()
+  const agents = agentsOf(session)
+  await expect(agents.option('OpenCode')).toContainText('Checking')
+  expect((await session.chatSnapshot()).meta.models).toBeNull()
+
+  // Checked: the picker turns to its models, the saved choice marked, with no message sent.
+  writeFileSync(gate, '')
+  const { dialog, list, options, effort } = pickerOf(session)
+  await expect(dialog).toBeVisible()
+  await expect(options).toHaveCount(41)
+  await expect(list.getByRole('option', { selected: true })).toHaveText('Acme/Sage')
+  await expect(effort.getByRole('button', { name: 'Medium' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await chat.keyboard.press('Escape')
+  await expect(chat.getByRole('button', { name: 'Model: Sage, effort Medium' })).toBeVisible()
+  expect((await session.chatSnapshot()).turns).toHaveLength(1)
 })
