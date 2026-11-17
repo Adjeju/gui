@@ -2,8 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
-import { waitFor } from './helpers/env'
-import type { GuiSession } from './helpers/session'
+import { electronExecutable, waitFor } from './helpers/env'
+import { type GuiSession, standInsFile } from './helpers/session'
 import { expect, test } from './helpers/test'
 import { ask, installToolAgent, pageData, type ToolResult } from './helpers/tool-agent'
 
@@ -241,4 +241,97 @@ test("the dev server tool gives its status and output; Gui's own tools read this
   await expect(result.getByRole('button', { name: 'Follow up' })).toHaveCount(0)
   const [undone] = await ask(session, [{ name: 'chat_turns' }])
   expect(text(undone)).toMatch(/\[done, undone\]/)
+})
+
+// A stand-in agent that never calls Gui's tools. HTTP=1 has it take HTTP MCP servers (else
+// Gui sends it none, as for Pi); a message saying LATE has it connect just after its turn.
+const QUIET_AGENT = String.raw`
+const write = message => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n')
+let mcp
+const connect = () => {
+  const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }
+  for (const header of mcp.headers) headers[header.name] = header.value
+  fetch(mcp.url, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }) })
+}
+const handle = ({ id, method, params }) => {
+  if (id === undefined || !method) return
+  if (method === 'initialize') return write({ id, result: { protocolVersion: 1, agentCapabilities: process.env.HTTP === '1' ? { mcpCapabilities: { http: true } } : {}, authMethods: [] } })
+  if (method === 'session/new') { mcp = params.mcpServers.find(server => server.url); return write({ id, result: { sessionId: 'quiet' } }) }
+  if (method === 'session/prompt') {
+    write({ method: 'session/update', params: { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done.' } } } })
+    write({ id, result: { stopReason: 'end_turn' } })
+    if (params.prompt.some(block => block.type === 'text' && block.text.includes('LATE'))) setTimeout(connect, 1500)
+    return
+  }
+  write({ id, error: { code: -32601, message: 'Method not found' } })
+}
+let buffer = ''
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', chunk => {
+  buffer += chunk
+  for (let end = buffer.indexOf('\n'); end !== -1; end = buffer.indexOf('\n')) {
+    const line = buffer.slice(0, end).trim(); buffer = buffer.slice(end + 1)
+    if (line) handle(JSON.parse(line))
+  }
+})
+`
+
+/** Puts the chat on Pi (sent no tools) or Muse (sent them, never connects), as stand-ins. */
+async function installQuietAgent(session: GuiSession, agentId: 'pi' | 'muse') {
+  const script = join(session.fixture.base, 'quiet-agent.cjs')
+  writeFileSync(script, QUIET_AGENT)
+  const env = { ELECTRON_RUN_AS_NODE: '1', HTTP: agentId === 'muse' ? '1' : '0' }
+  writeFileSync(
+    standInsFile(session.fixture),
+    JSON.stringify({ [agentId]: { command: electronExecutable(), args: [script], env } }),
+  )
+  await session.chrome.evaluate((id) => window.gui.setAgent(id), agentId)
+  await waitFor(async () => (await session.chatSnapshot()).meta.agentId === agentId, agentId)
+}
+
+async function say(session: GuiSession, text: string) {
+  const index = (await session.chatSnapshot()).turns.length
+  expect(await session.chat.evaluate((message) => window.gui.send(message), text)).toBe(true)
+  const { turn } = await session.waitForTurn(index)
+  expect(turn.status).toBe('done')
+}
+
+test("an agent that can't take Gui's tools says so once, under the message box", async ({
+  launch,
+}) => {
+  const session = await launch({ fixture: 'vite' })
+  await installQuietAgent(session, 'pi')
+  const notice = session.chat.locator('[data-tool-notice]')
+
+  await say(session, 'hello')
+  await expect(notice).toHaveText(
+    "Pi can't use Gui's preview and canvas tools. It can still read and edit your files.",
+  )
+  await session.shot('tool-notice-unsupported')
+  // Said once: the next message was written with it on screen.
+  await say(session, 'again')
+  await expect(notice).toHaveCount(0)
+  expect((await session.chatSnapshot()).meta.toolNotice).toBeNull()
+})
+
+test("an agent sent Gui's tools that never connects says so after its turn, until it does", async ({
+  launch,
+}) => {
+  const session = await launch({ fixture: 'vite' })
+  await installQuietAgent(session, 'muse')
+  const notice = session.chat.locator('[data-tool-notice]')
+
+  await say(session, 'hello')
+  await expect(notice).toHaveText(
+    "Muse Code hasn't connected to Gui's preview and canvas tools. Muse only loads tools in folders you've trusted in it: run muse in this project once and accept, then start a new chat.",
+  )
+  await expect(notice.locator('code')).toHaveText('muse')
+  await session.shot('tool-notice-unconnected')
+
+  // A new chat may say it again; connecting, even after its turn, clears it.
+  await session.chat.evaluate(() => window.gui.newSession())
+  await waitFor(async () => (await session.chatSnapshot()).turns.length === 0, 'a new chat')
+  await say(session, 'LATE')
+  await expect(notice).toBeVisible()
+  await expect(notice).toHaveCount(0, { timeout: 10_000 })
 })
