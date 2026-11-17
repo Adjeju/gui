@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { readFileSync, renameSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { app } from 'electron'
+import { parseRecents, withRecent } from '../shared/recent-models'
 import {
   type AgentId,
   DEFAULT_AGENT_ID,
@@ -11,7 +12,6 @@ import {
   type RulerGuide,
   type WhileWorking,
 } from '../shared/types'
-import { parseRecents, withRecent } from '../shared/recent-models'
 import { asidePath } from './atomic-file'
 import { CoalescedFile, diskFile } from './coalesced-file'
 

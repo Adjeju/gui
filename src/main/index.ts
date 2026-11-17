@@ -1557,7 +1557,8 @@ function registerIpc() {
     else if (isAgentId(agentId)) tab.newChat(agentId, stop === true)
   })
   on(Send.pickModel, (tab, agentId, model, provider, stop) => {
-    if (!isAgentId(agentId) || !isString(model) || !(provider === null || isString(provider))) return
+    if (!isAgentId(agentId) || !isString(model) || !(provider === null || isString(provider)))
+      return
     void tab.pickModel(agentId, model, provider, stop === true)
   })
   on(Send.clearSelection, (tab) => tab.clearSelection())
