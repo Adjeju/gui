@@ -107,6 +107,10 @@ export class ModelCache {
     this.writer.changed()
   }
 
+  delete(id: AgentId) {
+    if (this.all().delete(id)) this.writer.changed()
+  }
+
   /** At quit: what the file doesn't hold yet. */
   flushSync() {
     this.writer.flushSync()

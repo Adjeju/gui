@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AGENTS, type AgentHealth, type AgentId } from '../../src/shared/types'
+import { AGENTS, type AgentHealth, type AgentId, type ModelSettings } from '../../src/shared/types'
 
 // Isolated process, run by tests/agent-status.test.ts with `bun test`: the store starts agent
 // sessions and finds their CLIs, which are stubbed here, and a run keeps the first stubs it
@@ -17,6 +17,10 @@ let userData = ''
 const started: AgentId[] = []
 /** Agents whose CLI is gone when a check starts them, though the scan found them */
 const gone = new Set<AgentId>()
+/** Models a check finds, by agent (none for the others) */
+const lists = new Map<AgentId, ModelSettings>()
+/** Checks running at once, now and at most */
+const checks = { running: 0, most: 0 }
 class AgentMissingError extends Error {}
 /** Holds the scan for installed agents open, to act while launch is still getting to the checks. */
 let scanning: Promise<void> = Promise.resolve()
@@ -50,8 +54,12 @@ mock.module('../../src/main/agent', () => ({
     constructor(readonly id: AgentId) {}
     async start() {
       started.push(this.id)
+      checks.running++
+      checks.most = Math.max(checks.most, checks.running)
+      await new Promise((resolve) => setTimeout(resolve, 2))
+      checks.running--
       if (gone.has(this.id)) throw new AgentMissingError(`${this.id} isn't installed.`)
-      return { models: null }
+      return { models: lists.get(this.id) ?? null }
     }
     dispose() {}
   },
@@ -95,6 +103,8 @@ beforeEach(() => {
   userData = mkdtempSync(join(tmpdir(), 'gui-agent-status-'))
   started.length = 0
   gone.clear()
+  lists.clear()
+  checks.most = 0
   scanning = Promise.resolve()
 })
 afterEach(() => {
@@ -176,4 +186,48 @@ test('an agent gone since Gui found it reads Not installed, not an error to try 
   await store.check('opencode')
   expect(statusOf('opencode')).toBe('not-installed')
   expect(store.list().find((agent) => agent.id === 'opencode')?.message ?? null).toBeNull()
+})
+
+test('after launch, every other agent switched on is checked, two at a time', async () => {
+  setPrefs({ disabledAgents: ['amp'] })
+  store = new AgentHealthStore()
+  await store.checkOnLaunch('claude')
+  started.length = 0
+  checks.most = 0
+  await store.checkInBackground()
+  const expected = AGENTS.map((agent) => agent.id).filter(
+    (id) => id !== 'claude' && id !== 'codex' && id !== 'amp',
+  )
+  expect([...started].sort()).toEqual([...expected].sort())
+  expect(checks.most).toBe(2)
+  expect(statusOf('amp')).toBe('unknown')
+  // Checked already: not again.
+  started.length = 0
+  await store.checkInBackground()
+  expect(started).toEqual([])
+})
+
+test('an agent’s models are listed from its last check until it is checked again', async () => {
+  setPrefs({ disabledAgents: [] })
+  const models: ModelSettings = {
+    model: { id: 'model', value: 'k3', options: [{ value: 'k3', name: 'Kimi K3', group: null }] },
+    effort: null,
+    provider: null,
+  }
+  lists.set('opencode', models)
+  store = new AgentHealthStore()
+  await store.check('opencode')
+  expect(store.listedModels('opencode')).toEqual(models)
+  store.dispose()
+
+  // The next launch, before its check: the list from the file.
+  lists.clear()
+  store = new AgentHealthStore()
+  expect(store.listedModels('opencode')).toEqual({ model: models.model, provider: null })
+  // Checked, and it has none now: none listed.
+  await store.check('opencode')
+  expect(store.listedModels('opencode')).toBeNull()
+  store.dispose()
+  store = new AgentHealthStore()
+  expect(store.listedModels('opencode')).toBeNull()
 })

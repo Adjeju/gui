@@ -633,6 +633,8 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
     if (!current) return
     this.health.set(id, { ...current, ...patch })
     if (patch.models) this.modelCache.set(id, patch.models)
+    // Ready with none: it has no models to list any more.
+    else if (patch.status === 'ready' && patch.models === null) this.modelCache.delete(id)
     this.emit('change', this.list())
   }
 }
