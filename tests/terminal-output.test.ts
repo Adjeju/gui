@@ -97,8 +97,25 @@ describe('drawing a terminal’s output', () => {
     main.send(chunk('ls\r\n', 7))
     await settle()
     main.send(chunk('a\r\n', 10))
-    expect(terminal.written).toEqual(['', 'a\r\n'])
+    expect(terminal.written).toEqual(['a\r\n'])
     expect(main.acks).toEqual([7, 10])
+  })
+
+  test('nothing to draw isn’t written, so a terminal that would fail on it isn’t made again in a loop', async () => {
+    // Ghostty 0.4 as published throws on writing nothing.
+    const { terminal, target } = fakeTerminal()
+    terminal.throws = true
+    const remounts: boolean[] = []
+    // A terminal that hasn't printed yet; and one made after a snapshot it couldn't draw.
+    const empty = fakeMain(chunk('', 0))
+    drawOutput(target, empty.source, (again) => remounts.push(again))
+    const skipped = fakeMain(chunk('$ ', 2))
+    drawOutput(target, skipped.source, (again) => remounts.push(again), { fromSnapshot: false })
+    await settle()
+    expect([empty.acks, skipped.acks]).toEqual([[0], [2]])
+    expect(terminal.written).toEqual([])
+    expect(remounts).toEqual([])
+    expect(reports).toHaveLength(0)
   })
 
   test('a fresh terminal whose first output fails is made again after it', async () => {
@@ -168,7 +185,7 @@ describe('drawing a terminal’s output', () => {
     for (let i = 0; i < 10; i++) await settle()
     send('after\r\n')
     expect(views).toHaveLength(3)
-    expect(views[2].written).toEqual(['', 'after\r\n'])
+    expect(views[2].written).toEqual(['after\r\n'])
     expect(reports).toHaveLength(2)
     expect(main.acks.at(-1)).toBe(output.length)
   })

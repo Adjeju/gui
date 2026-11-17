@@ -591,6 +591,32 @@ test('a terminal made again lets go of the old one', async ({ launch }) => {
   expect(await counts()).toEqual(before)
 })
 
+test('a terminal opened before its shell prints draws it, with no error reported', async ({
+  launch,
+}) => {
+  // A shell that takes a second to start: the drawer asks for its output while there's none.
+  // Ghostty 0.4 threw on drawing nothing, the most common crash report Gui sent.
+  const slow = join(ZDOTDIR, 'slow-shell')
+  writeFileSync(slow, '#!/bin/sh\nsleep 1\nexec /bin/zsh "$@"\n', { mode: 0o755 })
+  const session = await launch({ fixture: 'vite', env: { ...SHELL, SHELL: slow } })
+  await session.waitForPreview()
+  await session.app.evaluate(({ ipcMain }) => {
+    const store = globalThis as unknown as { guiReports: unknown[] }
+    store.guiReports = []
+    ipcMain.on('app:report-error', (_event, report) => store.guiReports.push(report))
+  })
+  const reports = () =>
+    session.app.evaluate(() => (globalThis as unknown as { guiReports: unknown[] }).guiReports)
+  await clickMenu(session, 'Show Terminal')
+  const id = (await drawerWith(session, 1)).terminals[0]?.id
+  if (!id) throw new Error('No terminal')
+  expect(await output(session, id)).toBe('')
+  await waitForFocus(session, id)
+  await run(session, 'echo slow-$((5+5))')
+  await expect.poll(() => screenText(panel(session, id)), { timeout: 30_000 }).toContain('slow-10')
+  expect(await reports()).toEqual([])
+})
+
 test('hiding the terminal with the keyboard in it gives the keyboard to the preview', async ({
   launch,
 }) => {

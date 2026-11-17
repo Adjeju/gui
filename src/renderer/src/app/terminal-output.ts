@@ -55,8 +55,10 @@ export function drawOutput(
 
   const draw = (chunk: OutputChunk, data: string, replay: boolean) => {
     at = chunk.end
-    // Waiting to be made again: what it draws now goes with it.
-    if (remounting) {
+    // Waiting to be made again, what it draws now goes with it. Nothing to draw (a terminal
+    // that hasn't printed yet, or one made after a snapshot it couldn't draw) isn't written:
+    // a terminal that failed on it would be made again, and fail on it again.
+    if (remounting || !data) {
       if (!disposed) source.ack(chunk.id, chunk.end)
       return
     }
@@ -82,7 +84,7 @@ export function drawOutput(
     }
     // Outgrown only after drawing more than main's snapshot, so that alone can't loop.
     const drewBefore = drawn
-    if (data) drawn = true
+    drawn = true
     if (drewBefore && target.outgrown()) {
       remounting = true
       remount(true)
