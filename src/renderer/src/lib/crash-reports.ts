@@ -11,10 +11,14 @@ export function reportError(error: unknown) {
 /**
  * The browser's notes that aren't Gui failing: a ResizeObserver that changed a size as it
  * heard of one, whose next notice waits a frame ("loop completed with undelivered
- * notifications", or "loop limit exceeded" in older Chromium).
+ * notifications", or "loop limit exceeded" in older Chromium). By its message, whether or not
+ * the event carries an error.
  */
 export function isBrowserNoise(event: Pick<ErrorEvent, 'error' | 'message'>) {
-  return !event.error && /ResizeObserver loop/.test(event.message)
+  const message = event.error instanceof Error ? event.error.message : event.message
+  return /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/.test(
+    message ?? '',
+  )
 }
 
 /** Errors nothing caught: a failed event handler, a rejected promise nothing awaited. */
