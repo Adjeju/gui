@@ -5,13 +5,7 @@ import { dirname, join } from 'node:path'
 import type { ProjectInfo } from '../src/shared/types'
 
 let userData = ''
-// Bun keeps the first stand-in's exports for every later test file in the run, so this
-// names what the others import too (recordings.test.ts loads thumbnail.ts's nativeImage).
-mock.module('electron', () => ({
-  app: { getPath: () => userData },
-  protocol: { registerSchemesAsPrivileged: () => {}, handle: () => {} },
-  nativeImage: { createFromDataURL: () => ({ isEmpty: () => true }) },
-}))
+mock.module('electron', () => ({ app: { getPath: () => userData } }))
 const { installsNeeded, packageManagerOf, recordInstalled } = await import('../src/main/setup')
 const { agreedScripts, changedInstalls, scriptsOf, startChanged } = await import(
   '../src/main/start-scripts'

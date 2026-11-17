@@ -1,0 +1,3 @@
+[test]
+# One Electron stand-in that names everything src/ imports, before any test file runs.
+preload = ["./tests/electron-stand-in.ts"]
