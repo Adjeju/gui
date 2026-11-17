@@ -26,7 +26,7 @@ export function AgentIcon({
       className={cn(
         // Black and white whatever the theme; the edge is a hairline that's stronger in the
         // dark, so the tile doesn't sink into a dark row.
-        'flex size-7 shrink-0 items-center justify-center rounded-md bg-tile text-small font-medium text-tile-fg ring-1 ring-tile-edge ring-inset',
+        'flex size-7 shrink-0 items-center justify-center rounded-md bg-tile text-small font-medium text-tile-fg! ring-1 ring-tile-edge ring-inset',
         small && 'size-5 rounded-sm text-caption',
         tiny && 'size-3.5 rounded-[3px] text-[9px]',
         className,

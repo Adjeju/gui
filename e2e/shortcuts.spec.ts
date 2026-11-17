@@ -654,7 +654,7 @@ test('⇧⌘M shows the chat and opens the model picker, searching', async ({ la
   await session.app.evaluate(setContentSize, WINDOW)
   const { chat } = session
   const picker = chat.getByRole('dialog', { name: 'Choose a model' })
-  const search = picker.getByRole('combobox', { name: 'Search models' })
+  const search = picker.getByRole('combobox', { name: 'Search all models' })
 
   // From a hidden chat: it shows, the picker opens, and typing searches.
   await session.chrome.evaluate(() => window.gui.toggleChat())
