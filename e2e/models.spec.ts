@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import type { Locator, Page } from '@playwright/test'
 import {
+  AGENTS,
   type AgentId,
   CUSTOM_AGENT_PREFIX,
   DEFAULT_AGENT_ID,
@@ -132,6 +133,12 @@ process.stdin.on('data', (chunk) => {
   }
 })
 `
+
+/**
+ * The built-in agents switched off, so the picker lists only the stand-ins whatever agents
+ * the Mac running the tests has installed (Check Agents would check those too).
+ */
+const STAND_INS_ONLY = { disabledAgents: AGENTS.map((agent) => agent.id) }
 
 type Kind = 'long' | 'short' | 'none' | 'signed-out' | 'providers'
 
@@ -282,7 +289,7 @@ test('the model picker searches the models, sets the model and effort, and new s
   const session = await launch({
     fixture: 'vite',
     // Room in the floating panel for a message beside the open picker, to click away on.
-    prefs: { chatSize: { width: 480, height: 720 } },
+    prefs: { ...STAND_INS_ONLY, chatSize: { width: 480, height: 720 } },
   })
   await session.declineConsentDialogs()
   const runs = await addAgent(session)
@@ -332,8 +339,8 @@ test('the model picker searches the models, sets the model and effort, and new s
   await expect(options.first()).toContainText('Swift')
   await expect(options.first()).toContainText('Models')
   await expect(effort).toBeVisible()
-  // Nothing said in another agent's chat would start a new one yet: no hint.
-  await expect(dialog.getByText('A model from another agent starts a new chat.')).toHaveCount(0)
+  // The chat has started: another agent's model would start a new one, and it says so.
+  await expect(dialog.getByText('A model from another agent starts a new chat.')).toBeVisible()
   await session.shot('model-picker-recent')
   // The agent's tab lists its models, and says how many.
   await tab('Models').click()
@@ -554,7 +561,7 @@ test('the model picker searches the models, sets the model and effort, and new s
 })
 
 test('a short model list is driven from the search field', async ({ launch }) => {
-  const session = await launch({ fixture: 'vite' })
+  const session = await launch({ fixture: 'vite', prefs: STAND_INS_ONLY })
   await session.declineConsentDialogs()
   await addAgent(session, 'short')
   await modelsAre(session, 'swift', 'medium')
@@ -584,7 +591,7 @@ test('a short model list is driven from the search field', async ({ launch }) =>
 test('an agent with providers: the picker switches provider, lists its models, and new chats keep it', async ({
   launch,
 }) => {
-  const session = await launch({ fixture: 'vite' })
+  const session = await launch({ fixture: 'vite', prefs: STAND_INS_ONLY })
   await session.declineConsentDialogs()
   const runs = await addAgent(session, 'providers')
   const { chat } = session
@@ -748,7 +755,7 @@ async function shots(session: GuiSession, name: string) {
 test('an empty chat takes another agent’s model from the picker, which leaves the default agent alone', async ({
   launch,
 }) => {
-  const session = await launch({ fixture: 'vite' })
+  const session = await launch({ fixture: 'vite', prefs: STAND_INS_ONLY })
   await session.declineConsentDialogs()
   await addAgent(session, 'short', { Other: 'short' })
   await modelsAre(session, 'swift', 'medium')
@@ -840,7 +847,7 @@ test('an empty chat takes another agent’s model from the picker, which leaves 
 test('a started chat: another agent’s model starts a new chat, and while it works the picker asks first', async ({
   launch,
 }) => {
-  const session = await launch({ fixture: 'vite' })
+  const session = await launch({ fixture: 'vite', prefs: STAND_INS_ONLY })
   await session.declineConsentDialogs()
   await addAgent(session, 'short', { Other: 'short' })
   await modelsAre(session, 'swift', 'medium')
@@ -929,7 +936,7 @@ test('a started chat: another agent’s model starts a new chat, and while it wo
 test('an agent that isn’t ready: its tab is dimmed and says why; one with no models says so', async ({
   launch,
 }) => {
-  const session = await launch({ fixture: 'vite' })
+  const session = await launch({ fixture: 'vite', prefs: STAND_INS_ONLY })
   await session.declineConsentDialogs()
   await addAgent(session, 'none', { Locked: 'signed-out' })
   const { chat } = session

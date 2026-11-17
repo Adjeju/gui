@@ -632,7 +632,7 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
           searchField.current?.focus()
         }}
         className={cn(
-          'relative flex h-8 w-7 shrink-0 items-center justify-center rounded-md text-muted outline-none hover:bg-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-muted',
+          'relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted outline-none hover:bg-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-muted',
           on &&
             'text-fg after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent',
         )}
@@ -712,7 +712,7 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
       onBlur={onBlur}
       placement={placement}
     >
-      <div className="flex shrink-0 items-center gap-0.5 px-1.5 pt-1.5">
+      <div className="flex shrink-0 items-center gap-0.5 px-1.5 pt-1">
         <div
           ref={strip}
           role="tablist"
@@ -725,14 +725,14 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
         <IconButton
           label="Agent Settings…"
           icon={Settings}
-          className="h-8 w-7"
+          className="h-7 w-7"
           onClick={() => {
             gui.openAgentSettings()
             onClose(false)
           }}
         />
       </div>
-      <div className="mt-1.5 border-t-hairline border-line">
+      <div className="mt-1 border-t-hairline border-line">
         <PopoverSearch
           ref={searchField}
           role="combobox"
@@ -754,7 +754,7 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
         </p>
       )}
       {!asking && !searching && tabChoice && (
-        <div className="flex shrink-0 items-baseline justify-between gap-2 px-3 pt-2 pb-0.5 text-small font-medium">
+        <div className="flex shrink-0 items-baseline justify-between gap-2 px-3 pt-1.5 text-small font-medium">
           <span className="min-w-0 truncate">{tabChoice.name}</span>
           {tabList && (
             <span className="shrink-0 font-normal text-subtle">
@@ -818,10 +818,19 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
                 id={`${id}-group-${number}`}
                 // Pinned while its rows scroll under it (flush with the list's top, past its
                 // p-1), so a long provider's models still say whose they are.
-                className="sticky -top-1 z-sticky flex items-center gap-1.5 truncate bg-overlay px-2 pt-1.5 pb-1"
+                className={cn(
+                  'sticky -top-1 z-sticky truncate bg-overlay px-2 pt-1.5 pb-1',
+                  section.agentId && 'flex items-center gap-1.5',
+                )}
               >
-                {section.agentId && <AgentIcon agentId={section.agentId} tiny />}
-                <span className="min-w-0 truncate">{section.label}</span>
+                {section.agentId ? (
+                  <>
+                    <AgentIcon agentId={section.agentId} tiny />
+                    <span className="min-w-0 truncate">{section.label}</span>
+                  </>
+                ) : (
+                  section.label
+                )}
               </GroupLabel>
               {section.rows.map(renderRow)}
             </div>
