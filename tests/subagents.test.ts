@@ -411,6 +411,21 @@ describe('appendChunk', () => {
     ])
   })
 
+  test('writing, thinking for a while, then writing again stays two paragraphs in order', () => {
+    const items: TurnItem[] = []
+    appendChunk(items, 'text', 'I’ll check the file.', null, newId, 1000)
+    appendChunk(items, 'thought', 'Hm', null, newId, 1100)
+    // Still thinking seconds later: its own latest item grows however long it takes.
+    appendChunk(items, 'thought', ', the tokens', null, newId, 9000)
+    appendChunk(items, 'text', 'It is applied.', null, newId, 9100)
+    appendChunk(items, 'text', ' Mostly.', null, newId, 20000)
+    expect(shape(items)).toEqual([
+      { kind: 'text', text: 'I’ll check the file.' },
+      { kind: 'thought', text: 'Hm, the tokens' },
+      { kind: 'text', text: 'It is applied. Mostly.' },
+    ])
+  })
+
   test('subagents alongside neither split its words nor join them', () => {
     const items: TurnItem[] = []
     appendChunk(items, 'text', 'Hello', null, newId)

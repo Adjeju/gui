@@ -238,6 +238,10 @@ export const ownedBy = (item: TurnItem, owner: string | null) => (item.subagent 
  * together alternate the two a few words at a time, and each still reads as one item. A tool
  * call, plan or anything else of the owner's ends the run, and the next chunk starts a new
  * item. Items of other owners (subagents running alongside) neither split nor join a run.
+ *
+ * Only what streams together joins: an item last added to more than STREAMED_TOGETHER_MS ago
+ * is finished, so an agent that writes, thinks for a while, then writes again (Claude Code,
+ * Codex) keeps its two paragraphs apart, in the order they came.
  */
 export function appendChunk(
   items: TurnItem[],
@@ -245,18 +249,31 @@ export function appendChunk(
   text: string,
   owner: string | null,
   newId: () => string = randomUUID,
+  now: number = Date.now(),
 ) {
+  let latest = true
   for (let index = items.length - 1; index >= 0; index--) {
     const item = items[index]
     if (!ownedBy(item, owner)) continue
     if (item.kind === kind) {
+      // Its latest item just grows; one behind the other kind, only while both are streaming.
+      if (!latest && now - (addedTo.get(item) ?? 0) > STREAMED_TOGETHER_MS) break
       item.text += text
+      addedTo.set(item, now)
       return
     }
     if (item.kind !== 'text' && item.kind !== 'thought') break
+    latest = false
   }
-  items.push({ kind, id: newId(), text, ...(owner === null ? {} : { subagent: owner }) })
+  const item: TurnItem = { kind, id: newId(), text, ...(owner === null ? {} : { subagent: owner }) }
+  addedTo.set(item, now)
+  items.push(item)
 }
+
+/** How long after its last chunk a reply or thinking still counts as streaming. */
+const STREAMED_TOGETHER_MS = 3000
+/** When each streamed item last got a chunk; only while the turn is live. */
+const addedTo = new WeakMap<TurnItem, number>()
 
 /**
  * The subagent's steps past `max`, oldest first, as indexes into `items`, so the caller can
