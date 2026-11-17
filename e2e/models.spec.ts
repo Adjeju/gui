@@ -214,13 +214,17 @@ const send = (session: GuiSession, text: string) =>
 /** The picker's parts, by role. */
 function pickerOf(session: GuiSession) {
   const dialog = session.chat.getByRole('dialog', { name: 'Choose a model' })
+  const tabs = dialog.getByRole('tablist', { name: 'Agents' })
   return {
     dialog,
-    search: dialog.getByRole('combobox', { name: 'Search models' }),
+    search: dialog.getByRole('combobox', { name: 'Search all models' }),
     list: dialog.getByRole('listbox', { name: 'Models' }),
     options: dialog.getByRole('option'),
     effort: dialog.getByRole('group', { name: 'Effort' }),
     provider: dialog.getByRole('group', { name: 'Provider' }),
+    tabs,
+    /** Recent, an agent's, by name */
+    tab: (name: string) => tabs.getByRole('tab', { name, exact: true }),
   }
 }
 
@@ -319,8 +323,23 @@ test('the model picker searches the models, sets the model and effort, and new s
   await expect(button).toHaveAttribute('aria-haspopup', 'dialog')
   await expect(button).toHaveAttribute('aria-expanded', 'false')
   await button.click()
-  const { dialog, search, list, options, effort, provider } = pickerOf(session)
+  const { dialog, search, list, options, effort, provider, tab } = pickerOf(session)
   await expect(dialog).toBeVisible()
+  // It opens on Recent: the model the message went on, with its agent, marked as the chat's.
+  await expect(tab('Recent')).toHaveAttribute('aria-selected', 'true')
+  await expect(options).toHaveCount(1)
+  await expect(options.first()).toHaveAttribute('aria-selected', 'true')
+  await expect(options.first()).toContainText('Swift')
+  await expect(options.first()).toContainText('Models')
+  await expect(effort).toBeVisible()
+  // Nothing said in another agent's chat would start a new one yet: no hint.
+  await expect(dialog.getByText('A model from another agent starts a new chat.')).toHaveCount(0)
+  await session.shot('model-picker-recent')
+  // The agent's tab lists its models, and says how many.
+  await tab('Models').click()
+  await expect(tab('Models')).toHaveAttribute('aria-selected', 'true')
+  await expect(tab('Recent')).toHaveAttribute('aria-selected', 'false')
+  await expect(dialog.getByText('41 models')).toBeVisible()
   await expect(provider).toHaveCount(0)
   await expect(button).toHaveAttribute('aria-expanded', 'true')
   await expect(search).toBeFocused()
@@ -352,9 +371,14 @@ test('the model picker searches the models, sets the model and effort, and new s
   await session.shot('model-picker-pinned-provider')
   await list.evaluate((el) => el.scrollTo(0, 0))
 
-  // Every typed word matches somewhere in the name, value or provider, in any case.
+  await session.shot('model-picker-agent')
+
+  // Every typed word matches somewhere in the name, value or provider, in any case. While
+  // something is typed, no tab is shown as selected: the search is every agent's.
   await chat.keyboard.type('SON 4')
   await expect(options).toHaveText(['Claude Sonnet 4.5', 'Claude Sonnet 4'])
+  await expect(dialog.getByRole('tab', { selected: true })).toHaveCount(0)
+  await expect(list.getByRole('group', { name: 'Models · Anthropic' })).toBeVisible()
   await search.fill('qwen coder')
   await expect(options).toHaveText(['Qwen3 Coder'])
   // Spaces, dashes and dots are loose: "kimik2" finds "Kimi K2", "gpt4.1" finds "GPT-4.1".
@@ -367,6 +391,10 @@ test('the model picker searches the models, sets the model and effort, and new s
   await expect(options).toHaveCount(0)
   await expect(dialog.getByText('No models match')).toBeVisible()
   await session.shot('model-picker-empty')
+  // Cleared, the tab it was on again.
+  await search.fill('')
+  await expect(tab('Models')).toHaveAttribute('aria-selected', 'true')
+  await expect(options).toHaveCount(41)
 
   // ↑/↓ move keyboard selection; pointer highlighting leaves aria-activedescendant in place.
   await search.fill('gpt 5')
@@ -446,6 +474,7 @@ test('the model picker searches the models, sets the model and effort, and new s
     return box && box.width <= 320 && box.height <= 360
   }, 'the smallest panel')
   await sageHigh.click()
+  await tab('Models').click()
   const small = await expectPlaced(session, dialog, sageHigh)
   expect(small.box.height).toBeGreaterThan(200)
   const listBox = await list.boundingBox()
@@ -511,6 +540,7 @@ test('the model picker searches the models, sets the model and effort, and new s
   await chat.evaluate(() => window.gui.setAgentSetting('llm', 'not-a-model'))
   await chat.evaluate(() => window.gui.setAgentSetting('mode', 'ask'))
   await sageHigh.click()
+  await tab('Models').click()
   await options.filter({ hasText: 'GPT-5 Nano' }).click()
   await expect(dialog).toBeHidden()
   await modelsAre(session, 'openai/gpt-5-nano', 'high')
@@ -523,25 +553,26 @@ test('the model picker searches the models, sets the model and effort, and new s
   )
 })
 
-test('a short model list has no search field and is driven from the list', async ({ launch }) => {
+test('a short model list is driven from the search field', async ({ launch }) => {
   const session = await launch({ fixture: 'vite' })
   await session.declineConsentDialogs()
   await addAgent(session, 'short')
   await modelsAre(session, 'swift', 'medium')
 
+  // Nothing used yet: it opens on the chat's own agent.
   const button = session.chat.getByRole('button', { name: 'Model: Swift, effort Medium' })
   await button.click()
-  const { dialog, search, list, options } = pickerOf(session)
+  const { dialog, search, list, options, tab } = pickerOf(session)
   await expect(dialog).toBeVisible()
-  await expect(search).toHaveCount(0)
-  await expect(list).toBeFocused()
+  await expect(tab('Models')).toHaveAttribute('aria-selected', 'true')
+  await expect(search).toBeFocused()
   await expect(options).toHaveText(['Swift', 'Sage', 'Atlas'])
   await expect(list.getByRole('group')).toHaveCount(0)
   await expectPlaced(session, dialog, button)
   await session.shot('model-picker-short')
 
   await session.chat.keyboard.press('ArrowDown')
-  await expectActive(list, options.nth(1))
+  await expectActive(search, options.nth(1))
   await session.chat.keyboard.press('Enter')
   await expect(dialog).toBeHidden()
   await modelsAre(session, 'sage', 'medium')
@@ -581,22 +612,26 @@ test('an agent with providers: the picker switches provider, lists its models, a
   await expect(options).toHaveCount(41)
   await search.fill('gpt 5')
   await expect(options).toHaveText(['GPT-5', 'GPT-5 Mini', 'GPT-5 Nano'])
+  // The Provider row is the agent's tab's: a search is every agent's models.
+  await expect(provider).toHaveCount(0)
+  await search.fill('')
+  await expect(provider).toBeVisible()
 
   // One the agent turns down says why, and the picker stays on the provider it had. The
   // chat had no session yet: asking started one.
   await choice('Grok').click()
   await expect(dialog.getByRole('alert')).toHaveText("Grok isn't signed in. Run fx login grok.")
   await expect(choice('Gateway')).toHaveAttribute('aria-pressed', 'true')
-  await expect(options).toHaveText(['GPT-5', 'GPT-5 Mini', 'GPT-5 Nano'])
+  await expect(options).toHaveCount(41)
   expect(runs()).toHaveLength(1)
   await session.shot('model-picker-provider-refused')
 
-  // Another one lists its models in place: two, too few for the search field.
+  // Another one lists its models in place.
   await choice('Codex').click()
   await expect(choice('Codex')).toHaveAttribute('aria-pressed', 'true')
   await expect(dialog.getByRole('alert')).toHaveCount(0)
-  await expect(search).toHaveCount(0)
   await expect(options).toHaveText(['GPT-5 Codex', 'GPT-5'])
+  await expect(dialog.getByText('2 models')).toBeVisible()
   await modelsAre(session, 'gpt-5-codex', 'medium')
   await session.shot('model-picker-provider')
   await options.filter({ hasText: /^GPT-5$/ }).click()
@@ -647,6 +682,13 @@ test('an agent with providers: the picker switches provider, lists its models, a
   expect(next.provider?.value).toBe('codex')
   expect(next.model.options.map((option) => option.value)).toEqual(['gpt-5-codex', 'gpt-5'])
   await chat.getByRole('button', { name: 'Model: GPT-5, effort Medium' }).click()
+  // Recent has it under its provider; the Provider row is the agent's tab's.
+  const { tab } = pickerOf(session)
+  await expect(tab('Recent')).toHaveAttribute('aria-selected', 'true')
+  await expect(options).toHaveCount(1)
+  await expect(options.first()).toHaveAttribute('aria-selected', 'true')
+  await expect(provider).toHaveCount(0)
+  await tab('Models').click()
   await expect(choice('Codex')).toHaveAttribute('aria-pressed', 'true')
   await expect(options).toHaveText(['GPT-5 Codex', 'GPT-5'])
   await chat.keyboard.press('Escape')
@@ -671,15 +713,16 @@ test('an agent with providers: the picker switches provider, lists its models, a
 
 const OTHER: AgentId = `${CUSTOM_AGENT_PREFIX}Other`
 
-/** The picker on its agents, by role. */
-function agentsOf(session: GuiSession) {
-  const dialog = session.chat.getByRole('dialog', { name: 'Choose an agent' })
-  const list = dialog.getByRole('listbox', { name: 'Agents' })
-  return { dialog, list, option: (name: string) => list.getByRole('option', { name }) }
-}
-
 const agentIs = (session: GuiSession, id: AgentId) =>
   waitFor(async () => (await session.chatSnapshot()).meta.agentId === id, `the chat on ${id}`)
+
+/** Waits for the picker to have `id`'s models from its check. */
+const listsModelsOf = (session: GuiSession, id: AgentId) =>
+  waitFor(
+    async () =>
+      !!(await session.chatSnapshot()).meta.agents.find((agent) => agent.id === id)?.models,
+    `${id}'s models`,
+  )
 
 /** The Settings window, once it's open and its page has loaded. */
 async function settingsPage(session: GuiSession): Promise<Page> {
@@ -693,80 +736,100 @@ async function settingsPage(session: GuiSession): Promise<Page> {
   return page
 }
 
-test('an empty chat takes another agent from the picker, which leaves the default agent alone', async ({
+/** A screenshot in the dark appearance and in the light. */
+async function shots(session: GuiSession, name: string) {
+  if (process.env.GUI_E2E_SHOTS !== '1') return
+  await session.chat.emulateMedia({ colorScheme: 'dark' })
+  await session.shot(`${name}-dark`)
+  await session.chat.emulateMedia({ colorScheme: 'light' })
+  await session.shot(name)
+}
+
+test('an empty chat takes another agent’s model from the picker, which leaves the default agent alone', async ({
   launch,
 }) => {
   const session = await launch({ fixture: 'vite' })
   await session.declineConsentDialogs()
   await addAgent(session, 'short', { Other: 'short' })
   await modelsAre(session, 'swift', 'medium')
+  await listsModelsOf(session, OTHER)
   const { chat } = session
-  const { dialog: models } = pickerOf(session)
-  const agents = agentsOf(session)
+  const picker = pickerOf(session)
 
   // The header names the agent and no longer switches it: the picker does.
   await expect(chat.getByRole('heading', { level: 2, name: 'Models' })).toBeVisible()
   await expect(chat.getByRole('button', { name: /^Switch agent/ })).toHaveCount(0)
 
-  // The agent's row, above its models, opens the agents in the same picker.
+  // Nothing used yet: it opens on the chat's agent, among a tab per agent after Recent.
   const button = chat.getByRole('button', { name: 'Model: Swift, effort Medium' })
-  const toAgents = () => models.getByRole('button', { name: 'Agent: Models. Switch agent' }).click()
   await button.click()
-  await toAgents()
-  await expect(agents.list).toBeVisible()
-  // A Mac with many agents installed gets a search field, which then holds the keyboard.
-  const search = agents.dialog.getByRole('combobox', { name: 'Search agents' })
-  const keys = (await search.count()) ? search : agents.list
-  await expect(keys).toBeFocused()
-  await expect(agents.list.getByRole('option', { selected: true })).toHaveAccessibleName('Models')
-  // Nothing said yet: any agent takes this chat, as is.
-  await expect(agents.option('Other')).toHaveAccessibleName('Other')
-  await expect(agents.dialog.getByText('Start a new chat')).toHaveCount(0)
-  await expect(agents.dialog.getByRole('button', { name: 'Agent Settings…' })).toBeVisible()
-  await session.shot('agent-picker')
+  await expect(picker.tab('Models')).toHaveAttribute('aria-selected', 'true')
+  const names = await picker.tabs
+    .getByRole('tab')
+    .evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute('aria-label')))
+  expect(names[0]).toBe('Recent')
+  expect(names.indexOf('Other')).toBeGreaterThan(names.indexOf('Models'))
+  await expect(picker.tab('Other')).toHaveAttribute('title', 'Other')
+  await expect(picker.dialog.getByRole('button', { name: 'Agent Settings…' })).toBeVisible()
 
-  // Esc and ← go back to the models; Esc there closes.
-  await chat.keyboard.press('Escape')
-  await expect(models).toBeVisible()
-  await expect(agents.dialog).toHaveCount(0)
-  await toAgents()
-  await expect(keys).toBeFocused()
+  // ←/→ go along the tabs, each shown as it's reached.
+  await picker.tab('Models').focus()
   await chat.keyboard.press('ArrowLeft')
-  await expect(models).toBeVisible()
-  await chat.keyboard.press('Escape')
-  await expect(models).toHaveCount(0)
-  await expect(button).toBeFocused()
+  await expect(picker.tab('Recent')).toBeFocused()
+  await expect(picker.tab('Recent')).toHaveAttribute('aria-selected', 'true')
+  await expect(picker.dialog.getByText('No recent models')).toBeVisible()
+  await chat.keyboard.press('ArrowRight')
+  await expect(picker.tab('Models')).toBeFocused()
+  await expect(picker.tab('Models')).toHaveAttribute('aria-selected', 'true')
 
-  // Another agent, from the keyboard.
-  await button.click()
-  await toAgents()
-  const ids = await agents.list
-    .getByRole('option')
-    .evaluateAll((options) => options.map((option) => option.getAttribute('aria-selected')))
-  const from = ids.indexOf('true')
-  const names = await agents.list
-    .getByRole('option')
-    .evaluateAll((options) =>
-      options.map((option) => option.querySelector('.truncate .truncate')?.textContent),
-    )
-  const to = names.indexOf('Other')
-  expect(to).toBeGreaterThanOrEqual(0)
-  for (let step = from; step !== to; step += Math.sign(to - from)) {
-    await chat.keyboard.press(to > from ? 'ArrowDown' : 'ArrowUp')
-  }
-  await expectActive(keys, agents.option('Other'))
+  // Another agent's tab lists its models. The effort is the chat's own model's: not there.
+  await picker.tab('Other').click()
+  await expect(picker.search).toBeFocused()
+  await expect(picker.options).toHaveText(['Swift', 'Sage', 'Atlas'])
+  await expect(picker.dialog.getByText('3 models')).toBeVisible()
+  await expect(picker.effort).toHaveCount(0)
+  await expect(
+    picker.dialog.getByText('A model from another agent starts a new chat.'),
+  ).toHaveCount(0)
+  await session.shot('model-picker-other-agent')
+
+  // Typing searches every agent's models, under each agent.
+  await chat.keyboard.type('atlas')
+  await expect(picker.search).toHaveValue('atlas')
+  await expect(picker.dialog.getByRole('tab', { selected: true })).toHaveCount(0)
+  const found = (agent: string) =>
+    picker.list.getByRole('group', { name: agent, exact: true }).getByRole('option')
+  await expect(found('Models')).toHaveText(['Atlas'])
+  await expect(found('Other')).toHaveText(['Atlas'])
+  // Nothing said yet, so nothing starts a new chat.
+  await expect(picker.dialog.getByText('New chat')).toHaveCount(0)
+  await session.shot('model-picker-search-all')
+  // Cleared, the tab it was on again.
+  await picker.search.fill('')
+  await expect(picker.tab('Other')).toHaveAttribute('aria-selected', 'true')
+
+  // Another agent's model, from the keyboard: the chat takes that agent, on that model.
+  await picker.search.fill('atlas')
+  await chat.keyboard.press('ArrowDown')
+  await expectActive(picker.search, found('Other'))
   await chat.keyboard.press('Enter')
-  await expect(agents.dialog).toHaveCount(0)
+  await expect(picker.dialog).toHaveCount(0)
   await agentIs(session, OTHER)
+  await waitFor(async () => (await models(session))?.model.value === 'atlas', 'Other on Atlas')
   await expect(chat.getByRole('heading', { level: 2, name: 'Other' })).toBeVisible()
   // Nothing was said, so nothing was archived.
   expect((await session.chatSnapshot()).meta.archived).toBeNull()
 
+  // Recent has it first, with its agent, marked as the chat's.
+  await chat.getByRole('button', { name: 'Model: Atlas, effort Medium' }).click()
+  await expect(picker.tab('Recent')).toHaveAttribute('aria-selected', 'true')
+  await expect(picker.options.first()).toContainText('Atlas')
+  await expect(picker.options.first()).toContainText('Other')
+  await expect(picker.options.first()).toHaveAttribute('aria-selected', 'true')
+
   // This chat only: the default agent is still Settings' own, and Agent Settings… opens there.
-  await chat.getByRole('button', { name: 'Model: Swift, effort Medium' }).click()
-  await pickerOf(session).dialog.getByRole('button', { name: 'Agent: Other. Switch agent' }).click()
-  await agents.dialog.getByRole('button', { name: 'Agent Settings…' }).click()
-  await expect(agents.dialog).toHaveCount(0)
+  await picker.dialog.getByRole('button', { name: 'Agent Settings…' }).click()
+  await expect(picker.dialog).toHaveCount(0)
   const settings = await settingsPage(session)
   await expect(settings.getByRole('heading', { level: 1, name: 'Agents' })).toBeVisible()
   expect((await settings.evaluate(() => window.gui.getSettings())).defaultAgentId).toBe(
@@ -774,88 +837,140 @@ test('an empty chat takes another agent from the picker, which leaves the defaul
   )
 })
 
-test('a started chat keeps its agent: another one starts a new chat, never while it works', async ({
+test('a started chat: another agent’s model starts a new chat, and while it works the picker asks first', async ({
   launch,
 }) => {
   const session = await launch({ fixture: 'vite' })
   await session.declineConsentDialogs()
   await addAgent(session, 'short', { Other: 'short' })
   await modelsAre(session, 'swift', 'medium')
+  await listsModelsOf(session, OTHER)
   const { chat } = session
-  const agents = agentsOf(session)
-  const openAgents = async () => {
-    await chat.getByRole('button', { name: 'Model: Swift, effort Medium' }).click()
-    await pickerOf(session)
-      .dialog.getByRole('button', { name: 'Agent: Models. Switch agent' })
-      .click()
-    await expect(agents.list).toBeVisible()
+  const picker = pickerOf(session)
+  const open = async () => {
+    await chat.getByRole('button', { name: /^Model: / }).click()
+    await expect(picker.dialog).toBeVisible()
   }
+  const snapshot = () => session.chatSnapshot()
 
-  // While a turn runs, the others say how to use them, and can't cut it short.
+  // While a turn runs it opens on Recent, the model the message went on, and says what
+  // another agent's model does.
   expect(await send(session, 'SLOW')).toBe(true)
-  await waitFor(async () => (await session.chatSnapshot()).meta.status === 'working', 'the turn')
-  await openAgents()
+  await waitFor(async () => (await snapshot()).meta.status === 'working', 'the turn')
+  await open()
+  await expect(picker.tab('Recent')).toHaveAttribute('aria-selected', 'true')
+  await expect(picker.options).toHaveCount(1)
+  await expect(picker.options.first()).toHaveAttribute('aria-selected', 'true')
   await expect(
-    agents.dialog.getByText('Start a new chat to use another agent, once this one is done.'),
+    picker.dialog.getByText('A model from another agent starts a new chat.'),
   ).toBeVisible()
-  const other = agents.option('Other')
-  await expect(other).toHaveAttribute('aria-disabled', 'true')
-  await expect(other).toHaveAttribute('title', 'Start a new chat to use Other')
-  // Playwright won't click a disabled option itself; a person can, to no effect.
-  await other.click({ force: true })
-  await expect(agents.dialog).toBeVisible()
-  expect((await session.chatSnapshot()).meta.agentId).toBe(AGENT)
-  await session.shot('agent-picker-started')
-  await chat.keyboard.press('Escape')
-  await chat.keyboard.press('Escape')
-  // Picking another agent for this chat is turned down too.
-  await chat.evaluate((id) => window.gui.setAgent(id), OTHER)
-  await chat.evaluate(() => window.gui.cancel())
-  await waitFor(async () => (await session.chatSnapshot()).meta.status !== 'working', 'stopped')
-  expect((await session.chatSnapshot()).meta.agentId).toBe(AGENT)
+  await shots(session, 'model-picker-recent-started')
 
-  // Done: another agent starts a new chat with it, and this one is archived.
-  await openAgents()
-  await expect(agents.dialog.getByText('Start a new chat to use another agent.')).toBeVisible()
-  await expect(other).not.toHaveAttribute('aria-disabled')
-  await expect(other).toContainText('New chat')
-  await other.click()
-  await expect(agents.dialog).toHaveCount(0)
+  // Its rows say so too; nothing is disabled.
+  await chat.keyboard.type('sage')
+  const found = (agent: string) =>
+    picker.list.getByRole('group', { name: agent, exact: true }).getByRole('option')
+  await expect(found('Other')).toContainText('New chat')
+  await expect(found('Models')).not.toContainText('New chat')
+  await expect(picker.dialog.locator('[aria-disabled="true"]')).toHaveCount(0)
+  await shots(session, 'model-picker-search-started')
+
+  // Picking it asks first. Cancel goes back to the list.
+  const question = picker.dialog.getByRole('region', {
+    name: 'Stop Models and start a new chat with Other on Sage?',
+  })
+  await found('Other').click()
+  await expect(question).toBeVisible()
+  await expect(question).toContainText(
+    'Models is still working. This chat is archived with what it has done so far.',
+  )
+  await expect(question.getByRole('button', { name: 'Cancel' })).toBeFocused()
+  await expect(picker.list).toBeHidden()
+  await expect(picker.effort).toHaveCount(0)
+  await shots(session, 'model-picker-confirm')
+  await question.getByRole('button', { name: 'Cancel' }).click()
+  await expect(question).toHaveCount(0)
+  await expect(found('Other')).toBeVisible()
+  await expect(picker.search).toBeFocused()
+  // Esc too, with the picker still open.
+  await found('Other').click()
+  await expect(question).toBeVisible()
+  await chat.keyboard.press('Escape')
+  await expect(question).toHaveCount(0)
+  await expect(picker.dialog).toBeVisible()
+  expect((await snapshot()).meta.agentId).toBe(AGENT)
+  expect((await snapshot()).meta.status).toBe('working')
+
+  // Stop and Switch: the turn stops, this chat is archived, and Other starts on Sage.
+  await found('Other').click()
+  await question.getByRole('button', { name: 'Stop and Switch' }).click()
+  await expect(picker.dialog).toHaveCount(0)
   await agentIs(session, OTHER)
   await waitFor(async () => {
-    const snapshot = await session.chatSnapshot()
-    return snapshot.turns.length === 0 && snapshot.meta.archived !== null
-  }, 'a new chat, with the old one archived')
+    const { turns, meta } = await snapshot()
+    return turns.length === 0 && meta.archived !== null && meta.models?.model.value === 'sage'
+  }, 'a new chat on Other, on Sage, with the old one archived')
+
+  // Started and done: another agent's model starts a new chat right away.
+  expect(await send(session, 'Hello')).toBe(true)
+  expect((await session.waitForTurn(0)).turn.status).toBe('done')
+  await open()
+  await chat.keyboard.type('atlas')
+  await expect(found('Models')).toContainText('New chat')
+  await found('Models').click()
+  await expect(picker.dialog).toHaveCount(0)
+  await agentIs(session, AGENT)
+  await waitFor(async () => {
+    const { turns, meta } = await snapshot()
+    return turns.length === 0 && meta.models?.model.value === 'atlas'
+  }, 'a new chat on Models, on Atlas')
 })
 
-test('an agent with no models: the button names it, the picker and ⇧⌘M open on the agents', async ({
+test('an agent that isn’t ready: its tab is dimmed and says why; one with no models says so', async ({
   launch,
 }) => {
   const session = await launch({ fixture: 'vite' })
   await session.declineConsentDialogs()
   await addAgent(session, 'none', { Locked: 'signed-out' })
   const { chat } = session
-  const agents = agentsOf(session)
+  const locked: AgentId = `${CUSTOM_AGENT_PREFIX}Locked`
   await waitFor(
     async () =>
-      (await session.state()).agents.find((agent) => agent.id === `${CUSTOM_AGENT_PREFIX}Locked`)
-        ?.status === 'signed-out',
+      (await session.state()).agents.find((agent) => agent.id === locked)?.status === 'signed-out',
     'the signed-out agent checked',
   )
+  const picker = pickerOf(session)
 
+  // Nothing used yet: it opens on the chat's agent, which has no models to choose.
   const button = chat.getByRole('button', { name: 'Agent: Models' })
   await expect(button).toHaveText('Models')
   await button.click()
-  await expect(agents.list).toBeVisible()
-  await expect(agents.dialog.getByRole('button', { name: 'Back to models' })).toHaveCount(0)
-  // Why one can't take a message yet, beside its name.
-  await expect(agents.option('Locked')).toContainText('Not signed in')
-  await expect(agents.option('Locked')).toHaveAttribute('title', 'Locked · Not signed in')
-  // No models to go back to: Esc closes.
-  await chat.keyboard.press('Escape')
-  await expect(agents.dialog).toHaveCount(0)
+  await expect(picker.tab('Models')).toHaveAttribute('aria-selected', 'true')
+  await expect(picker.dialog.getByText('No models to choose')).toBeVisible()
+  await expect(picker.effort).toHaveCount(0)
 
-  // ⇧⌘M (Agent → Choose Model…) opens it on the agents too.
+  // Locked isn't signed in: its mark is dimmed, and its tab says why, with a way to use it.
+  const opacity = (name: string) =>
+    picker
+      .tab(name)
+      .locator('span')
+      .first()
+      .evaluate((el) => Number(getComputedStyle(el).opacity))
+  expect(await opacity('Locked')).toBeLessThan(0.5)
+  expect(await opacity('Models')).toBe(1)
+  await picker.tab('Locked').click()
+  await expect(picker.dialog.getByText('Not signed in')).toBeVisible()
+  await expect(picker.options).toHaveCount(0)
+  await session.shot('model-picker-not-ready')
+  // Typing doesn't search it: it has nothing to list.
+  await chat.keyboard.type('swift')
+  await expect(picker.dialog.getByText('No models match')).toBeVisible()
+  await picker.search.fill('')
+  await picker.dialog.getByRole('button', { name: 'Use Locked' }).click()
+  await expect(picker.dialog).toHaveCount(0)
+  await agentIs(session, locked)
+
+  // ⇧⌘M (Agent → Choose Model…) opens the picker too.
   await session.app.evaluate(({ Menu }) => {
     const find = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
       for (const item of items) {
@@ -867,7 +982,8 @@ test('an agent with no models: the button names it, the picker and ⇧⌘M open 
     }
     find(Menu.getApplicationMenu()?.items ?? [])?.click()
   })
-  await expect(agents.list).toBeVisible()
+  await expect(picker.dialog).toBeVisible()
+  await expect(picker.tab('Locked')).toHaveAttribute('aria-selected', 'true')
 })
 
 test('a chat reopened on an agent not checked since launch lists its models, saying so while it checks', async ({
@@ -927,17 +1043,17 @@ test('a chat reopened on an agent not checked since launch lists its models, say
   await agentIs(session, 'opencode')
   const { chat } = session
 
-  // While it's checked: no models yet, and its own row says it's being checked rather than
+  // While it's checked: no models yet, and its tab says it's being checked rather than
   // looking like an agent without any.
   const button = chat.getByRole('button', { name: 'Agent: OpenCode' })
   await button.click()
-  const agents = agentsOf(session)
-  await expect(agents.option('OpenCode')).toContainText('Checking')
+  const { dialog, list, options, effort, tab } = pickerOf(session)
+  await expect(tab('OpenCode')).toHaveAttribute('aria-selected', 'true')
+  await expect(dialog.getByText('Checking')).toBeVisible()
   expect((await session.chatSnapshot()).meta.models).toBeNull()
 
-  // Checked: the picker turns to its models, the saved choice marked, with no message sent.
+  // Checked: its tab lists its models in place, the saved choice marked, with no message sent.
   writeFileSync(gate, '')
-  const { dialog, list, options, effort } = pickerOf(session)
   await expect(dialog).toBeVisible()
   await expect(options).toHaveCount(41)
   await expect(list.getByRole('option', { selected: true })).toHaveText('Acme/Sage')
