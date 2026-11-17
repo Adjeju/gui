@@ -89,6 +89,7 @@ import { recordingBlocks } from './recording-prompt'
 import type { Recordings } from './recordings'
 import { findSkills, withSkills } from './skills'
 import {
+  appendChunk,
   echoedAnswer,
   messageText,
   overflowingSteps,
@@ -2299,10 +2300,9 @@ export class ChatController extends EventEmitter<ChatEvents> {
       case 'agent_thought_chunk': {
         if (update.content.type !== 'text') return false
         const kind = update.sessionUpdate === 'agent_message_chunk' ? 'text' : 'thought'
-        // Its own last item: the steps of subagents running alongside don't split its words.
-        const last = items.findLast((item) => ownedBy(item, owner))
-        if (last && last.kind === kind) last.text += update.content.text
-        else items.push({ kind, id: randomUUID(), text: update.content.text, ...owned })
+        // Words and thinking streamed together each stay one item, and the steps of subagents
+        // running alongside don't split them.
+        appendChunk(items, kind, update.content.text, owner)
         return true
       }
       case 'tool_call': {

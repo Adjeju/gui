@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type * as acp from '@agentclientprotocol/sdk'
 import {
+  appendChunk,
   echoedAnswer,
   messageText,
   overflowingSteps,
@@ -332,5 +333,120 @@ describe('a subagent’s items', () => {
     expect(echoedAnswer(items, 'a', 'The answer.')).toBe(1)
     expect(echoedAnswer(items, 'a', 'Something else')).toBe(-1)
     expect(echoedAnswer([step('a1', 'a')], 'a', 'The answer.')).toBe(-1)
+  })
+
+  test('its closing words are found past thinking that came after them', () => {
+    const items: TurnItem[] = [
+      { kind: 'text', id: 't', text: 'The answer.', subagent: 'a' },
+      { kind: 'thought', id: 'th', text: 'done', subagent: 'a' },
+    ]
+    expect(echoedAnswer(items, 'a', 'The answer.')).toBe(0)
+  })
+})
+
+describe('appendChunk', () => {
+  let ids = 0
+  const newId = () => `i${++ids}`
+  const shape = (items: TurnItem[]) =>
+    items.map((item) => ({
+      kind: item.kind,
+      ...('text' in item ? { text: item.text } : { id: item.id }),
+      ...(item.subagent ? { subagent: item.subagent } : {}),
+    }))
+  const tool = (id: string, subagent?: string): TurnItem => ({
+    kind: 'tool',
+    id,
+    title: id,
+    toolKind: 'read',
+    status: 'completed',
+    locations: [],
+    ...(subagent ? { subagent } : {}),
+  })
+
+  test('reply and thinking streamed interleaved each read as one item', () => {
+    const items: TurnItem[] = []
+    const chunks: ['text' | 'thought', string][] = [
+      ['thought', ' base resets etc.'],
+      ['text', 'I’m checking token usage'],
+      ['thought', ' old comments dates'],
+      ['text', ', shared component coverage, page'],
+      ['thought', ' (not relevant). DataTable'],
+      ['text', '-level exceptions, and the existing'],
+      ['thought', ' own markup allowed'],
+      ['text', ' browser/styleguide test'],
+      ['thought', ' strong specific behavior but primary_cell'],
+      ['text', ' coverage before giving you a definitive answer…'],
+    ]
+    for (const [kind, text] of chunks) appendChunk(items, kind, text, null, newId)
+    expect(shape(items)).toEqual([
+      {
+        kind: 'thought',
+        text: ' base resets etc. old comments dates (not relevant). DataTable own markup allowed strong specific behavior but primary_cell',
+      },
+      {
+        kind: 'text',
+        text: 'I’m checking token usage, shared component coverage, page-level exceptions, and the existing browser/styleguide test coverage before giving you a definitive answer…',
+      },
+    ])
+  })
+
+  test('a tool call or any other item of its own ends the run', () => {
+    const items: TurnItem[] = []
+    appendChunk(items, 'thought', 'Look', null, newId)
+    appendChunk(items, 'text', 'Reading', null, newId)
+    items.push(tool('read-1'))
+    appendChunk(items, 'thought', 'Found', null, newId)
+    appendChunk(items, 'text', 'Done', null, newId)
+    appendChunk(items, 'thought', ' it', null, newId)
+    items.push({ kind: 'plan', id: 'plan', entries: [] })
+    appendChunk(items, 'text', 'After', null, newId)
+    expect(shape(items)).toEqual([
+      { kind: 'thought', text: 'Look' },
+      { kind: 'text', text: 'Reading' },
+      { kind: 'tool', id: 'read-1' },
+      { kind: 'thought', text: 'Found it' },
+      { kind: 'text', text: 'Done' },
+      { kind: 'plan', id: 'plan' },
+      { kind: 'text', text: 'After' },
+    ])
+  })
+
+  test('subagents alongside neither split its words nor join them', () => {
+    const items: TurnItem[] = []
+    appendChunk(items, 'text', 'Hello', null, newId)
+    appendChunk(items, 'thought', 'sub thinks', 'a', newId)
+    items.push(tool('a1', 'a'))
+    appendChunk(items, 'thought', 'mine', null, newId)
+    appendChunk(items, 'text', 'sub says', 'a', newId)
+    appendChunk(items, 'text', ' world', null, newId)
+    appendChunk(items, 'thought', ' too', null, newId)
+    appendChunk(items, 'text', ' more', 'a', newId)
+    expect(shape(items)).toEqual([
+      { kind: 'text', text: 'Hello world' },
+      { kind: 'thought', text: 'sub thinks', subagent: 'a' },
+      { kind: 'tool', id: 'a1', subagent: 'a' },
+      { kind: 'thought', text: 'mine too' },
+      { kind: 'text', text: 'sub says more', subagent: 'a' },
+    ])
+  })
+
+  test('a subagent it starts ends its run', () => {
+    const items: TurnItem[] = []
+    appendChunk(items, 'text', 'Asking', null, newId)
+    items.push({
+      kind: 'subagent',
+      id: 'a',
+      title: 'Explore',
+      description: null,
+      status: 'running',
+      error: null,
+      prompt: null,
+      answer: null,
+      canStop: false,
+      startedAt: 0,
+      endedAt: null,
+    })
+    appendChunk(items, 'text', 'Back', null, newId)
+    expect(shape(items).map((item) => item.kind)).toEqual(['text', 'subagent', 'text'])
   })
 })

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type * as acp from '@agentclientprotocol/sdk'
 import { MAX_SUBAGENT_SESSIONS } from '../shared/bounded'
 import type { SubagentItem, SubagentStatus, TurnItem } from '../shared/types'
@@ -231,6 +232,33 @@ function subagentStatus(state: Record<string, unknown>): SubagentStatus | null {
 export const ownedBy = (item: TurnItem, owner: string | null) => (item.subagent ?? null) === owner
 
 /**
+ * Adds a streamed chunk of the reply (`text`) or of thinking (`thought`) from `owner` (a
+ * subagent, or null for the agent's own). It continues the owner's latest item of that kind
+ * when only its words and thinking came since: models that stream reasoning and reply
+ * together alternate the two a few words at a time, and each still reads as one item. A tool
+ * call, plan or anything else of the owner's ends the run, and the next chunk starts a new
+ * item. Items of other owners (subagents running alongside) neither split nor join a run.
+ */
+export function appendChunk(
+  items: TurnItem[],
+  kind: 'text' | 'thought',
+  text: string,
+  owner: string | null,
+  newId: () => string = randomUUID,
+) {
+  for (let index = items.length - 1; index >= 0; index--) {
+    const item = items[index]
+    if (!ownedBy(item, owner)) continue
+    if (item.kind === kind) {
+      item.text += text
+      return
+    }
+    if (item.kind !== 'text' && item.kind !== 'thought') break
+  }
+  items.push({ kind, id: newId(), text, ...(owner === null ? {} : { subagent: owner }) })
+}
+
+/**
  * The subagent's steps past `max`, oldest first, as indexes into `items`, so the caller can
  * drop them. Its permission questions stay (they're the user's answers), and so do the
  * subagents it started, which hold steps of their own.
@@ -251,7 +279,8 @@ export function overflowingSteps(items: TurnItem[], subagent: string, max: numbe
 export function echoedAnswer(items: TurnItem[], subagent: string, answer: string): number {
   for (let index = items.length - 1; index >= 0; index--) {
     const item = items[index]
-    if (item.subagent !== subagent || item.kind === 'permission') continue
+    if (item.subagent !== subagent || item.kind === 'permission' || item.kind === 'thought')
+      continue
     return item.kind === 'text' && item.text.trim() === answer.trim() ? index : -1
   }
   return -1
