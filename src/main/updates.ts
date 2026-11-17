@@ -116,7 +116,11 @@ async function check() {
     return null
   }
   try {
-    return await autoUpdater.checkForUpdates()
+    const result = await autoUpdater.checkForUpdates()
+    // The download it starts (`autoDownload`) rejects when it fails, as on a dropped
+    // connection; the 'error' event has said so already, and nothing else waits on it.
+    result?.downloadPromise?.catch(() => undefined)
+    return result
   } catch {
     // Reported through the 'error' event.
     return null
