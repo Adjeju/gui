@@ -5,7 +5,6 @@ import { homedir } from 'node:os'
 import { isAbsolute, relative, resolve as resolvePath } from 'node:path'
 import type {
   ContentBlock,
-  McpServer,
   RequestPermissionRequest,
   SessionNotification,
 } from '@agentclientprotocol/sdk'
@@ -55,6 +54,7 @@ import {
   declaresOwnPermissions,
   opensWebsites,
   type PermissionPolicy,
+  toolsHint,
 } from './agents'
 import { trackTurn } from './analytics'
 import { autoApproval, isAutoApprove, requestPaths, SENSITIVE_PATH } from './auto-approve'
@@ -71,6 +71,7 @@ import {
   type SavedChat,
   type SavedQueued,
 } from './history'
+import type { McpSessionAccess } from './mcp-server'
 import { getPrefs, prefsEvents, saveAgentSetting, savedAgentSettings, setPrefs } from './prefs'
 import {
   buildPrompt,
@@ -98,6 +99,7 @@ import {
   subagentPatch,
 } from './subagents'
 import { cornerColor, thumbnail, thumbnailSize } from './thumbnail'
+import { ToolReach, toolReachText } from './tool-reach'
 import { isTrusted } from './trust'
 
 type SessionUpdate = SessionNotification['update']
@@ -124,8 +126,12 @@ export interface ChatOptions {
   saved: SavedChat | null
   historyFile: string
   recordings: Recordings
-  /** Gui's preview tools, offered to every agent session; without `websites`, none opens one */
-  mcpServers: (websites: boolean) => McpServer[]
+  /**
+   * Gui's preview tools for one agent session, under a token of its own, with `onReach`
+   * told at the session's first request to them (see tool-reach.ts); null when this
+   * opening has none
+   */
+  toolAccess: (onReach: () => void) => McpSessionAccess | null
   /** The preview's viewport as the user sees it now, which each prompt names; null on a canvas's board */
   viewport: () => PromptViewport | null
   /** The user's guides over the preview while the rulers show them, which each prompt names */
@@ -263,6 +269,10 @@ export class ChatController extends EventEmitter<ChatEvents> {
   private agentInfo: AgentInfo | null = null
   /** Whether the running agent session was given Gui's preview tools. */
   private agentHasTools = false
+  /** The running session's access to Gui's tools, revoked as it stops. */
+  private toolAccess: McpSessionAccess | null = null
+  /** Whether the agent can't, or didn't, reach Gui's tools (ChatMeta.toolNotice). */
+  private toolReach = new ToolReach()
   /** The agent that already received the preamble. */
   private primedAgent: AgentSession | null = null
   /** Whether this transcript has had an agent session (to notice when context is lost). */
@@ -405,6 +415,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       whileWorking: getPrefs().whileWorking,
       autoApprove: isAutoApprove(root),
       autoNoteSeen: getPrefs().autoNoteSeen,
+      toolNotice: null,
     }
     this.load(saved)
     this.restoreQueue(saved?.queue ?? [])
@@ -535,6 +546,9 @@ export class ChatController extends EventEmitter<ChatEvents> {
     }
     this.stopAgent()
     this.active = null
+    // A new chat (maybe on another agent) may say it again, once its session shows it.
+    this.toolReach.reset()
+    this.refreshToolNotice()
     const leaving = this.archiveCopy()
     let archived: SavedChat | null = null
     try {
@@ -1577,6 +1591,9 @@ export class ChatController extends EventEmitter<ChatEvents> {
     // Auto's note under the message box was there for this first message; from now on the
     // Auto control's tooltip says it.
     if (this.autoApproves && !getPrefs().autoNoteSeen) setPrefs({ autoNoteSeen: true })
+    // So is a note on Gui's tools: it was there while this message was written.
+    this.toolReach.messageSent()
+    this.refreshToolNotice()
     // The problems the user asked to fix; by prompt time a hot reload may have cleared them.
     const problems = fix === 'problems' ? this.meta.problems : []
     record.settled = this.runTurn(record, selection, viewport, problems, images, this.epoch)
@@ -1819,6 +1836,11 @@ export class ChatController extends EventEmitter<ChatEvents> {
         this.primed = this.agentHasTools ? 'tools' : 'plain'
         this.schedulePersist()
       }
+      // A whole turn and not one request to Gui's tools: the agent didn't connect to them.
+      if (status === 'done' && live() && this.agent === agent) {
+        this.toolReach.turnEnded()
+        this.refreshToolNotice()
+      }
       // Some commands (like Claude's /compact) finish without a word; say it ran.
       if (record.command && status === 'done' && record.turn.items.length === 0) {
         this.pushItem(record, {
@@ -2045,8 +2067,14 @@ export class ChatController extends EventEmitter<ChatEvents> {
       onExit: (error) => this.onAgentExit(agent, error),
     })
     this.agent = agent
+    const access = this.options.toolAccess(() => {
+      if (this.toolAccess !== access) return
+      this.toolReach.connected()
+      this.refreshToolNotice()
+    })
+    this.toolAccess = access
     try {
-      const mcpServers = this.options.mcpServers(opensWebsites(this.meta.agentId))
+      const mcpServers = access ? [access.config(opensWebsites(this.meta.agentId))] : []
       const info = await withTimeout(
         agent.start({
           mcpServers,
@@ -2061,6 +2089,8 @@ export class ChatController extends EventEmitter<ChatEvents> {
       this.sessionModels = info.models
       // Agents that can't take HTTP MCP servers (like Pi) start without them.
       this.agentHasTools = info.previewTools
+      this.toolReach.started(mcpServers.length, info.previewTools ? mcpServers.length : 0)
+      this.refreshToolNotice()
       // The saved session was resumed or replaced; a failed start keeps it for next time.
       this.resumeSessionId = null
       this.sessionId = info.sessionId
@@ -2104,6 +2134,20 @@ export class ChatController extends EventEmitter<ChatEvents> {
     }
   }
 
+  /** Says what the agent can't reach of Gui's tools, under the message box (tool-reach.ts). */
+  private refreshToolNotice() {
+    const { notice } = this.toolReach
+    const agentId = this.meta.agentId
+    const text = notice
+      ? toolReachText(
+          notice,
+          this.meta.agentName,
+          notice === 'unconnected' ? toolsHint(agentId) : null,
+        )
+      : null
+    if (text !== this.meta.toolNotice) this.patchMeta({ toolNotice: text })
+  }
+
   private pushNewSessionNotice(record: TurnRecord) {
     this.pushItem(record, {
       kind: 'notice',
@@ -2116,6 +2160,8 @@ export class ChatController extends EventEmitter<ChatEvents> {
   private stopAgent() {
     this.agent?.dispose()
     this.agent = null
+    this.toolAccess?.close()
+    this.toolAccess = null
     this.agentInfo = null
     this.agentHasTools = false
     this.primedAgent = null

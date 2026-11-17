@@ -125,12 +125,20 @@ export interface McpBackends {
 
 export interface RunningMcpServer {
   /**
-   * Ready to pass in ACP `session/new` / `session/load`. Without `websites`, the session
-   * can't open one (`previewToolNames`).
+   * Access for one agent session, under a token of its own: its `config` goes in ACP
+   * `session/new` / `session/load`, and `onReach` runs once, at the first request carrying
+   * that token, so Gui knows whether the agent ever connected (tool-reach.ts). `close`
+   * revokes the token once the session is gone.
    */
-  config(websites?: boolean): AcpMcpServer
+  session(onReach?: () => void): McpSessionAccess
   /** The opening's tools, which Gui's server for other agents also serves (outside-mcp.ts) */
   readonly backends: McpBackends
+  close(): void
+}
+
+export interface McpSessionAccess {
+  /** Without `websites`, the session can't open one (`previewToolNames`). */
+  config(websites?: boolean): AcpMcpServer
   close(): void
 }
 
@@ -200,8 +208,9 @@ export function answerMcp(
 }
 
 /**
- * Serves Gui's tools over MCP Streamable HTTP on loopback, stateless, behind a bearer token
- * made for this opening of the project, so only the agent sessions it starts can call them.
+ * Serves Gui's tools over MCP Streamable HTTP on loopback, stateless, behind bearer tokens
+ * made for each agent session this opening of the project starts, so only they can call
+ * them, and each session's first request tells which session connected.
  */
 export async function startMcpServer(
   tools: PreviewTools,
@@ -209,19 +218,25 @@ export async function startMcpServer(
   app: AppTools,
   board: BoardTools | null = null,
 ): Promise<RunningMcpServer> {
-  const token = randomBytes(24).toString('hex')
   const backends: McpBackends = { tools, recordings, app, board }
+  /** Each live session's token, with what to tell on its first request (cleared once told). */
+  const sessions = new Map<string, { onReach: (() => void) | null }>()
 
   let allowedHosts: string[] = []
   const http: Server = createServer((req, res) => {
     const websites = req.url === PATHS.websites
-    if (
-      (!websites && req.url !== PATHS.noWebsites) ||
-      !bearerMatches(req.headers.authorization, token)
-    ) {
+    const header = req.headers.authorization
+    const session =
+      websites || req.url === PATHS.noWebsites
+        ? [...sessions].find(([token]) => bearerMatches(header, token))?.[1]
+        : undefined
+    if (!session) {
       res.writeHead(401).end()
       return
     }
+    const reach = session.onReach
+    session.onReach = null
+    reach?.()
     answerMcp(req, res, (loaded) => buildServer(loaded, backends, websites), allowedHosts)
   })
 
@@ -234,15 +249,25 @@ export async function startMcpServer(
 
   return {
     backends,
-    config: (websites = true) => ({
-      type: 'http',
-      name: MCP_SERVER_NAME,
-      url: `http://127.0.0.1:${port}${websites ? PATHS.websites : PATHS.noWebsites}`,
-      headers: [{ name: 'Authorization', value: `Bearer ${token}` }],
-    }),
+    session: (onReach) => {
+      const token = randomBytes(24).toString('hex')
+      sessions.set(token, { onReach: onReach ?? null })
+      return {
+        config: (websites = true) => ({
+          type: 'http',
+          name: MCP_SERVER_NAME,
+          url: `http://127.0.0.1:${port}${websites ? PATHS.websites : PATHS.noWebsites}`,
+          headers: [{ name: 'Authorization', value: `Bearer ${token}` }],
+        }),
+        close: () => {
+          sessions.delete(token)
+        },
+      }
+    },
     // Calls still in flight hang up with it; their work checks the opening is still current
     // before it touches the preview (PreviewTools `live`).
     close: () => {
+      sessions.clear()
       http.close()
       http.closeAllConnections()
     },

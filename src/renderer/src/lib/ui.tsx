@@ -418,6 +418,15 @@ export function Code({ children, className }: { children: ReactNode; className?:
   return <code className={cn('inline-code', className)}>{children}</code>
 }
 
+/** Words with their `backticked` spans as code; the rest stays text. */
+export function withCode(text: string) {
+  return text.split(/`([^`\n]+)`/).map((part, index) =>
+    // Odd parts are the code; the list never reorders.
+    // biome-ignore lint/suspicious/noArrayIndexKey: see above
+    index % 2 ? <Code key={index}>{part}</Code> : part,
+  )
+}
+
 interface SwitchProps {
   id?: string
   checked: boolean

@@ -65,6 +65,11 @@ export interface AgentDefinition extends AgentInfo {
   ownPermissions?: true
   /** How to sign in, shown when the agent reports the user isn't signed in */
   signIn: string | null
+  /**
+   * What to do when the agent hasn't connected to Gui's tools after a turn (tool-reach.ts),
+   * for an agent with its own reason it may not (Muse only loads them in folders trusted in it)
+   */
+  toolsHint?: string
   /** Gui can run this agent's ACP sign-in flow itself (it opens the browser) */
   inAppSignIn: boolean
   /** Official install page, for agents the user installs themselves */
@@ -259,6 +264,10 @@ const LAUNCH: Record<string, Omit<AgentDefinition, keyof AgentInfo>> = {
     inAppSignIn: false,
     installUrl: 'https://dev.meta.ai/docs/muse-code/',
     terminalSignIn: { command: 'muse login', hint: 'Follow the steps to sign in.' },
+    // Muse withholds every MCP server in a folder the user hasn't trusted in Muse. Gui
+    // leaves that choice to the user: trusting also loads the folder's own Muse skills and rules.
+    toolsHint:
+      "Muse only loads tools in folders you've trusted in it: run `muse` in this project once and accept, then start a new chat.",
     // The adapter reports Muse's reminder attribution cards as calls titled
     // `reminderChild: <status>`; workflows and subagents, which are real work, stay.
     hiddenTools: /^reminderChild: [\w ]+$/,
@@ -283,6 +292,10 @@ const BUILT_IN: readonly AgentDefinition[] = AGENTS.map((agent) => ({
 /** The agent's own settings decide what it asks (AgentDefinition.ownPermissions). */
 export const declaresOwnPermissions = (id: AgentId) =>
   BUILT_IN.some((agent) => agent.id === id && agent.ownPermissions === true)
+
+/** The agent's hint for when it hasn't connected to Gui's tools (AgentDefinition.toolsHint). */
+export const toolsHint = (id: AgentId) =>
+  BUILT_IN.find((agent) => agent.id === id)?.toolsHint ?? null
 
 /**
  * Whether the agent is offered preview_open_website. Opening a website asks the user first

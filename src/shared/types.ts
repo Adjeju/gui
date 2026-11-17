@@ -1033,6 +1033,12 @@ export interface ChatMeta {
    */
   autoNoteSeen: boolean
   /**
+   * The agent can't use Gui's preview and canvas tools (it can't take them), or a turn ended
+   * without it connecting to them, in plain words, with what to do when Gui knows. Said once
+   * per chat under the message box, until the next message goes; null otherwise.
+   */
+  toolNotice: string | null
+  /**
    * The model the next turn uses: the running session's, or before it starts, the agent's
    * list (from its last check) with the user's choice applied. Null when the agent has none.
    */

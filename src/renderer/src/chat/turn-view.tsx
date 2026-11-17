@@ -47,7 +47,7 @@ import {
 import { PathText } from '../lib/path-text'
 import { Badge } from '../lib/status'
 import { Card, GroupLabel, Thumbnail } from '../lib/surface'
-import { Button, Code, IconButton, PRESS, Spinner, Toggle } from '../lib/ui'
+import { Button, IconButton, PRESS, Spinner, Toggle, withCode } from '../lib/ui'
 import { Markdown } from './markdown'
 import { RecordingClip } from './recording-clip'
 import { focusComposer, setFollowUp, useChat, waitingCard } from './store'
@@ -1240,15 +1240,6 @@ function QuestionChoices({
         </Button>
       ))}
     </div>
-  )
-}
-
-/** An agent's words with its `backticked` spans as code; the rest stays text. */
-function withCode(text: string) {
-  return text.split(/`([^`\n]+)`/).map((part, index) =>
-    // Odd parts are the code; the list never reorders.
-    // biome-ignore lint/suspicious/noArrayIndexKey: see above
-    index % 2 ? <Code key={index}>{part}</Code> : part,
   )
 }
 

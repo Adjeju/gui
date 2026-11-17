@@ -32,7 +32,16 @@ import {
   X,
 } from '../lib/icons'
 import { Card, Thumbnail } from '../lib/surface'
-import { Button, Counter, HIT_AREA, IconButton, Kbd, Spinner, TIGHT_HIT_AREA } from '../lib/ui'
+import {
+  Button,
+  Counter,
+  HIT_AREA,
+  IconButton,
+  Kbd,
+  Spinner,
+  TIGHT_HIT_AREA,
+  withCode,
+} from '../lib/ui'
 import { AgentSetup, shouldShowAgentSetup } from './agent-setup'
 import { AutoToggle } from './auto-toggle'
 import { useCommandMenu } from './command-menu'
@@ -439,6 +448,13 @@ export function Composer({
             <p className="px-2.5 pb-2 text-caption text-muted">
               Auto is on: your agent can edit files and run commands without asking, including
               commands outside this project. Turn Auto off to review more requests.
+            </p>
+          )}
+          {/* Said once per chat, until the next message: the agent can't use Gui's own tools,
+            or didn't connect to them (tool-reach.ts). */}
+          {meta.toolNotice && (
+            <p data-tool-notice="" className="px-2.5 pb-2 text-caption text-muted">
+              {withCode(meta.toolNotice)}
             </p>
           )}
           {/* A container: in a narrow panel, Auto and the model button get more compact. */}

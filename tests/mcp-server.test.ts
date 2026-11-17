@@ -14,13 +14,13 @@ import {
 /** Nothing here calls a tool: the server only has to list them. */
 const unused = {} as never
 
-type McpConfig = ReturnType<RunningMcpServer['config']>
+type McpConfig = ReturnType<ReturnType<RunningMcpServer['session']>['config']>
 
 const servers: RunningMcpServer[] = []
 async function start() {
   const server = await startMcpServer(unused, unused, unused)
   servers.push(server)
-  return server.config()
+  return server.session().config()
 }
 afterEach(() => {
   for (const server of servers.splice(0)) server.close()
@@ -97,7 +97,7 @@ test('a canvas lists its own tools and none that need a dev server, rulers or we
   const project = await listed(await start())
   const canvasServer = await startMcpServer(unused, unused, unused, unused)
   servers.push(canvasServer)
-  const canvas = await listed(canvasServer.config())
+  const canvas = await listed(canvasServer.session().config())
 
   // What each session is told it has is what it gets.
   expect(project.map((tool) => tool.name).sort()).toEqual(sessionToolNames(false).sort())
@@ -134,16 +134,37 @@ test('opening a website is its own tool, which asks first', async () => {
 test("a session that can't open websites is served every tool but that one", async () => {
   const server = await startMcpServer(unused, unused, unused)
   servers.push(server)
-  const all = (await listed(server.config())).map((tool) => tool.name)
-  const without = (await listed(server.config(false))).map((tool) => tool.name)
+  const session = server.session()
+  const all = (await listed(session.config())).map((tool) => tool.name)
+  const without = (await listed(session.config(false))).map((tool) => tool.name)
   expect(without.sort()).toEqual(sessionToolNames(false, false).sort())
   expect(without).not.toContain('preview_open_website')
   expect(all.filter((name) => name !== 'preview_open_website').sort()).toEqual(without)
   // The same token; only that session's own address.
-  expect(endpoint(server.config(false)).headers).toEqual(endpoint(server.config()).headers)
+  expect(endpoint(session.config(false)).headers).toEqual(endpoint(session.config()).headers)
   const elsewhere = {
-    ...server.config(),
-    url: endpoint(server.config()).url.replace('/mcp', '/other'),
+    ...session.config(),
+    url: endpoint(session.config()).url.replace('/mcp', '/other'),
   }
   expect((await call(elsewhere, 'tools/list')).status).toBe(401)
+})
+
+test('each session has its own token, and tells only of its own first request', async () => {
+  const server = await startMcpServer(unused, unused, unused)
+  servers.push(server)
+  const reached: string[] = []
+  const one = server.session(() => reached.push('one'))
+  const two = server.session(() => reached.push('two'))
+  expect(endpoint(one.config()).headers).not.toEqual(endpoint(two.config()).headers)
+
+  await listed(one.config())
+  await listed(one.config())
+  expect(reached).toEqual(['one'])
+
+  // A token that's wrong, or revoked as its session stopped, reaches nothing.
+  const wrong = { ...endpoint(two.config()).headers, Authorization: 'Bearer nope' }
+  expect((await call(two.config(), 'tools/list', wrong)).status).toBe(401)
+  two.close()
+  expect((await call(two.config(), 'tools/list')).status).toBe(401)
+  expect(reached).toEqual(['one'])
 })

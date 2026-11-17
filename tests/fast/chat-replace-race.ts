@@ -134,7 +134,7 @@ async function open(chat: SavedChat, store: object = {}) {
     saved: chat,
     historyFile: file,
     recordings: { retain: noop, attachments: async () => [] } as never,
-    mcpServers: () => [],
+    toolAccess: () => null,
     viewport: () => null,
     startupReport: () => '',
   })
