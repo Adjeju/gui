@@ -21,6 +21,8 @@ export const releases: Release[] = [
       'In the model picker, a provider’s name stays in view while you scroll its models.',
       'Gui shares anonymous usage data, like opening a project or finishing a message, so we can see which parts of Gui people use. It never includes your code, files or chats. Turn it off in Settings → Account → Share usage data.',
       'Fix: a terminal that met output it couldn’t draw, like emoji in many colors, could stop for good. It now starts again and keeps showing what comes next.',
+      'Fix: with a model that streams its thinking and its reply together, like some of OpenCode’s, the reply reads as one message instead of pieces between Thinking rows.',
+      'Fix: a chat reopened on an agent other than your default lists its models again, instead of only the agents.',
     ],
   },
   {
