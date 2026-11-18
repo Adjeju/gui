@@ -38,8 +38,9 @@ const muse: PermissionControls = {
 }
 /** The modes `muse acp` 1.4.23 offers: its approval policies. */
 const MUSE_MODES = ['allowAll', 'promptUnmatched', 'onRequest', 'denyUnmatched']
-const gemini: PermissionControls = { mode: { ask: ['default'], auto: ['default'] } }
-const GEMINI_MODES = ['default', 'autoEdit', 'yolo', 'plan']
+const antigravity: PermissionControls = { mode: { ask: ['default'], auto: ['auto', 'default'] } }
+/** The modes `agy acp` names (1.5.11): `auto` only where the account has Auto mode. */
+const AGY_MODES = ['default', 'accept-edits', 'plan', 'auto']
 const CLAUDE_MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']
 
 describe('ownPermissions: does the agent decide what it asks, rather than Gui?', () => {
@@ -123,17 +124,21 @@ describe('permissionChanges', () => {
     expect(permissionChanges(codex, 'ask', nothing).missing).toEqual(['No read-only mode offered.'])
   })
 
-  test('Gemini goes back to Default, which asks first, from whatever its own settings picked', () => {
-    for (const policy of ['ask', 'auto'] as const) {
-      expect(permissionChanges(gemini, policy, withModes('yolo', GEMINI_MODES))).toEqual({
-        changes: [{ kind: 'mode', modeId: 'default' }],
-        missing: [],
-      })
-      expect(permissionChanges(gemini, policy, withModes('default', GEMINI_MODES)).changes).toEqual(
-        [],
-      )
-    }
-    expect(ownPermissions({ permissions: gemini }, withModes('autoEdit', GEMINI_MODES))).toBe(false)
+  test('Antigravity CLI: Ask is Default, Auto is its Auto, or Default where it has none', () => {
+    // A session starts in Auto unless the user saved another mode.
+    expect(permissionChanges(antigravity, 'ask', withModes('auto', AGY_MODES))).toEqual({
+      changes: [{ kind: 'mode', modeId: 'default' }],
+      missing: [],
+    })
+    expect(permissionChanges(antigravity, 'auto', withModes('accept-edits', AGY_MODES))).toEqual({
+      changes: [{ kind: 'mode', modeId: 'auto' }],
+      missing: [],
+    })
+    const noAuto = AGY_MODES.filter((mode) => mode !== 'auto')
+    expect(permissionChanges(antigravity, 'auto', withModes('plan', noAuto)).changes).toEqual([
+      { kind: 'mode', modeId: 'default' },
+    ])
+    expect(ownPermissions({ permissions: antigravity }, withModes('plan', noAuto))).toBe(false)
   })
 
   test("Muse Code: Ask asks about what its rules don't cover, Auto only what it says needs approval", () => {

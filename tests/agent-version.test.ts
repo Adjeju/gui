@@ -14,6 +14,12 @@ test("Muse Code's own output, at, above and below the floor", () => {
   expect(meetsVersion('Muse Code 0.11.0', '1.4.23')).toBe(false)
 })
 
+test("Antigravity CLI's own output (a bare version), at, above and below the floor", () => {
+  expect(meetsVersion('1.5.0', '1.5.0')).toBe(true)
+  expect(meetsVersion('1.5.11\n', '1.5.0')).toBe(true)
+  expect(meetsVersion('1.4.12', '1.5.0')).toBe(false)
+})
+
 test('output without a version never meets it', () => {
   expect(meetsVersion('', '1.4.23')).toBe(false)
   expect(meetsVersion('muse: unknown option --version', '1.4.23')).toBe(false)

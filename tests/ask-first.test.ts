@@ -33,10 +33,14 @@ test("Claude may call Gui's tools without asking, but never the ones that open w
 test('Gui leaves a request to open a website to the user, by its title or its call', () => {
   expect(asksFirst('claude', { title: 'mcp__gui__preview_open_website' }, undefined)).toBe(true)
   expect(asksFirst('claude', { title: 'mcp__gui__preview_navigate' }, undefined)).toBe(false)
-  expect(asksFirst('gemini', { title: 'gui.preview_open_website' }, undefined)).toBe(true)
+  expect(asksFirst('antigravity', { title: 'gui.preview_open_website' }, undefined)).toBe(true)
   // A shell command that merely names the tool is never taken for it.
   expect(
-    asksFirst('gemini', { title: 'mcp__gui__preview_open_website', kind: 'execute' }, undefined),
+    asksFirst(
+      'antigravity',
+      { title: 'mcp__gui__preview_open_website', kind: 'execute' },
+      undefined,
+    ),
   ).toBe(false)
   // codex-acp asks with no title: the call it's about carries the tool's label.
   expect(

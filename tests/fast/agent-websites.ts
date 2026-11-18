@@ -43,7 +43,7 @@ test("an agent whose own settings decide what it asks isn't offered a website, n
 })
 
 test('Claude, Codex and the agents Gui makes ask first still open websites', () => {
-  for (const agentId of ['claude', 'codex', 'gemini'] as AgentId[]) {
+  for (const agentId of ['claude', 'codex', 'antigravity'] as AgentId[]) {
     expect(opensWebsites(agentId)).toBe(true)
     expect(sessionToolNames(false, opensWebsites(agentId))).toContain('preview_open_website')
     expect(preamble(agentId)).toContain('preview_open_website')
