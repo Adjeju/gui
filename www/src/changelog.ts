@@ -11,6 +11,14 @@ export interface Release {
 
 export const releases: Release[] = [
   {
+    version: '0.1.0-alpha.25',
+    date: '2026-11-17',
+    changes: [
+      'Starting a new chat while a reply is still running asks first, the same way the model picker does.',
+      'On Linux, Help → Contact Support names Linux and its version in the email, not macOS.',
+    ],
+  },
+  {
     version: '0.1.0-alpha.24',
     date: '2026-11-17',
     changes: [
