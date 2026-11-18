@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { ariaShortcut, withShortcut } from '../../../shared/shortcuts'
+import { replyRunning } from '../../../shared/stop-question'
 import {
   type AgentChoice,
   type AgentId,
@@ -21,7 +22,7 @@ import {
 import { AgentIcon } from '../agents/agent-icon'
 import { gui } from '../lib/api'
 import { cn } from '../lib/cn'
-import { ArrowRight, ChevronDown, Clock, Settings } from '../lib/icons'
+import { ChevronDown, Clock, Settings } from '../lib/icons'
 import { motionMs, usePresence } from '../lib/motion'
 import {
   GroupLabel,
@@ -41,6 +42,7 @@ import {
   sections,
   shortName,
 } from './model-search'
+import { StopQuestion } from './stop-question'
 import { useChat, whenPanelShown } from './store'
 
 /**
@@ -63,7 +65,7 @@ const SETTLE_FRAMES = 60
  * Calls `fn` once the view has kept its size for a frame, or after `frames`. ⇧⌘M can bring
  * the panel back as it asks (from its bubble, say), and the picker closes on a resize.
  */
-function whenSettled(button: HTMLElement | null, fn: () => void, frames = SETTLE_FRAMES) {
+export function whenSettled(button: HTMLElement | null, fn: () => void, frames = SETTLE_FRAMES) {
   let size = `${window.innerWidth}×${window.innerHeight}`
   let left = frames
   // The panel scales while it morphs (morph.ts); measured then, the picker would be misplaced.
@@ -323,7 +325,7 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
   // Said or waiting to be said: the chat keeps its agent.
   const started = hasTurns || meta.queue.length > 0
   // Another agent now would cut the turn short or drop the queue: asked about first.
-  const busy = meta.status === 'working' || meta.queue.length > 0
+  const busy = replyRunning(meta)
   const searching = query.trim() !== ''
   const currentKey = model ? rowKey(agentId, provider?.value ?? null, model.value) : null
   /** The highlighted row's key; null for the first. */
@@ -647,29 +649,15 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
   }
 
   const question = asking && (
-    <section
-      aria-labelledby={questionId}
-      className="flex min-h-0 flex-col gap-2 overflow-y-auto px-4 pt-5 pb-4"
-    >
-      <div className="mb-1 flex items-center gap-2">
-        <AgentIcon agentId={agentId} small />
-        <ArrowRight className="size-3.5 text-subtle" aria-hidden="true" />
-        <AgentIcon agentId={asking.agentId} small />
-      </div>
-      <p id={questionId} className="text-body font-medium text-pretty">
-        Stop {meta.agentName} and start a new chat with {nameOf(asking.agentId)}
-        {asking.modelName ? ` on ${asking.modelName}` : ''}?
-      </p>
-      <p className="text-small text-pretty text-muted">{whyAsked(meta)}</p>
-      <div className="mt-2 flex justify-end gap-2">
-        <Button ref={cancel} onClick={closeQuestion}>
-          Cancel
-        </Button>
-        <Button variant="primary" onClick={() => stopAndSwitch(asking)}>
-          Stop and Switch
-        </Button>
-      </div>
-    </section>
+    <StopQuestion
+      id={questionId}
+      meta={meta}
+      next={{ agentName: nameOf(asking.agentId), modelName: asking.modelName }}
+      to={<AgentIcon agentId={asking.agentId} small />}
+      cancel={cancel}
+      onCancel={closeQuestion}
+      onConfirm={() => stopAndSwitch(asking)}
+    />
   )
 
   /** A tab with no models to list: why, and how to use the agent anyway. */
@@ -861,17 +849,4 @@ function ModelPicker({ id, instant, open, meta, placement, button, onClose }: Mo
     </Popover>,
     document.body,
   )
-}
-
-/** The second line of the question: what stopping the chat costs. */
-function whyAsked(meta: ChatMeta) {
-  const queued = meta.queue.length
-  const dropped =
-    queued === 1 ? 'its queued message is dropped' : `its ${queued} queued messages are dropped`
-  if (meta.status === 'working') {
-    return queued
-      ? `${meta.agentName} is still working. This chat is archived with what it has done so far, and ${dropped}.`
-      : `${meta.agentName} is still working. This chat is archived with what it has done so far.`
-  }
-  return `This chat is archived, and ${dropped}.`
 }
