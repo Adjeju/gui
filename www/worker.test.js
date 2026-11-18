@@ -442,6 +442,29 @@ test('/download/ serves only the Linux downloads; anything else there is the sit
   expect(await counted()).toEqual([])
 })
 
+test('/install.sh is the script as plain text, never kept long, and not a download', async () => {
+  env.ASSETS.fetch = async (request) =>
+    new URL(request.url).pathname === '/install.sh'
+      ? new Response('#!/bin/sh', { headers: { 'content-type': 'application/x-sh' } })
+      : new Response('not found', { status: 404 })
+  const response = await get('/install.sh', { 'user-agent': 'curl/8.14.1' })
+  expect(response.status).toBe(200)
+  expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+  expect(response.headers.get('cache-control')).toBe('no-cache')
+  expect(response.headers.has('content-disposition')).toBe(false)
+  expect(await response.text()).toBe('#!/bin/sh')
+  expect(await counted()).toEqual([])
+})
+
+for (const agent of ['curl/8.14.1', 'Wget/1.25.0', 'Wget']) {
+  test(`a Linux download by ${agent}, as the install script makes, is counted`, async () => {
+    files['Gui-alpha-arm64.AppImage'] = 'alpha appimage'
+    const response = await get('/download/Gui-arm64.AppImage', { 'user-agent': agent })
+    expect(await response.text()).toBe('alpha appimage')
+    expect(await counted()).toEqual([{ file: 'Gui-alpha-arm64.AppImage' }])
+  })
+}
+
 /** The static site, which sends the whole file whatever Range asks for, as Cloudflare's does. */
 const site = (/** @type {Request} */ request) => {
   const tag = '"video-1"'

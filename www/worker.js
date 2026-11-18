@@ -10,7 +10,8 @@
 // (src/main/crash-reports.ts). /t/v1 takes the app's usage events (src/main/analytics.ts) and
 // passes the ones it knows on to PostHog, so where they are kept can change here without a
 // new app; update feed requests are counted the same way. Everything else is the static site in dist/ (with dist/404.html
-// for pages that don't exist); its videos are sent in parts too.
+// for pages that don't exist); its videos are sent in parts too, and /install.sh, the Linux
+// install script, is sent as plain text.
 
 /**
  * What /download serves: the newest stable release's DMG. Until a stable release has uploaded
@@ -112,6 +113,9 @@ function secure(/** @type {Response} */ asset, /** @type {string} */ pathname) {
   if (pathname.startsWith('/_astro/') && asset.ok) cache = 'public, max-age=31536000, immutable'
   // A 304 renews the copy a browser kept, so it carries the video's rule as well.
   if (pathname.startsWith('/video/') && (asset.ok || asset.status === 304)) cache = VIDEO_CACHE
+  // The Linux install script (public/install.sh) is text to read in a browser, not a download.
+  if (pathname === '/install.sh' && asset.ok)
+    response.headers.set('content-type', 'text/plain; charset=utf-8')
   response.headers.set('cache-control', cache)
   protect(response.headers)
   return response
