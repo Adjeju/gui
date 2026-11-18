@@ -241,10 +241,10 @@ const LAUNCH: Record<string, Omit<AgentDefinition, keyof AgentInfo>> = {
       command: 'agy acp --login',
       hint: 'Sign in with Google, then paste the code it gives you. Close this window when it’s done.',
     },
-    // Default asks before every edit and command; Auto approves edits in the workspace and
-    // sandboxed commands, and asks before the rest unless its review clears them. Not
-    // Accept edits, which never asks about edits, so Ask would let them through. A session
-    // with no saved mode starts in Auto (agy 1.5.7 on); where Auto isn't offered, Default.
+    // Its modes (a `mode` option and ACP modes, agy 1.5.11): Default asks before edits and
+    // commands; Auto approves edits and safe commands and asks before irreversible actions;
+    // Auto falls back to Default where the account has no Auto. Not Accept edits, which
+    // approves edits without asking, so Ask would let them through.
     permissions: { mode: { ask: ['default'], auto: ['auto', 'default'] } },
   },
   muse: {
