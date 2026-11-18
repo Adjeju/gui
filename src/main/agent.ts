@@ -24,7 +24,6 @@ import {
   errorDetail,
   formQuestions,
   mcpServersFor,
-  modeNoticeUpdate,
   type PermissionRequest,
   parseModelSettings,
   plainAgentError,
@@ -306,8 +305,6 @@ export class AgentSession {
   private declared: DeclaredControls = {}
   /** The Ask or Auto the session started with (see StartOptions.permissions) */
   private startedWith: PermissionPolicy | undefined
-  /** How this agent says a mode change as a message (AgentDefinition.modeNotice) */
-  private modeNotice: RegExp | undefined
   /** A greeting the agent sends unprompted once the session starts (see sessionGreeting) */
   private greeting: string | null = null
   /** The session's settings and modes, as the agent last reported them */
@@ -341,7 +338,6 @@ export class AgentSession {
       ownPermissions: definition.ownPermissions,
     }
     this.startedWith = permissions
-    this.modeNotice = definition.modeNotice
     const meta = sessionMeta(definition, permissions)
     const spec = await spawnSpec(definition, shellEnv)
     if (this.disposed) throw new Error('Agent was stopped')
@@ -383,8 +379,7 @@ export class AgentSession {
     const app = acp
       .client({ name: 'gui' })
       .onNotification(acp.methods.client.session.update, (ctx) => {
-        // Gemini says a mode change as a message (AgentDefinition.modeNotice).
-        const update = modeNoticeUpdate(ctx.params.update, this.modeNotice) ?? ctx.params.update
+        const { update } = ctx.params
         // Agents send their commands just after answering session/new or session/load,
         // which can beat sessionId being set; `start` reports what arrived by then.
         if (update.sessionUpdate === 'available_commands_update' && this.sessionId === null) {

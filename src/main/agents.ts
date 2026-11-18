@@ -10,7 +10,6 @@ import {
   CUSTOM_AGENT_PREFIX,
   type CustomAgentEntry,
 } from '../shared/types'
-import { GEMINI_MODE_NOTICE } from './agent-protocol'
 import { writeFileAtomic } from './atomic-file'
 import { type CommandFallback, findAgentCommand } from './executables'
 import { getShellEnv } from './shell-env'
@@ -74,11 +73,6 @@ export interface AgentDefinition extends AgentInfo {
   installUrl?: string
   /** Sign-in Gui can start in Terminal: the command, and what to do once it runs */
   terminalSignIn?: { command: string; hint: string }
-  /**
-   * A message the agent sends to say its mode changed, rather than `current_mode_update`;
-   * the first group is the mode's id. Such messages update the mode and never reach the chat.
-   */
-  modeNotice?: RegExp
 }
 
 export interface AgentListing {
@@ -163,24 +157,6 @@ const LAUNCH: Record<string, Omit<AgentDefinition, keyof AgentInfo>> = {
     // about actions it flags as unsafe.
     permissions: { mode: { ask: ['read-only'], auto: ['agent'] } },
   },
-  gemini: {
-    launch: cli('gemini', '--acp'),
-    signIn: 'Sign in from Settings → Agents, or run `gemini` in a terminal.',
-    inAppSignIn: false,
-    installUrl: 'https://geminicli.com/docs/get-started/installation',
-    // Plain `gemini` asks how to sign in (Google, an API key, or Vertex AI) when it has no
-    // login yet; GEMINI_API_KEY in the user's shell profile works without it.
-    terminalSignIn: {
-      command: 'gemini',
-      hint: 'Pick how you sign in, then follow the steps. When Gemini is ready, type /quit and close this window.',
-    },
-    // Default asks before every edit and command, so Gui's own rules answer them in Ask and
-    // Auto alike. Not Auto Edit or YOLO, which approve edits (or everything) without asking,
-    // so Gui's rules would never see them; nor Plan, which is read-only.
-    permissions: { mode: { ask: ['default'], auto: ['default'] } },
-    // Gemini says a mode change (its own, like entering Plan, or Gui's) as a message.
-    modeNotice: GEMINI_MODE_NOTICE,
-  },
   grok: {
     launch: cli('grok', 'agent', 'stdio'),
     signIn: 'Sign in from Settings → Agents, or run `grok login` in a terminal.',
@@ -248,6 +224,28 @@ const LAUNCH: Record<string, Omit<AgentDefinition, keyof AgentInfo>> = {
     },
     // pi never asks; its adapter's modes are thinking levels.
     ownPermissions: true,
+  },
+  antigravity: {
+    // Each session in a worker process of its own: only then does `agy acp` take HTTP MCP
+    // servers (it advertises mcpCapabilities.http), which is how Gui hands over its tools.
+    launch: {
+      ...cli('agy', 'acp', '--process-per-session'),
+      // `agy acp` arrived in 1.5.0. agy updates itself as it runs; `agy update` does it now.
+      minVersion: { version: '1.5.0', update: 'agy update' },
+    },
+    signIn: 'Sign in from Settings → Agents, or run `agy acp --login` in a terminal.',
+    inAppSignIn: false,
+    installUrl: 'https://antigravity.google/docs/getting-started?tab=cli',
+    // agy's own terminal sign-in for ACP: a Google login by pasting a code, then it exits.
+    terminalSignIn: {
+      command: 'agy acp --login',
+      hint: 'Sign in with Google, then paste the code it gives you. Close this window when it’s done.',
+    },
+    // Default asks before every edit and command; Auto approves edits in the workspace and
+    // sandboxed commands, and asks before the rest unless its review clears them. Not
+    // Accept edits, which never asks about edits, so Ask would let them through. A session
+    // with no saved mode starts in Auto (agy 1.5.7 on); where Auto isn't offered, Default.
+    permissions: { mode: { ask: ['default'], auto: ['auto', 'default'] } },
   },
   muse: {
     // Muse Code serves ACP itself. In a folder the user hasn't trusted in Muse, it withholds

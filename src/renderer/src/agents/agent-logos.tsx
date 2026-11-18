@@ -7,7 +7,7 @@ import { type ReactNode, useId } from 'react'
  * Each sits on a black tile (agent-icon.tsx): Codex and Kiro without their own square
  * behind them, Kiro's ghost in its purple. Grok, OpenCode and Pi are one-color marks and
  * take the tile's text color. Muse Code is Meta's, and has no mark of its own: it gets Meta's.
- * Gemini CLI gets Gemini's spark, which reads at tile size where the CLI's own boxed prompt doesn't.
+ * Antigravity CLI gets Antigravity's arch, its blurred colors drawn as a few washes that read at tile size.
  * The marks are their owners' trademarks, used here only to say which agent is which.
  */
 
@@ -20,8 +20,9 @@ interface Logo {
   draw(id: string): ReactNode
 }
 
-const GEMINI_SPARK =
-  'M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z'
+const ANTIGRAVITY_ARCH =
+  'M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z'
+;('M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z')
 
 export const AGENT_LOGOS: Record<string, Logo> = {
   // https://ampcode.com
@@ -105,47 +106,47 @@ export const AGENT_LOGOS: Record<string, Logo> = {
       </>
     ),
   },
-  // Gemini CLI: Gemini's spark, its blue washed with green, red and yellow
-  gemini: {
+  // Antigravity CLI: Antigravity's arch, blue below, washed with green, yellow and red above
+  antigravity: {
     mono: false,
     draw: (id) => (
       <>
         {['#3186FF', `url(#${id}-0)`, `url(#${id}-1)`, `url(#${id}-2)`].map((fill) => (
-          <path d={GEMINI_SPARK} fill={fill} key={fill} />
+          <path d={ANTIGRAVITY_ARCH} fill={fill} key={fill} />
         ))}
         <defs>
           <linearGradient
             gradientUnits="userSpaceOnUse"
             id={`${id}-0`}
-            x1="7"
+            x1="4"
             x2="11"
-            y1="15.5"
-            y2="12"
+            y1="6"
+            y2="13"
           >
-            <stop stopColor="#08B962" />
-            <stop offset="1" stopColor="#08B962" stopOpacity="0" />
+            <stop stopColor="#00B95C" />
+            <stop offset="1" stopColor="#00B95C" stopOpacity="0" />
           </linearGradient>
           <linearGradient
             gradientUnits="userSpaceOnUse"
             id={`${id}-1`}
             x1="8"
-            x2="11.5"
-            y1="5.5"
-            y2="11"
+            x2="12"
+            y1="2"
+            y2="8"
           >
-            <stop stopColor="#F94543" />
-            <stop offset="1" stopColor="#F94543" stopOpacity="0" />
+            <stop stopColor="#FBBC04" />
+            <stop offset="1" stopColor="#FBBC04" stopOpacity="0" />
           </linearGradient>
           <linearGradient
             gradientUnits="userSpaceOnUse"
             id={`${id}-2`}
-            x1="3.5"
-            x2="17.5"
-            y1="13.5"
+            x1="18"
+            x2="12"
+            y1="4"
             y2="12"
           >
-            <stop stopColor="#FABC12" />
-            <stop offset=".46" stopColor="#FABC12" stopOpacity="0" />
+            <stop stopColor="#FC413D" />
+            <stop offset="1" stopColor="#FC413D" stopOpacity="0" />
           </linearGradient>
         </defs>
       </>
