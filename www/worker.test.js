@@ -811,3 +811,38 @@ test('the update feed is served when counting it fails, and counts nothing witho
   await get('/releases/alpha-mac.yml')
   expect(await sent()).toEqual([])
 })
+
+/** @param {Record<string, string>} fields */
+const signUp = (fields) => {
+  const body = new FormData()
+  for (const [key, value] of Object.entries(fields)) body.set(key, value)
+  return worker.fetch(
+    new Request('https://usegui.com/waitlist', {
+      method: 'POST',
+      body,
+      headers: { accept: 'application/json' },
+    }),
+    env,
+    ctx,
+  )
+}
+
+test('/waitlist keeps a Windows address, the only platform the page offers', async () => {
+  const response = await signUp({ email: 'qa@example.invalid', platform: 'windows' })
+  expect(await response.json()).toEqual({ ok: true })
+  expect(db.query('SELECT email, platform FROM waitlist').all()).toEqual([
+    { email: 'qa@example.invalid', platform: 'windows' },
+  ])
+})
+
+test('/waitlist still keeps linux from a page cached before Linux came out', async () => {
+  const response = await signUp({ email: 'old@example.invalid', platform: 'linux' })
+  expect(await response.json()).toEqual({ ok: true })
+  expect(db.query('SELECT platform FROM waitlist').all()).toEqual([{ platform: 'linux' }])
+})
+
+test('/waitlist refuses another platform', async () => {
+  const response = await signUp({ email: 'qa@example.invalid', platform: 'mac' })
+  expect(response.status).toBe(400)
+  expect(db.query('SELECT * FROM waitlist').all()).toEqual([])
+})

@@ -5,8 +5,8 @@
 // whose /download/<file> links are counted the same way. Both send the part of a file a Range
 // header asks for, so
 // an update downloads only what changed and an interrupted download can resume. /downloads is
-// that count as one number, for the homepage. /waitlist adds an address to the Windows and
-// Linux waitlist in the same database, and /crash keeps the crash reports installed copies send
+// that count as one number, for the homepage. /waitlist adds an address to the Windows
+// waitlist in the same database, and /crash keeps the crash reports installed copies send
 // (src/main/crash-reports.ts). /t/v1 takes the app's usage events (src/main/analytics.ts) and
 // passes the ones it knows on to PostHog, so where they are kept can change here without a
 // new app; update feed requests are counted the same way. Everything else is the static site in dist/ (with dist/404.html
@@ -311,6 +311,8 @@ function protect(/** @type {Headers} */ headers) {
   headers.set('referrer-policy', 'strict-origin-when-cross-origin')
 }
 
+// The form only sends windows now. Linux is out, but a page cached from before it still
+// offers linux, and that address is kept too.
 const PLATFORMS = new Set(['windows', 'linux'])
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
