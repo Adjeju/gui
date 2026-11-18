@@ -102,16 +102,15 @@ for (const id of ['amp', 'devin', 'cursor', 'fx'] as const) {
   })
 }
 
-// Gemini CLI runs as `gemini --acp`, takes Gui's preview tools over HTTP, and is set to its
-// Default mode, which asks first. It says that mode change as a message of its own, which
-// mustn't reach the chat.
-test('gemini is selectable, starts in the mode that asks first, and streams a CLI response', async ({
+// Antigravity CLI runs as `agy acp --process-per-session`, which is what has it take Gui's
+// tools over HTTP, and is set to its Auto mode from the mode the user's own settings picked.
+test('antigravity is selectable, takes Gui’s tools, starts in its Auto mode, and streams a CLI response', async ({
   launch,
 }) => {
   const scratch = mkdtempSync(join(tmpdir(), 'gui-cli-'))
   const log = join(scratch, 'calls.jsonl')
-  const cli = join(scratch, 'gemini')
-  writeFileSync(cli, `#!${process.execPath}\n${GEMINI_SCRIPT}`)
+  const cli = join(scratch, 'agy')
+  writeFileSync(cli, `#!${process.execPath}\n${AGY_SCRIPT}`)
   chmodSync(cli, 0o755)
   try {
     const session = await launch({
@@ -119,73 +118,69 @@ test('gemini is selectable, starts in the mode that asks first, and streams a CL
       env: { SHELL: fakeShell(scratch), PATH: `${scratch}:${process.env.PATH}`, GUI_CLI_LOG: log },
     })
     await session.waitForPreview()
-    await session.chrome.evaluate(() => window.gui.setAgent('gemini'))
-    const health = (await session.state()).agents.find((agent) => agent.id === 'gemini')
-    expect(health?.name).toBe('Gemini CLI')
-    expect(health?.command).toBe('gemini')
+    await session.chrome.evaluate(() => window.gui.setAgent('antigravity'))
+    const health = (await session.state()).agents.find((agent) => agent.id === 'antigravity')
+    expect(health?.name).toBe('Antigravity CLI')
+    expect(health?.command).toBe('agy')
     expect(health?.status).not.toBe('not-installed')
     expect(await session.chat.evaluate(() => window.gui.send('Hello from Gui'))).toBe(true)
     const { turn } = await session.waitForTurn(0)
     expect(turn.status).toBe('done')
     await expect(session.chat.getByText('Hello from the CLI', { exact: true })).toBeVisible()
-    await expect(session.chat.getByText(/MODE_UPDATE/)).toHaveCount(0)
     const meta = (await session.chatSnapshot()).meta
     expect(meta.ownPermissions).toBe(false)
-    expect(meta.modeName).toBe('Default')
-    await expect(session.chat.getByRole('button', { name: 'Auto mode' })).toHaveCount(1)
+    expect(meta.modeName).toBe('Auto')
 
     const calls = readFileSync(log, 'utf8')
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line))
-    expect(calls.some((call) => call.args?.[0] === '--acp')).toBe(true)
+    expect(calls.some((call) => call.args?.join(' ') === 'acp --process-per-session')).toBe(true)
     const chat = calls.filter((call) => call.params?.cwd === session.fixture.root)
     const opened = chat.find((call) => call.method === 'session/new')
     expect(
       opened?.params.mcpServers.some((server: { type?: string }) => server.type === 'http'),
     ).toBe(true)
     const steps = calls
-      .filter((call) => call.method === 'session/set_mode' || call.method === 'session/prompt')
-      .map((call) => (call.method === 'session/prompt' ? 'prompt' : call.params.modeId))
-    expect(steps).toEqual(['default', 'prompt'])
+      .filter(
+        (call) => call.method === 'session/set_config_option' || call.method === 'session/prompt',
+      )
+      .map((call) => (call.method === 'session/prompt' ? 'prompt' : call.params.value))
+    expect(steps).toEqual(['auto', 'prompt'])
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }
 })
 
-test('gemini reads as not installed, with its install page, until it is on the PATH', async ({
+test('antigravity reads as not installed, with its install page, until it is on the PATH', async ({
   launch,
 }) => {
-  // A Mac with no gemini anywhere (GUI_PATH is the whole PATH). Nor bun, so the fixture's
+  // A Mac with no agy anywhere (GUI_PATH is the whole PATH). Nor bun, so the fixture's
   // dev server doesn't start; the agent list doesn't need it.
   const session = await launch({ fixture: 'vite', env: { GUI_PATH: '/usr/bin:/bin' } })
   const health = await waitFor(async () => {
-    const agent = (await session.state()).agents.find((item) => item.id === 'gemini')
+    const agent = (await session.state()).agents.find((item) => item.id === 'antigravity')
     return agent?.status === 'not-installed' ? agent : null
-  }, 'gemini to read as not installed')
-  expect(health.installUrl).toBe('https://geminicli.com/docs/get-started/installation')
+  }, 'antigravity to read as not installed')
+  expect(health.installUrl).toBe('https://antigravity.google/docs/getting-started?tab=cli')
 })
 
 // fx refuses to start without a login; jcode starts but fails each session until its setup
-// has run, behind the Go ACP SDK's "Internal error"; Gemini starts but refuses a session
-// with ACP's auth_required when it has no login or API key. Gui offers their sign-in rather
-// than "Try again".
-for (const [id, says] of [
-  ['fx', 'fx login'],
-  ['jcode', 'please run setup first'],
-  ['gemini', 'Gemini API key is missing or not configured.'],
+// has run, behind the Go ACP SDK's "Internal error"; Antigravity starts but refuses a session
+// with ACP's auth_required and nothing more when it has no login. Gui offers their sign-in
+// rather than "Try again".
+for (const [id, command, says] of [
+  ['fx', 'fx', 'fx login'],
+  ['jcode', 'jcode', 'please run setup first'],
+  ['antigravity', 'agy', 'Antigravity CLI is not signed in.'],
 ] as const) {
   test(`${id}: an agent that needs a login before it starts reads as signed out`, async ({
     launch,
   }) => {
     const scratch = mkdtempSync(join(tmpdir(), 'gui-cli-'))
-    const cli = join(scratch, id)
+    const cli = join(scratch, command)
     const script =
-      id === 'fx'
-        ? SIGNED_OUT_SCRIPT
-        : id === 'jcode'
-          ? NOT_SET_UP_SCRIPT
-          : GEMINI_SIGNED_OUT_SCRIPT
+      id === 'fx' ? SIGNED_OUT_SCRIPT : id === 'jcode' ? NOT_SET_UP_SCRIPT : AGY_SIGNED_OUT_SCRIPT
     writeFileSync(cli, `#!${process.execPath}\n${script}`)
     chmodSync(cli, 0o755)
     try {
@@ -251,10 +246,15 @@ process.stdin.on('data', chunk => {
 `
 
 /**
- * Gemini CLI's ACP mode without a login: `initialize` works, and session/new fails with
- * auth_required and the reason, as its AcpSessionManager does when there's no API key.
+ * `agy acp` 1.5.11 without a login: `initialize` offers Google's sign-in methods (and, to a
+ * client that runs terminal sign-in, `agy acp --login`), and session/new fails with ACP's
+ * auth_required and nothing more.
  */
-const GEMINI_SIGNED_OUT_SCRIPT = String.raw`
+const AGY_SIGNED_OUT_SCRIPT = String.raw`
+if (process.argv[2] === '--version') {
+  console.log('1.5.11')
+  process.exit(0)
+}
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', chunk => {
   for (const line of chunk.split('\n')) {
@@ -262,34 +262,43 @@ process.stdin.on('data', chunk => {
     const { id, method } = JSON.parse(line)
     if (id === undefined) continue
     if (method === 'initialize') {
-      const authMethods = [{ id: 'oauth-personal', name: 'Log in with Google' }, { id: 'gemini-api-key', name: 'Gemini API key' }]
+      const authMethods = [{ id: 'oauth-personal', name: 'Log in with Google' }, { id: 'terminal-login', name: 'Log in from the terminal', type: 'terminal', args: ['--login'] }]
       console.log(JSON.stringify({ jsonrpc: '2.0', id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true }, authMethods } }))
       continue
     }
-    console.log(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Gemini API key is missing or not configured.' } }))
+    console.log(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Authentication required' } }))
   }
 })
 `
 
 /**
- * Gemini CLI's ACP mode as its source has it: Google's sign-in methods, HTTP MCP servers,
- * and its approval levels as session modes, here starting in Auto Edit as a user's own
- * settings may pick. Changing the mode sends `[MODE_UPDATE] <mode>` as a message chunk
- * before the answer, as Gemini's ApprovalModeChanged handler does.
+ * `agy acp` as 1.5.11 answers `initialize`, signed in: it takes HTTP MCP servers only when
+ * run with --process-per-session. Its modes come as a `mode` config option and as session
+ * modes (the binary has both; their names are a guess), here starting in Accept edits as a
+ * user's own saved mode may pick.
  */
-const GEMINI_SCRIPT = String.raw`
+const AGY_SCRIPT = String.raw`
 const { appendFileSync } = require('node:fs')
+const args = process.argv.slice(2)
+if (args[0] === '--version') {
+  console.log('1.5.11')
+  process.exit(0)
+}
 const log = call => appendFileSync(process.env.GUI_CLI_LOG, JSON.stringify(call) + '\n')
-log({ args: process.argv.slice(2) })
+log({ args })
 const write = message => console.log(JSON.stringify({ jsonrpc: '2.0', ...message }))
 const notify = (sessionId, update) => write({ method: 'session/update', params: { sessionId, update } })
 const availableModes = [
-  { id: 'default', name: 'Default', description: 'Prompts for approval' },
-  { id: 'autoEdit', name: 'Auto Edit', description: 'Auto-approves edit tools' },
-  { id: 'yolo', name: 'YOLO', description: 'Auto-approves all tools' },
-  { id: 'plan', name: 'Plan', description: 'Read-only mode' },
+  { id: 'default', name: 'Default' },
+  { id: 'accept-edits', name: 'Accept edits' },
+  { id: 'plan', name: 'Plan' },
+  { id: 'auto', name: 'Auto' },
 ]
-let mode = 'autoEdit'
+let mode = 'accept-edits'
+const configOptions = () => [{
+  id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: mode,
+  options: availableModes.map(({ id, name }) => ({ value: id, name })),
+}]
 let buffer = ''
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', chunk => {
@@ -302,13 +311,20 @@ process.stdin.on('data', chunk => {
     if (id === undefined || method === undefined) continue
     log({ method, params })
     if (method === 'initialize') {
-      const agentCapabilities = { loadSession: true, promptCapabilities: { image: true, audio: true, embeddedContext: true }, mcpCapabilities: { http: true, sse: true } }
-      const authMethods = [{ id: 'oauth-personal', name: 'Log in with Google' }, { id: 'gemini-api-key', name: 'Gemini API key' }]
-      write({ id, result: { protocolVersion: 1, agentCapabilities, authMethods, agentInfo: { name: 'gemini-cli', title: 'Gemini CLI', version: '0.70.0' } } })
+      const agentCapabilities = {
+        loadSession: true,
+        promptCapabilities: { image: true, audio: false, embeddedContext: true },
+        sessionCapabilities: { resume: {}, close: {}, load: {}, list: {} },
+        ...(args.includes('--process-per-session') ? { mcpCapabilities: { http: true } } : {}),
+      }
+      const authMethods = [{ id: 'oauth-personal', name: 'Log in with Google' }]
+      write({ id, result: { protocolVersion: 1, agentCapabilities, authMethods, agentInfo: { name: 'Antigravity ACP Server', version: '1.5.11' } } })
     } else if (method === 'session/new') {
-      write({ id, result: { sessionId: 'session-1', modes: { availableModes, currentModeId: mode } } })
+      write({ id, result: { sessionId: 'session-1', modes: { availableModes, currentModeId: mode }, configOptions: configOptions() } })
+    } else if (method === 'session/set_config_option') {
+      mode = params.value
+      write({ id, result: { configOptions: configOptions() } })
     } else if (method === 'session/set_mode') {
-      if (params.modeId !== mode) notify(params.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '[MODE_UPDATE] ' + params.modeId } })
       mode = params.modeId
       write({ id, result: {} })
     } else if (method === 'session/prompt') {
