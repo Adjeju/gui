@@ -5,6 +5,7 @@ import { app } from 'electron'
 import { currentModelValue, parseRecents, withRecent } from '../shared/recent-models'
 import {
   type AgentId,
+  currentAgentId,
   DEFAULT_AGENT_ID,
   isAgentId,
   type PanelCorner,
@@ -188,7 +189,7 @@ export function getPrefs(): Prefs {
   try {
     const parsed = JSON.parse(readFileSync(file(), 'utf8')) as Partial<Prefs>
     cached = {
-      agentId: isAgentId(parsed.agentId) ? parsed.agentId : DEFAULT_AGENT_ID,
+      agentId: currentAgentId(parsed.agentId) ?? DEFAULT_AGENT_ID,
       chatSidebar:
         typeof parsed.chatSidebar === 'boolean' ? parsed.chatSidebar : DEFAULTS.chatSidebar,
       chatSidebarSide: parsed.chatSidebarSide === 'right' ? 'right' : 'left',

@@ -9,6 +9,7 @@ import {
 import { parseCommands } from '../shared/commands'
 import {
   type AgentCommand,
+  currentAgentId,
   DEFAULT_AGENT_ID,
   type FollowUp,
   type ImageAttachment,
@@ -29,6 +30,9 @@ export function settleHistory(value: unknown): SavedChat {
   const parsed = value as Partial<SavedChat> | null
   if (parsed?.version !== 1 || !Array.isArray(parsed.turns)) throw new Error('unknown format')
   const checkpoints = parsed.checkpoints ?? {}
+  // A retired agent's chat (Gemini CLI's) continues with its successor, in a new session:
+  // no other agent can pick up its session.
+  const agentId = currentAgentId(parsed.agentId) ?? DEFAULT_AGENT_ID
   return {
     version: 1,
     id: typeof parsed.id === 'string' && CHAT_ID.test(parsed.id) ? parsed.id : randomUUID(),
@@ -39,8 +43,9 @@ export function settleHistory(value: unknown): SavedChat {
     ...(typeof parsed.title === 'string' && parsed.title.trim()
       ? { title: cleanTitle(parsed.title) }
       : {}),
-    agentId: isAgentId(parsed.agentId) ? parsed.agentId : DEFAULT_AGENT_ID,
-    sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : null,
+    agentId,
+    sessionId:
+      agentId === parsed.agentId && typeof parsed.sessionId === 'string' ? parsed.sessionId : null,
     primed: parsed.primed === true,
     primedWithTools: parsed.primedWithTools === true,
     primedVersion: typeof parsed.primedVersion === 'number' ? parsed.primedVersion : undefined,

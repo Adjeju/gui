@@ -29,6 +29,18 @@ export const AGENTS: readonly AgentInfo[] = [
 export const DEFAULT_AGENT_ID: AgentId = 'claude'
 export const CUSTOM_AGENT_PREFIX = 'custom:'
 
+/**
+ * Built-in agents Gui no longer has, and the one that took each one's place: Google replaced
+ * Gemini CLI with Antigravity CLI.
+ */
+const SUCCESSORS: Record<string, AgentId> = { gemini: 'antigravity' }
+
+/** A saved agent id as Gui knows it now (a retired agent's successor), or null for none. */
+export function currentAgentId(value: unknown): AgentId | null {
+  if (typeof value === 'string' && Object.hasOwn(SUCCESSORS, value)) return SUCCESSORS[value]
+  return isAgentId(value) ? value : null
+}
+
 /** Built-in ids, or a custom id (which may no longer exist in agents.json). */
 export function isAgentId(value: unknown): value is AgentId {
   if (typeof value !== 'string') return false
