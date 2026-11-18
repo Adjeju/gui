@@ -164,6 +164,7 @@ import {
 import { getShellEnv } from './shell-env'
 import { PREVIEW_PARTITION } from './storage'
 import { getSymbols } from './symbols'
+import { systemName } from './system-name'
 import type { OpeningOptions, ProjectTab } from './tab'
 import { showToolbarMenu, toolbarMenuItems } from './toolbar-menu'
 import { prepareTranscription } from './transcribe'
@@ -2172,9 +2173,10 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-/** An email to support that already says which Gui and which macOS. */
+/** An email to support that already says which Gui and which system. */
 function supportMail() {
-  const body = `\n\n—\nGui ${app.getVersion()}, macOS ${process.getSystemVersion()} (${process.arch})`
+  const system = systemName(process.platform, process.getSystemVersion(), process.arch)
+  const body = `\n\n—\nGui ${app.getVersion()}, ${system}`
   return `mailto:hello@usegui.com?subject=${encodeURIComponent('Gui support')}&body=${encodeURIComponent(body)}`
 }
 
