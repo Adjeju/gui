@@ -1,6 +1,6 @@
 # Gui
 
-Gui is a Mac app for designing real interfaces with the AI coding agent you already use. It runs your project's dev server and shows your app. Point at an element, or drag around an area, and say what to change. Your agent edits your actual code, and the preview updates as it does.
+Gui is a Mac and Linux app for designing real interfaces with the AI coding agent you already use. It runs your project's dev server and shows your app. Point at an element, or drag around an area, and say what to change. Your agent edits your actual code, and the preview updates as it does.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="www/src/assets/hero-start-dark.png">
