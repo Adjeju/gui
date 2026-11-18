@@ -339,9 +339,10 @@ export interface TerminalOutput extends OutputChunk {
 
 /**
  * A menu command main hands to a page because the page owns what it acts on: the chrome's
- * address field and screenshot button, the chat's model picker.
+ * address field and screenshot button, the chat's model picker, and New chat's question while
+ * a reply is running.
  */
-export type UiCommand = 'focusAddress' | 'screenshot' | 'chooseModel' | StartForm
+export type UiCommand = 'focusAddress' | 'screenshot' | 'chooseModel' | 'newChat' | StartForm
 /** The start screen's fields that stand in for its buttons: a new project's name, a repo. */
 export type StartForm = 'newProject' | 'cloneRepo'
 
@@ -741,8 +742,8 @@ export interface GuiApi {
   redo(): Promise<void>
   /**
    * Archives this chat and starts an empty one (`ChatMeta.archived` offers it back), on
-   * `agentId` or this chat's agent. With an agent, nothing happens while the chat is working
-   * or has messages queued, unless `stop` (the user said to stop it first).
+   * `agentId` or this chat's agent. While its reply is running (`replyRunning`) nothing
+   * happens unless `stop` (the user said to stop it first); without an agent, the chat asks.
    */
   newSession(agentId?: AgentId, stop?: boolean): void
   /** The project's archived chats, newest first */

@@ -47,6 +47,7 @@ import { AutoToggle } from './auto-toggle'
 import { useCommandMenu } from './command-menu'
 import { ImageError, imageFiles, prepareImage } from './images'
 import { ModelButton } from './model-picker'
+import { NewChatQuestion } from './new-chat-question'
 import { QueuedMessages } from './queue'
 import { RecordingClip } from './recording-clip'
 import {
@@ -487,6 +488,7 @@ export function Composer({
             <AutoToggle meta={meta} />
             <span className="ml-auto" />
             <ModelButton meta={meta} />
+            <NewChatQuestion meta={meta} />
             {/* While the agent works, a draft can still go out: it joins the queue, or the
                 reply under way (Settings, ⌘↩ for the other). */}
             <IconButton

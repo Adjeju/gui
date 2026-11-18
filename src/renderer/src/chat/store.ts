@@ -32,6 +32,8 @@ interface ChatStore {
   dismissedProblems: string[]
   /** ⇧⌘M asked for the model picker; the composer's model button opens it and clears this */
   pickModel: boolean
+  /** New chat while a reply runs: main asks the chat to ask before it stops; the composer does */
+  askNewChat: boolean
   /** What the floating chat is drawn as, and its anchored corner (main sizes the view) */
   float: ChatFloat
   /**
@@ -54,6 +56,7 @@ export const useChat = create<ChatStore>(() => ({
   notice: null,
   dismissedProblems: [],
   pickModel: false,
+  askNewChat: false,
   float: {
     form: 'panel',
     corner: { x: 'right', y: 'bottom' },
@@ -711,6 +714,8 @@ export function connectChat() {
     }),
     gui.onCommand((command) => {
       if (command === 'chooseModel') chooseModel()
+      else if (command === 'newChat' && useChat.getState().meta)
+        useChat.setState({ askNewChat: true })
     }),
   ]
   refreshTransport()

@@ -42,6 +42,7 @@ import {
 import { RULER_SIZE } from '../shared/layout'
 import { PreviewText } from '../shared/preview-text'
 import { SHORTCUTS } from '../shared/shortcuts'
+import { replyRunning } from '../shared/stop-question'
 import {
   type AgentId,
   agentName,
@@ -3889,15 +3890,23 @@ export class ProjectTab implements ChatPanelOwner {
 
   /**
    * Archives the chat and starts an empty one, on `agentId` (the picker's other agents) or the
-   * chat's own. From the picker it leaves a working chat or one with messages queued alone
-   * unless the user said to `stop` it, so a running turn or a queued message isn't lost unasked.
+   * chat's own. It leaves a chat whose reply is running (`replyRunning`) alone unless the user
+   * said to `stop` it, so a running turn or a queued message isn't lost unasked: New chat (its
+   * button, the menu, ⇧⌘K) asks in the chat first; the picker asked before it sent. From the
+   * `menu`, the chat takes the keyboard to ask.
    */
-  newChat(agentId?: AgentId, stop = false) {
+  newChat(agentId?: AgentId, stop = false, menu = false) {
     const chat = this.resources.chat
     if (!chat) return
+    if (agentId !== undefined && !agentHealth.has(agentId)) return
+    if (!stop && replyRunning(chat.meta)) {
+      if (agentId === undefined) {
+        if (menu) this.panel.focusChat()
+        this.sendChat(Events.command, 'newChat')
+      }
+      return
+    }
     if (agentId === undefined) return void chat.reset()
-    if (!agentHealth.has(agentId)) return
-    if (!stop && (chat.meta.status === 'working' || chat.meta.queue.length)) return
     agentHealth.ensureChecked(agentId)
     void chat.reset(agentId)
   }
@@ -3926,8 +3935,7 @@ export class ProjectTab implements ChatPanelOwner {
     const list = listedModels(agentId)
     const offered = modelsUnder(agentId, provider)?.options.some(({ value }) => value === model)
     if (!list || !offered) return
-    const busy = chat.meta.status === 'working' || chat.meta.queue.length > 0
-    if (chat.started && busy && !stop) return
+    if (chat.started && replyRunning(chat.meta) && !stop) return
     if (provider !== null && list.provider) saveAgentSetting(agentId, list.provider.id, provider)
     saveAgentSetting(agentId, list.model.id, model)
     recordRecentModel({ agentId, model, provider })

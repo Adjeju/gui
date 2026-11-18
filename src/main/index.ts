@@ -1554,7 +1554,7 @@ function registerIpc() {
     if (isString(turnId) && isString(subagent)) tab.stopSubagent(turnId, subagent)
   })
   on(Send.newSession, (tab, agentId, stop) => {
-    if (agentId === undefined) tab.newChat()
+    if (agentId === undefined) tab.newChat(undefined, stop === true)
     else if (isAgentId(agentId)) tab.newChat(agentId, stop === true)
   })
   on(Send.pickModel, (tab, agentId, model, provider, stop) => {
@@ -2112,7 +2112,7 @@ function buildMenu() {
         ...agents,
         { type: 'separator' },
         ...item('chooseModel', { click: withWindow((w) => w.chooseModel()) }),
-        ...item('newChat', { click: withWindow((w) => w.newChat()) }),
+        ...item('newChat', { click: withWindow((w) => w.newChat(undefined, false, true)) }),
         ...item('stop', { click: withWindow((w) => w.cancelChat()) }),
         { type: 'separator' },
         ...item('allow', {
