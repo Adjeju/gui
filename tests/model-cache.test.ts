@@ -165,7 +165,7 @@ test('the same list found again moves its time, in the file too', () =>
     await new Promise((resolve) => setTimeout(resolve, 100))
   }))
 
-test('an agent that can list none keeps only its time; one with a list keeps it as it was', () =>
+test('an agent that can list none keeps only its time; one with a list keeps it and moves its time', () =>
   withFile(async (file) => {
     const cache = open(file)
     cache.checkedWithout('kiro', NOW)
@@ -174,7 +174,7 @@ test('an agent that can list none keeps only its time; one with a list keeps it 
     cache.set('opencode', models(2), NOW - 2 * DAY)
     cache.checkedWithout('opencode', NOW)
     expect(cache.get('opencode')).toEqual(listOf(models(2)))
-    expect(cache.fresh('opencode', NOW, DAY)).toBe(false)
+    expect(cache.fresh('opencode', NOW + HOUR, DAY)).toBe(true)
     cache.flushSync()
     const next = open(file)
     expect(next.get('kiro')).toBeNull()

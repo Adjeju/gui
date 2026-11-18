@@ -644,8 +644,11 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
     if (patch.models) this.modelCache.set(id, patch.models, this.now())
     // Ready with none: it has no models to list any more.
     else if (patch.status === 'ready' && patch.models === null) this.modelCache.delete(id)
-    // Not signed in: starting it again tomorrow is soon enough, unless the user asks.
-    else if (patch.status === 'signed-out') this.modelCache.checkedWithout(id, this.now())
+    // Not signed in, or none to list: starting it again tomorrow is soon enough, unless the
+    // user asks.
+    if ((patch.status === 'ready' && patch.models === null) || patch.status === 'signed-out') {
+      this.modelCache.checkedWithout(id, this.now())
+    }
     this.emit('change', this.list())
   }
 }

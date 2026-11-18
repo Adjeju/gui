@@ -265,10 +265,10 @@ test('after launch, an agent checked less than a day ago isn’t checked again',
   expect(started).toContain('kiro')
   store.dispose()
 
-  // Next launch, an hour on: its list from then, unchecked. Agents with no list are checked.
+  // Next launch, an hour on: its list from then, unchecked. So is an agent with none to list.
   await launchAt(T + HOUR)
   expect(started).not.toContain('opencode')
-  expect(started).toContain('kiro')
+  expect(started).not.toContain('kiro')
   expect(statusOf('opencode')).toBe('unknown')
   expect(store.listedModels('opencode')).toEqual({ model: kimi.model, provider: null })
   // Picked by the user: checked right away all the same.
@@ -307,6 +307,21 @@ test('an agent not signed in isn’t started again until a day on, unless the us
 
   await launchAt(T + 26 * HOUR)
   expect(started).toContain('opencode')
+})
+
+test('an agent with no models to list isn’t started again until a day on', async () => {
+  setPrefs({ disabledAgents: [] })
+  await launchAt(T)
+  expect(started).toContain('kiro')
+  expect(statusOf('kiro')).toBe('ready')
+  store.dispose()
+
+  await launchAt(T + HOUR)
+  expect(started).not.toContain('kiro')
+  store.dispose()
+
+  await launchAt(T + 26 * HOUR)
+  expect(started).toContain('kiro')
 })
 
 test('a check that fails doesn’t count, so the next launch checks again', async () => {

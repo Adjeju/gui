@@ -143,14 +143,15 @@ export class ModelCache {
   }
 
   /**
-   * A check at `now` found the agent can't list models (not signed in, say). Only its time is
-   * kept, so it isn't started again for nothing; a list it has stays, with its own time.
+   * A check at `now` found the agent but no models to list (not signed in, or it has none). Its
+   * time moves, so the background checks don't start it again for nothing; a list it has stays.
    */
   checkedWithout(id: AgentId, now: number) {
     const current = this.all().get(id)
-    if (current?.list) return
-    if (current?.checkedAt === now) return
-    this.put(id, { list: null, checkedAt: now })
+    if (!current) return this.put(id, { list: null, checkedAt: now })
+    if (current.checkedAt === now) return
+    current.checkedAt = now
+    this.writer.changed()
   }
 
   delete(id: AgentId) {
