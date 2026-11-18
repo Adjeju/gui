@@ -57,9 +57,9 @@ sha512_hex() {
 # The feed's base64 sha512, in hex.
 base64_hex() {
   if has base64; then
-    printf '%s' "$1" | base64 -d
+    printf '%s' "$1" | base64 -d 2>/dev/null
   else
-    printf '%s\n' "$1" | openssl base64 -d -A
+    printf '%s\n' "$1" | openssl base64 -d -A 2>/dev/null
   fi | od -An -v -tx1 | tr -d ' \n'
 }
 
@@ -158,15 +158,16 @@ install_gui() {
   tmp=
 
   # The icon, from the AppImage itself: extracting needs no FUSE. Gui installs without one.
+  # The AppImage's is 1024 pixels, a size hicolor's index.theme doesn't list, so it goes in
+  # 512x512, the largest that it does; launchers scale it.
   icon=no
-  work=$(mktemp -d)
-  if (cd "$work" && "$app" --appimage-extract 'usr/share/icons/hicolor/*/apps/gui.png') >/dev/null 2>&1; then
+  if work=$(mktemp -d) &&
+    (cd "$work" && "$app" --appimage-extract 'usr/share/icons/hicolor/*/apps/gui.png') >/dev/null 2>&1; then
     for png in "$work"/squashfs-root/usr/share/icons/hicolor/*/apps/gui.png; do
       [ -f "$png" ] || continue
-      size=${png%/apps/gui.png}
-      size=${size##*/}
-      mkdir -p "$data/icons/hicolor/$size/apps" &&
-        cp "$png" "$data/icons/hicolor/$size/apps/gui.png" && icon=yes
+      mkdir -p "$data/icons/hicolor/512x512/apps" &&
+        cp "$png" "$data/icons/hicolor/512x512/apps/gui.png" && icon=yes
+      break
     done
   fi
 
@@ -199,7 +200,7 @@ install_gui() {
   [ "$checked" = no ] && say "The download's checksum wasn't checked: this computer has no sha512sum."
   [ "$icon" = yes ] || say "Gui's icon couldn't be added, so the launcher shows a generic one."
   if ! has fusermount3 && ! has fusermount; then
-    say "Gui needs FUSE to start: install the fuse3 package (for example, sudo apt install fuse3)."
+    say "Gui needs FUSE to start: install the fuse3 package."
   fi
   return 0
 }
