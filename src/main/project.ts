@@ -3,6 +3,7 @@ import { access, lstat, readdir, readFile, realpath, stat } from 'node:fs/promis
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, posix, relative, sep } from 'node:path'
 import type { PackageManager, ProjectInfo, WorkspaceApp } from '../shared/types'
+import type { Framework } from './analytics-queue'
 
 export const LOCKFILES: [string, PackageManager][] = [
   ['bun.lock', 'bun'],
@@ -44,23 +45,23 @@ const WEB_FRAMEWORKS = new Set([
   'parcel',
   'webpack-dev-server',
 ])
-/** Dev server commands a dev script can run directly. */
-const FRAMEWORK_BINS = new Set([
-  'next',
-  'vite',
-  'astro',
-  'nuxt',
-  'nuxi',
-  'remix',
-  'react-router',
-  'react-scripts',
-  'gatsby',
-  'ng',
-  'parcel',
-  'webpack-dev-server',
-  'vitepress',
-  'docusaurus',
-  'vinxi',
+/** Dev server commands a dev script can run directly, and the framework each is (for usage data). */
+const FRAMEWORK_BINS = new Map<string, Exclude<Framework, 'other' | 'none' | 'unknown'>>([
+  ['next', 'next'],
+  ['vite', 'vite'],
+  ['astro', 'astro'],
+  ['nuxt', 'nuxt'],
+  ['nuxi', 'nuxt'],
+  ['remix', 'remix'],
+  ['react-router', 'react-router'],
+  ['react-scripts', 'react-scripts'],
+  ['gatsby', 'gatsby'],
+  ['ng', 'angular'],
+  ['parcel', 'parcel'],
+  ['webpack-dev-server', 'webpack'],
+  ['vitepress', 'vitepress'],
+  ['docusaurus', 'docusaurus'],
+  ['vinxi', 'vinxi'],
 ])
 /** Build tools whose watch mode is a library's `dev` script, not a server. */
 const BUILD_TOOLS = new Set([
@@ -262,6 +263,25 @@ function commands(script: string): string[][] {
       return words
     })
     .filter((words) => words.length > 0)
+}
+
+/**
+ * The framework the project's start command runs, for usage data: the first dev server
+ * command its script (or the start command set in Gui) names, read from what detection
+ * already has. `vite dev` is `vite`, whatever runs on it (SvelteKit). `unknown` while a
+ * monorepo's app is still to be picked; `none` with nothing to start.
+ */
+export function startFramework(project: ProjectInfo, choosing: boolean): Framework {
+  if (choosing) return 'unknown'
+  if (!project.devScript) return 'none'
+  for (const words of commands(project.devScript)) {
+    for (const word of words) {
+      // `./node_modules/.bin/next` is `next`.
+      const framework = FRAMEWORK_BINS.get(word.slice(word.lastIndexOf('/') + 1))
+      if (framework) return framework
+    }
+  }
+  return 'other'
 }
 
 /** True for `turbo dev`, `pnpm -r dev`, `bun run --filter '*' dev` and the like. */

@@ -12,6 +12,7 @@ import {
   questionRequest,
   resumeMethods,
 } from '../src/main/agent-protocol'
+import type { AgentFailure } from '../src/main/analytics-queue'
 
 const select = (
   id: string,
@@ -299,22 +300,38 @@ describe('questionRequest', () => {
 })
 
 describe('plainAgentError', () => {
-  test('known failures read in plain words', () => {
-    const cases: [string, RegExp][] = [
+  test('known failures read in plain words, each with its name for usage data', () => {
+    const cases: [string, RegExp, AgentFailure][] = [
       [
         'API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"},"request_id":"req_1"}',
         /servers are busy/,
+        'servers_busy',
       ],
-      ['API Error: 429 {"type":"error","error":{"type":"rate_limit_error"}}', /too many requests/],
-      ['429 You exceeded your current quota (insufficient_quota)', /out of credit/],
-      ['Your credit balance is too low to access the Anthropic API.', /out of credit/],
-      ['API Error: 500 {"type":"error","error":{"type":"api_error"}}', /servers had a problem/],
-      ['503 Service Unavailable', /servers had a problem/],
-      ['request to https://api.example.com failed, reason: getaddrinfo ENOTFOUND', /internet/],
-      ['The request timed out', /internet/],
-      ['prompt is too long: 210000 tokens > 200000 maximum', /too long/],
+      [
+        'API Error: 429 {"type":"error","error":{"type":"rate_limit_error"}}',
+        /too many requests/,
+        'rate_limited',
+      ],
+      ['429 You exceeded your current quota (insufficient_quota)', /out of credit/, 'no_credit'],
+      ['Your credit balance is too low to access the Anthropic API.', /out of credit/, 'no_credit'],
+      [
+        'API Error: 500 {"type":"error","error":{"type":"api_error"}}',
+        /servers had a problem/,
+        'server_error',
+      ],
+      ['503 Service Unavailable', /servers had a problem/, 'server_error'],
+      [
+        'request to https://api.example.com failed, reason: getaddrinfo ENOTFOUND',
+        /internet/,
+        'offline',
+      ],
+      ['The request timed out', /internet/, 'offline'],
+      ['prompt is too long: 210000 tokens > 200000 maximum', /too long/, 'context_too_long'],
     ]
-    for (const [raw, plain] of cases) expect(plainAgentError(raw)).toMatch(plain)
+    for (const [raw, plain, failure] of cases) {
+      expect(plainAgentError(raw)?.message).toMatch(plain)
+      expect(plainAgentError(raw)?.failure).toBe(failure)
+    }
   })
 
   test('anything else keeps the agent\u2019s own words', () => {

@@ -23,7 +23,7 @@ import {
 } from './agent-binaries'
 import { type AgentDefinition, listAgents } from './agents'
 import { track } from './analytics'
-import { usageAgent } from './analytics-queue'
+import { type AgentUnavailable, agentUnavailable, usageAgent } from './analytics-queue'
 import { diskFile } from './coalesced-file'
 import { describeError } from './errors'
 import { ModelCache } from './model-cache'
@@ -34,6 +34,18 @@ import { getShellEnv } from './shell-env'
 import { runInTerminal } from './terminal'
 
 const CHECK_TIMEOUT_MS = 45_000
+
+/** Each agent's reasons it couldn't be used that usage data has counted this launch */
+const unavailable = new Set<string>()
+
+/** An installed agent's check failed: counted once per agent and reason each launch. */
+function countUnavailable(id: AgentId, reason: AgentUnavailable) {
+  const agent = usageAgent(id)
+  const key = `${agent}:${reason}`
+  if (unavailable.has(key)) return
+  unavailable.add(key)
+  track('agent_unavailable', { agent, reason })
+}
 /** For the check's switch to the user's provider: listing it is a nicety, not the check. */
 const PROVIDER_TIMEOUT_MS = 10_000
 /** Browser sign-in waits on the user. */
@@ -520,6 +532,8 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
       try {
         const binary = await agentBinary(pinned)
         if (binary.kind === 'missing') {
+          // The user's own CLI is too old for Gui: it can't be used until Gui's copy is set up.
+          if (binary.mismatch === 'older') countUnavailable(id, 'too_old')
           this.methods.delete(id)
           this.set(id, {
             status: 'not-installed',
@@ -536,6 +550,7 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
           binary: { source: binary.binary.source, version: binary.binary.version },
         })
       } catch (error) {
+        countUnavailable(id, agentUnavailable(error))
         const { message, detail } = describeError(error)
         this.set(id, { status: 'error', message, detail, models: null })
         return
@@ -565,6 +580,7 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
       })
       if (connecting) track('agent_connected', { agent: usageAgent(id) })
     } catch (error) {
+      if (!(error instanceof AgentMissingError)) countUnavailable(id, agentUnavailable(error))
       if (error instanceof AgentAuthError) {
         this.signedOut(id, error)
       } else if (error instanceof AgentMissingError && !pinned) {

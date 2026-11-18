@@ -31,6 +31,8 @@ export class ProjectResources {
    * opened it, outside-open.ts): the user showing the chat runs it, once.
    */
   heldChat: (() => void) | null = null
+  /** Why the app didn't start, each reason counted once for usage data (tab.ts) */
+  readonly startFailures = new Set<string>()
   private claimedFile: string | null = null
   private disposed = false
   private completion: Promise<void> | null = null

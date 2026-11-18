@@ -1,14 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  agentUnavailable,
+  turnFailure,
   turnUsage,
   type UsageQueueOptions,
   type UsageReply,
   usageAgent,
   usageQueue,
 } from '../src/main/analytics-queue'
+import { AgentError, DetailedError } from '../src/main/errors'
 import { MAX_QUEUED_USAGE_EVENTS, USAGE_BATCH } from '../src/shared/bounded'
 
 const INSTALL = '0f8e2a4c-5b1d-4e7f-9a3b-6c2d8e0f1a2b'
+const TURN = { agent: 'claude', outcome: 'done', picked: 'no', tools: 'no', mode: 'ask' } as const
 
 interface Sent {
   installId: string
@@ -48,8 +52,8 @@ describe('usage queue', () => {
   test('a flush sends what was tracked, with the install ID, then nothing is left', async () => {
     const { queue, sent } = setup()
     queue.track('app_opened', { version: '1.0.0', os: 'darwin', osVersion: '26.1', arch: 'arm64' })
-    queue.track('project_opened')
-    queue.track('turn_finished', { agent: 'claude', outcome: 'done' })
+    queue.track('project_opened', { framework: 'next' })
+    queue.track('turn_finished', TURN)
     await queue.flush()
     expect(sent).toEqual([
       {
@@ -60,8 +64,8 @@ describe('usage queue', () => {
             at: 1_000,
             props: { version: '1.0.0', os: 'darwin', osVersion: '26.1', arch: 'arm64' },
           },
-          { event: 'project_opened', at: 1_000 },
-          { event: 'turn_finished', at: 1_000, props: { agent: 'claude', outcome: 'done' } },
+          { event: 'project_opened', at: 1_000, props: { framework: 'next' } },
+          { event: 'turn_finished', at: 1_000, props: TURN },
         ],
       },
     ])
@@ -79,7 +83,7 @@ describe('usage queue', () => {
         return INSTALL
       },
     })
-    queue.track('project_opened')
+    queue.track('project_opened', { framework: 'next' })
     expect(queue.size).toBe(0)
     await queue.flush()
     expect(sent).toEqual([])
@@ -109,7 +113,7 @@ describe('usage queue', () => {
         return { status: 204, json: async () => null }
       },
     })
-    queue.track('project_opened')
+    queue.track('project_opened', { framework: 'next' })
     queue.track('canvas_created')
     await queue.flush()
     expect(queue.size).toBe(2)
@@ -126,7 +130,7 @@ describe('usage queue', () => {
   test('a server error keeps the batch; a refused batch is dropped', async () => {
     let status = 503
     const { queue } = setup({ reply: () => ({ status, json: async () => null }) })
-    queue.track('project_opened')
+    queue.track('project_opened', { framework: 'next' })
     await queue.flush()
     expect(queue.size).toBe(1)
     status = 400
@@ -145,7 +149,7 @@ describe('usage queue', () => {
           release = () => reject(new Error('offline'))
         }),
     })
-    queue.track('project_opened')
+    queue.track('project_opened', { framework: 'next' })
     const flushing = queue.flush()
     queue.track('canvas_created')
     release()
@@ -155,7 +159,7 @@ describe('usage queue', () => {
 
   test('switched off: nothing is kept, and the queue clears', async () => {
     const { queue, sent, setEnabled } = setup()
-    queue.track('project_opened')
+    queue.track('project_opened', { framework: 'next' })
     queue.clear()
     expect(queue.size).toBe(0)
     setEnabled(false)
@@ -167,7 +171,7 @@ describe('usage queue', () => {
 
   test('switched off between tracking and the flush: nothing goes', async () => {
     const { queue, sent, setEnabled } = setup()
-    queue.track('project_opened')
+    queue.track('project_opened', { framework: 'next' })
     setEnabled(false)
     await queue.flush()
     expect(sent).toEqual([])
@@ -178,7 +182,7 @@ describe('usage queue', () => {
     const { queue, sent } = setup({
       reply: () => ({ status: 200, json: async () => ({ stop: true }) }),
     })
-    queue.track('project_opened')
+    queue.track('project_opened', { framework: 'next' })
     await queue.flush()
     expect(sent).toHaveLength(1)
     expect(queue.stopped).toBe(true)
@@ -195,7 +199,7 @@ describe('usage queue', () => {
           signal.addEventListener('abort', () => reject(signal.reason))
         }),
     })
-    queue.track('project_opened')
+    queue.track('project_opened', { framework: 'next' })
     const started = Date.now()
     await queue.flush(50)
     expect(Date.now() - started).toBeLessThan(1000)
@@ -204,28 +208,75 @@ describe('usage queue', () => {
 
   test('two flushes at once send once', async () => {
     const { queue, sent } = setup()
-    queue.track('project_opened')
+    queue.track('project_opened', { framework: 'next' })
     await Promise.all([queue.flush(), queue.flush()])
     expect(sent).toHaveLength(1)
   })
 })
 
 describe('what a turn sends', () => {
+  const plain = { picked: false, tools: false, autoApprove: false, ownPermissions: false }
+
   test('the agent, how it ended, and the provider only when it is a short name', () => {
-    expect(turnUsage('claude', 'done')).toEqual({ agent: 'claude', outcome: 'done' })
-    expect(turnUsage('codex', 'error', 'grok')).toEqual({
+    expect(turnUsage('claude', 'done', plain)).toEqual({
+      agent: 'claude',
+      outcome: 'done',
+      picked: 'no',
+      tools: 'no',
+      mode: 'ask',
+    })
+    expect(turnUsage('codex', 'error', { ...plain, provider: 'grok' })).toMatchObject({
       agent: 'codex',
       outcome: 'failed',
       provider: 'grok',
     })
-    expect(turnUsage('fx', 'cancelled', 'https://example.com/v1')).toEqual({
-      agent: 'fx',
-      outcome: 'stopped',
+    const stopped = turnUsage('fx', 'cancelled', { ...plain, provider: 'https://example.com/v1' })
+    expect(stopped).toMatchObject({ agent: 'fx', outcome: 'stopped' })
+    expect(stopped).not.toHaveProperty('provider')
+  })
+
+  test('a picked element, a call to Gui\u2019s tools, and who decides what the agent may do', () => {
+    expect(turnUsage('claude', 'done', { ...plain, picked: true, tools: true })).toMatchObject({
+      picked: 'yes',
+      tools: 'yes',
     })
+    expect(turnUsage('claude', 'done', { ...plain, autoApprove: true }).mode).toBe('auto')
+    // The agent's own settings decide, whatever Gui's Auto says.
+    expect(turnUsage('claude', 'done', { ...plain, ownPermissions: true }).mode).toBe('own')
+    expect(
+      turnUsage('claude', 'done', { ...plain, autoApprove: true, ownPermissions: true }).mode,
+    ).toBe('own')
+  })
+
+  test('a reason only when it failed: the failure the error carries, else other', () => {
+    expect(turnUsage('claude', 'done', plain)).not.toHaveProperty('reason')
+    expect(
+      turnUsage('claude', 'cancelled', { ...plain, error: { failure: 'agent_quit' } }),
+    ).not.toHaveProperty('reason')
+    const failed = (error: unknown) => turnUsage('claude', 'error', { ...plain, error }).reason
+    expect(failed(new AgentError('too long', 'detail', 'context_too_long'))).toBe(
+      'context_too_long',
+    )
+    expect(failed(new AgentError('quit', null, 'agent_quit'))).toBe('agent_quit')
+    expect(failed({ failure: 'signed_out' })).toBe('signed_out')
+    expect(failed(new DetailedError('Could not start', 'a/path/in/the/detail'))).toBe('other')
+    expect(failed(new Error('rate limit exceeded'))).toBe('other')
+    expect(failed({ failure: 'something new' })).toBe('other')
+    expect(failed(null)).toBe('other')
   })
 
   test('an agent from agents.json is custom, never its name', () => {
     expect(usageAgent('custom:My Secret Agent')).toBe('custom')
     expect(usageAgent('claude')).toBe('claude')
+  })
+})
+
+describe('why an agent could not be used', () => {
+  test('signed out and too old are named; anything else is error', () => {
+    expect(turnFailure({ failure: 'signed_out' })).toBe('signed_out')
+    expect(agentUnavailable({ failure: 'signed_out' })).toBe('signed_out')
+    expect(agentUnavailable(new AgentError('old', null, 'too_old'))).toBe('too_old')
+    expect(agentUnavailable(new AgentError('quit', null, 'agent_quit'))).toBe('error')
+    expect(agentUnavailable(new Error("The agent didn't respond."))).toBe('error')
   })
 })

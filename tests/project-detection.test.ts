@@ -6,8 +6,10 @@ import {
   chooseDevScript,
   detectProject,
   servesProduction,
+  startFramework,
   stripJsonComments,
 } from '../src/main/project'
+import type { ProjectInfo } from '../src/shared/types'
 
 const roots: string[] = []
 
@@ -239,5 +241,37 @@ describe('turbo.json comments', () => {
       b: [1, 2],
       c: '/*kept*/',
     })
+  })
+})
+
+describe('the framework usage data names', () => {
+  const project = (devScript: string | null): ProjectInfo => ({
+    root: '/p',
+    name: 'p',
+    packageManager: 'npm',
+    devCommand: devScript ? 'npm run dev' : null,
+    devScript,
+    appDir: null,
+    custom: null,
+    productionScript: null,
+  })
+
+  test('the dev server command its start script runs', () => {
+    expect(startFramework(project('next dev --turbopack'), false)).toBe('next')
+    expect(startFramework(project('vite dev --port 3000'), false)).toBe('vite')
+    expect(startFramework(project('NODE_ENV=development astro dev'), false)).toBe('astro')
+    expect(startFramework(project('nuxi dev'), false)).toBe('nuxt')
+    expect(startFramework(project('ng serve'), false)).toBe('angular')
+    expect(startFramework(project('webpack-dev-server --mode development'), false)).toBe('webpack')
+    expect(
+      startFramework(project('bun run build:css && ./node_modules/.bin/next dev'), false),
+    ).toBe('next')
+  })
+
+  test('other for a command it does not know, none with nothing to start, unknown while choosing', () => {
+    expect(startFramework(project('python manage.py runserver'), false)).toBe('other')
+    expect(startFramework(project('node server.js'), false)).toBe('other')
+    expect(startFramework(project(null), false)).toBe('none')
+    expect(startFramework(project(null), true)).toBe('unknown')
   })
 })

@@ -1,3 +1,5 @@
+import type { AgentFailure } from './analytics-queue'
+
 /** An error with a plain message for everyone, and technical detail shown on request. */
 export class DetailedError extends Error {
   constructor(
@@ -5,6 +7,20 @@ export class DetailedError extends Error {
     readonly detail: string | null,
   ) {
     super(message)
+  }
+}
+
+/**
+ * An agent failure Gui tells apart (a CLI too old, its process quitting, a known turn error),
+ * named for usage data by `failure`; the message is still what the user reads.
+ */
+export class AgentError extends DetailedError {
+  constructor(
+    message: string,
+    detail: string | null,
+    readonly failure: AgentFailure,
+  ) {
+    super(message, detail)
   }
 }
 

@@ -3,15 +3,22 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, autoUpdater, type Event, net, powerMonitor } from 'electron'
 import type { AgentId, TurnStatus } from '../shared/types'
-import { turnUsage, type UsageEventName, type UsageProps, usageQueue } from './analytics-queue'
+import {
+  type TurnUsage,
+  turnUsage,
+  type UsageEventName,
+  type UsageProps,
+  usageQueue,
+} from './analytics-queue'
 import { officialBuild } from './official-build'
 import { getPrefs } from './prefs'
 
 /**
  * Usage data: installed copies count a few things people do in Gui (analytics-queue.ts lists
  * every event and what it carries) and send them to usegui.com/t/v1, which passes them on to
- * PostHog. Each copy is a random install ID, not the Gui account. Never paths, names,
- * prompts, replies, or code. Builds from source and tests send nothing. Settings → Account →
+ * PostHog. Each copy is a random install ID, not the Gui account. Every value is a short
+ * name from a fixed list there, never paths, names, commands, prompts, replies, error
+ * messages, or code. Builds from source and tests send nothing. Settings → Account →
  * Share usage data turns it off. The privacy page says what is sent.
  */
 
@@ -80,9 +87,9 @@ export function track<E extends UsageEventName>(event: E, ...props: UsageProps<E
   queue.track(event, ...props)
 }
 
-/** A chat turn ended; `provider` is the agent's model provider setting, if it has one. */
-export function trackTurn(agent: AgentId, status: TurnStatus, provider?: string) {
-  track('turn_finished', turnUsage(agent, status, provider))
+/** A chat turn ended: how, and what it was like (analytics-queue.ts `turnUsage`). */
+export function trackTurn(agent: AgentId, status: TurnStatus, turn: TurnUsage) {
+  track('turn_finished', turnUsage(agent, status, turn))
 }
 
 /** Share usage data switched off: nothing queued is sent. */

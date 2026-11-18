@@ -1,5 +1,6 @@
 import * as acp from '@agentclientprotocol/sdk'
 import type { AgentSetting, ModelSettings } from '../shared/types'
+import type { AgentFailure } from './analytics-queue'
 
 // How Gui reads what agents send where they differ from one another. No Electron here,
 // so tests can load it on its own.
@@ -87,33 +88,42 @@ export function errorDetail(error: unknown): string {
  * as a 429, so the account's limit is checked before the rate limit. Matched on the agent's
  * own text, which often carries the provider's raw JSON (`API Error: 529 {"type":"error",…}`).
  */
-const PLAIN_ERRORS: [RegExp, string][] = [
+const PLAIN_ERRORS: [RegExp, AgentFailure, string][] = [
   [
     /context.?(?:length|window)|prompt is too long|input is too long|too many (?:input )?tokens|maximum context/i,
+    'context_too_long',
     'This chat is too long for the agent. Start a new chat to keep going.',
   ],
   [
     /credit balance|billing|insufficient.?(?:quota|funds|credits?)|quota exceeded|payment required|\b402\b|usage limit/i,
+    'no_credit',
     'Your agent account is out of credit or at its usage limit. Check its plan, then try again.',
   ],
-  [/overloaded|\b529\b/i, 'The agent’s servers are busy. Try again in a minute.'],
+  [/overloaded|\b529\b/i, 'servers_busy', 'The agent’s servers are busy. Try again in a minute.'],
   [
     /rate.?limit|too many requests|\b429\b/i,
+    'rate_limited',
     'The agent is sending too many requests. Wait a minute, then try again.',
   ],
   [
     /(?:api error|status(?: code)?|http)[:\s]+5\d\d\b|internal server error|bad gateway|service unavailable|gateway time-?out|"api_error"/i,
+    'server_error',
     'The agent’s servers had a problem. Try again in a minute.',
   ],
   [
     /\b(?:ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ENETUNREACH)\b|socket hang up|network error|fetch failed|connection (?:error|refused|reset)|timed? ?out\b/i,
+    'offline',
     'The agent couldn’t reach its servers. Check your internet connection, then try again.',
   ],
 ]
 
-/** What a failed turn's error means, in plain words; null when it isn't one Gui knows. */
-export function plainAgentError(detail: string): string | null {
-  return PLAIN_ERRORS.find(([pattern]) => pattern.test(detail))?.[1] ?? null
+/**
+ * What a failed turn's error means, in plain words, and its name for usage data; null when it
+ * isn't one Gui knows.
+ */
+export function plainAgentError(detail: string): { failure: AgentFailure; message: string } | null {
+  const known = PLAIN_ERRORS.find(([pattern]) => pattern.test(detail))
+  return known ? { failure: known[1], message: known[2] } : null
 }
 
 /**

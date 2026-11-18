@@ -1721,6 +1721,8 @@ export class ChatController extends EventEmitter<ChatEvents> {
     /** Why the queue waits after this turn rather than going on; null to go on. */
     let pause: QueuePauseReason | null = null
     let slot: { ready: Promise<void>; release: () => void } | null = null
+    /** What the turn failed with, for usage data's reason (analytics-queue.ts `turnFailure`) */
+    let failure: unknown = null
     try {
       if (!(await this.confirmTrust())) {
         status = 'cancelled'
@@ -1888,6 +1890,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       if (stopped()) status = 'cancelled'
       else {
         status = 'error'
+        failure = error
         if (error instanceof AgentAuthError) {
           // Every surface (start screen, Settings) now shows it signed out, with its sign-in.
           agentHealth.signedOut(this.meta.agentId, error)
@@ -1912,7 +1915,17 @@ export class ChatController extends EventEmitter<ChatEvents> {
       // Only now is the turn over; reporting it earlier would let a send race the snapshot.
       record.turn.status = status
       record.turn.endedAt = Date.now()
-      trackTurn(this.meta.agentId, status, this.meta.models?.provider?.value)
+      trackTurn(this.meta.agentId, status, {
+        provider: this.meta.models?.provider?.value,
+        error: failure,
+        picked: selection.length > 0,
+        // As the chat shows them: a call it recognised as one of Gui's tools (chat-tools.ts).
+        tools: record.turn.items.some(
+          (item) => item.kind === 'tool' && item.toolKind === 'preview',
+        ),
+        autoApprove: this.meta.autoApprove,
+        ownPermissions: this.meta.ownPermissions,
+      })
       if (this.active === record) this.active = null
       if (this.lock === record) this.lock = null
       const retryable = status === 'error' && this.lastSent?.turnId === record.turn.id

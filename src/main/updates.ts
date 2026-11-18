@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { app, dialog, autoUpdater as squirrel } from 'electron'
 import type { AppUpdater } from 'electron-updater'
 import { IS_MAC } from '../shared/platform'
+import { track } from './analytics'
 import { officialBuild } from './official-build'
 import { updatePrompts } from './update-prompts'
 
@@ -57,16 +58,42 @@ function loadUpdater() {
     autoUpdater.autoInstallOnAppQuit = true
     // So usegui.com can count update checks by version (www/worker.js); nothing else about the user.
     autoUpdater.requestHeaders = { 'User-Agent': `Gui/${app.getVersion()}` }
-    autoUpdater.on('update-downloaded', (info) => prompts.downloaded(info.version))
-    autoUpdater.on('error', failed)
+    // A new version is downloading from 'update-available' until 'update-downloaded'.
+    autoUpdater.on('update-available', () => {
+      downloading = true
+    })
+    autoUpdater.on('update-downloaded', (info) => {
+      downloading = false
+      prompts.downloaded(info.version)
+    })
+    autoUpdater.on('error', (error) => {
+      // A failed check isn't counted (being offline is normal), only a download that failed.
+      if (downloading) countFailed('download')
+      downloading = false
+      failed(error)
+    })
     // On a Mac, electron-updater hands each download to Squirrel.Mac, Electron's own updater,
     // which installs it. Only Squirrel.Mac's events say whether a restart can happen. On Linux
     // they never fire: electron-updater replaces the AppImage itself when Gui restarts.
     squirrel.on('update-downloaded', () => prompts.installReady())
-    squirrel.on('error', (error) => prompts.installFailed(error))
+    squirrel.on('error', (error) => {
+      countFailed('install')
+      prompts.installFailed(error)
+    })
     return autoUpdater
   })
   return updater
+}
+
+/** A version was found and is downloading. */
+let downloading = false
+/** The stages usage data has counted a failure at this launch: once each. */
+const counted = new Set<'download' | 'install'>()
+
+function countFailed(stage: 'download' | 'install') {
+  if (counted.has(stage)) return
+  counted.add(stage)
+  track('update_failed', { stage })
 }
 
 function failed(error: Error) {

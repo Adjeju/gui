@@ -86,6 +86,7 @@ import { agentHealth } from './agent-status'
 import { AgentViewport, viewportForWidth } from './agent-viewport'
 import { declaresOwnPermissions } from './agents'
 import { track } from './analytics'
+import type { AppStartFailure } from './analytics-queue'
 import { isAutoApprove, setAutoApprove as saveAutoApprove } from './auto-approve'
 import { boardIdOf, canvasId, listBoards, viewFile, writeManifest } from './board'
 import { copyFrames, pastedFrames } from './board-clipboard'
@@ -126,7 +127,7 @@ import type { AgentPointer } from './preview-interactions'
 import { PreviewMorph } from './preview-morph'
 import { PreviewTools, SETTLE_MS } from './preview-tools'
 import { Problems } from './problems'
-import { detectProject } from './project'
+import { detectProject, startFramework } from './project'
 import { retireProject, waitForRetiredProject } from './project-handoff'
 import { ProjectResources } from './project-resources'
 import type { PromptBoard, PromptGuides, PromptViewport } from './prompt'
@@ -997,7 +998,7 @@ export class ProjectTab implements ChatPanelOwner {
 
       this.patch({ project, setup, devServer: devServer.state, drawer: closedDrawer(), branch })
       this.layout()
-      track('project_opened')
+      track('project_opened', { framework: startFramework(project, choosing) })
 
       if (!project.devCommand && !choosing) this.watchForApp(project.root)
 
@@ -2286,7 +2287,12 @@ export class ProjectTab implements ChatPanelOwner {
   }
 
   private onDevServer(state: DevServerState) {
-    const wasRunning = this.state.devServer.status === 'running'
+    const was = this.state.devServer.status
+    const wasRunning = was === 'running'
+    // Ended before the app came up: its command exited, or couldn't be run at all.
+    if (state.status === 'exited' && was === 'starting') {
+      this.countStartFailure(state.exitCode === null ? 'other' : 'exited')
+    }
     this.patch({ devServer: state })
     if (state.status === 'running' && state.url && !wasRunning) {
       track('preview_opened')
@@ -3451,7 +3457,10 @@ export class ProjectTab implements ChatPanelOwner {
       const tool = packageManagerOf(project.devCommand)
       const missing = tool && (await missingPackageManager(tool, await getShellEnv()))
       if (devServer !== this.resources.devServer) return
-      if (missing) return devServer.fail(missing)
+      if (missing) {
+        this.countStartFailure('command_missing')
+        return devServer.fail(missing)
+      }
       await devServer.start(project.devCommand, project.custom?.url ?? null)
     } finally {
       if (this.settingUp === devServer) this.settingUp = null
@@ -3478,6 +3487,7 @@ export class ProjectTab implements ChatPanelOwner {
       if (missing) {
         devServer.print(missing)
         this.patchSetup({ dependencies: 'failed' })
+        this.countStartFailure('command_missing')
         return false
       }
       // Marked as not installed until it succeeds: an install cut short leaves a partial
@@ -3504,6 +3514,8 @@ export class ProjectTab implements ChatPanelOwner {
       }
       if (result !== 0) {
         this.patchSetup({ dependencies: 'failed' })
+        // Null is a stopped install (or one that couldn't run), not one that failed.
+        if (result !== null) this.countStartFailure('install_failed')
         return false
       }
       try {
@@ -3616,6 +3628,14 @@ export class ProjectTab implements ChatPanelOwner {
     if (node.status !== 'ready') return this.patchSetup({ node })
     this.patchSetup({ node: null })
     void this.setUpAndStart()
+  }
+
+  /** The user's app didn't start: counted once per reason each time the project is opened. */
+  private countStartFailure(reason: AppStartFailure) {
+    const counted = this.resources.startFailures
+    if (counted.has(reason)) return
+    counted.add(reason)
+    track('app_start_failed', { reason })
   }
 
   private patchSetup(patch: Partial<ProjectSetup>) {

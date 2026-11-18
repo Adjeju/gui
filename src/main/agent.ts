@@ -38,7 +38,7 @@ import {
   type PermissionPolicy,
   resolveAgent,
 } from './agents'
-import { DetailedError } from './errors'
+import { AgentError, type DetailedError } from './errors'
 import { type CommandFallback, findAgentCommand } from './executables'
 import {
   type DeclaredControls,
@@ -118,9 +118,10 @@ async function requireVersion(
   const version = await cliVersion(path, env)
   if (version && meetsVersion(version, minVersion.version)) return
   const have = version ? ` (yours is ${version})` : ''
-  throw new DetailedError(
+  throw new AgentError(
     `Gui needs ${agent.name} ${minVersion.version} or newer${have}. Update it by running \`${minVersion.update}\` in a terminal, then try again.`,
     version ? null : `\`${path} --version\` didn't print a version.`,
+    'too_old',
   )
 }
 
@@ -210,6 +211,9 @@ export interface AuthMethod {
 
 /** The agent is installed but needs the user to sign in. */
 export class AgentAuthError extends Error {
+  /** Its name for usage data (analytics-queue.ts) */
+  readonly failure = 'signed_out'
+
   constructor(
     message: string,
     readonly methods: AuthMethod[],
@@ -691,7 +695,7 @@ export class AgentSession {
       // failure (busy servers, a rate limit) reads in plain words, the agent's own under them.
       const detail = errorDetail(error)
       const plain = plainAgentError(detail)
-      if (plain) throw new DetailedError(plain, detail)
+      if (plain) throw new AgentError(plain.message, detail, plain.failure)
       throw error instanceof acp.RequestError ? new Error(detail) : error
     })
   }
@@ -842,9 +846,10 @@ export class AgentSession {
   private exitError(code: number | null, signal: NodeJS.Signals | null) {
     const output = this.stderr.trim().split('\n').slice(-3).join('\n')
     const how = signal ? `Exited on ${signal}` : `Exited with code ${code}`
-    return new DetailedError(
+    return new AgentError(
       `${agentName(this.agentId)} stopped unexpectedly.`,
       output ? `${how}:\n${output}` : how,
+      'agent_quit',
     )
   }
 }
