@@ -33,7 +33,7 @@ Gui speaks the [Agent Client Protocol](https://agentclientprotocol.com) and reus
 | Kiro | `kiro-cli acp` | `kiro-cli login` |
 | OpenCode | `opencode acp` | `opencode auth login` |
 | Pi | Your `pi` 0.81+, through the bundled [`pi-acp`](https://github.com/svkozak/pi-acp) adapter | `pi`, then `/login` |
-| Muse Code | Your `muse`, through the bundled `@bex-co/muse-code-acp` adapter | `muse login` |
+| Muse Code | `muse acp --trust-workspace` (Muse 1.4.23+) | `muse login` |
 | Amp | Your `amp`, through the bundled [`amp-acp`](https://github.com/tao12345666333/amp-acp) adapter | `amp login` |
 | Devin | `devin acp` | `devin auth login` |
 | Cursor | `cursor-agent acp`, or `agent acp` when that command is Cursor's | `cursor-agent login` |
