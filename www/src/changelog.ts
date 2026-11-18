@@ -11,6 +11,16 @@ export interface Release {
 
 export const releases: Release[] = [
   {
+    version: '0.1.0-alpha.24',
+    date: '2026-11-17',
+    changes: [
+      'The model picker shows all your agents: a tab for each one, and Recent for the models you used last. Search finds a model from any agent.',
+      'Picking another agent’s model switches an empty chat to that agent, or starts a new chat with it. If a reply is still running, Gui asks before it stops.',
+      'Gui remembers each agent’s models between launches, so the picker lists them right away. It checks each agent again when you pick it, and otherwise at most once a day.',
+      'A new chat says once when its agent can’t use Gui’s preview and canvas tools, like Pi, or hasn’t connected to them. For Muse, it says how to fix that.',
+    ],
+  },
+  {
     version: '0.1.0-alpha.23',
     date: '2026-11-17',
     changes: [
