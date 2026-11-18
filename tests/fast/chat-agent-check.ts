@@ -162,5 +162,9 @@ try {
   console.log('A restored chat checks its agent passed.')
   flushPrefsSync()
 } finally {
+  // The agents' models are saved as the check lands them: let that write finish before its
+  // folder goes.
+  agentHealth.dispose()
+  await new Promise((resolve) => setTimeout(resolve, 100))
   await rm(userData, { recursive: true, force: true })
 }
