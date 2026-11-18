@@ -942,6 +942,77 @@ test('a started chat: another agent’s model starts a new chat, and while it wo
   }, 'a new chat on Models, on Atlas')
 })
 
+test('New chat while a reply runs asks first, as the picker does; with none it starts at once', async ({
+  launch,
+}) => {
+  const session = await launch({ fixture: 'vite', prefs: STAND_INS_ONLY })
+  await session.declineConsentDialogs()
+  await addAgent(session, 'short')
+  const { chat } = session
+  const snapshot = () => session.chatSnapshot()
+  const newChat = chat.getByRole('button', { name: 'New chat', exact: true })
+  const message = chat.getByRole('textbox', { name: /^Message / })
+  const question = chat.getByRole('region', { name: 'Stop Models and start a new chat?' })
+  const working = async () => {
+    const { meta, turns } = await snapshot()
+    expect(meta.status).toBe('working')
+    expect(turns).toHaveLength(1)
+  }
+
+  expect(await send(session, 'SLOW')).toBe(true)
+  await waitFor(async () => (await snapshot()).meta.status === 'working', 'the turn')
+
+  // Its button asks, over the message box, with what stopping costs.
+  await newChat.click()
+  await expect(question).toBeVisible()
+  await expect(question).toContainText(
+    'Models is still working. This chat is archived with what it has done so far.',
+  )
+  await expect(question.getByRole('button', { name: 'Cancel' })).toBeFocused()
+  await shots(session, 'new-chat-confirm')
+  // Cancel: the reply keeps running, and the keyboard goes back to the button.
+  await question.getByRole('button', { name: 'Cancel' }).click()
+  await expect(question).toHaveCount(0)
+  await expect(newChat).toBeFocused()
+  await working()
+
+  // ⇧⌘K (Agent → New Chat) asks the same; Esc is a no too, back to the message box.
+  await message.focus()
+  await session.app.evaluate(({ Menu }) => {
+    const find = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
+      for (const item of items) {
+        if (item.label === 'New Chat' && item.visible) return item
+        const inner = item.submenu && find(item.submenu.items)
+        if (inner) return inner
+      }
+      return undefined
+    }
+    find(Menu.getApplicationMenu()?.items ?? [])?.click()
+  })
+  await expect(question).toBeVisible()
+  await expect(question.getByRole('button', { name: 'Cancel' })).toBeFocused()
+  await chat.keyboard.press('Escape')
+  await expect(question).toHaveCount(0)
+  await expect(message).toBeFocused()
+  await working()
+
+  // Yes: the turn stops and the chat is archived, as New chat always did.
+  await newChat.click()
+  await question.getByRole('button', { name: 'Stop and Start New Chat' }).click()
+  await expect(question).toHaveCount(0)
+  await waitFor(async () => {
+    const { turns, meta } = await snapshot()
+    return turns.length === 0 && meta.archived !== null
+  }, 'a new chat, with the old one archived')
+
+  // With no reply running, New chat doesn't ask.
+  expect(await send(session, 'Hello')).toBe(true)
+  expect((await session.waitForTurn(0)).turn.status).toBe('done')
+  await newChat.click()
+  await waitFor(async () => (await snapshot()).turns.length === 0, 'a new chat at once')
+  await expect(question).toHaveCount(0)
+})
+
 test('an agent that isn’t ready: its tab is dimmed and says why; one with no models says so', async ({
   launch,
 }) => {
