@@ -203,7 +203,15 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
   </p>
 
   <!-- Phones are sent here by the worker when there is no script to open the dialog. -->
-  <p class="mac-only" id="mac-only">Gui runs on Mac and Linux. Open usegui.com on your computer to download it.</p>
+  <p class="target-note" id="mac-only">Gui runs on Mac and Linux. Open usegui.com on your computer to download it.</p>
+
+  <!-- The worker sends Windows here from /download. The script also opens the waitlist. -->
+  <p class="target-note" id="windows">
+    Gui isn't out for Windows yet.{' '}
+    <button class="waitlist-open" type="button" commandfor="waitlist-dialog" command="show-modal">
+      Sign up for the waitlist
+    </button>
+  </p>
 
   <section class="waitlist" id="waitlist">
     <p>
@@ -553,6 +561,8 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
   const linux = /Linux/.test(ua) && !/Android/.test(ua)
   // Windows is not out yet: the button opens the Windows waitlist, not the Mac's DMG.
   const windows = /Windows/.test(ua)
+  // The worker sends Windows from /download to #windows: open the waitlist there.
+  if (location.hash === '#windows') showDialog(dialog)
   if (linux) downloadLabel.textContent = 'Download for Linux'
   if (windows) downloadLabel.textContent = 'Join the Windows waitlist'
   downloadButton.addEventListener('click', (event) => {
@@ -736,11 +746,11 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
   .download-count[hidden] {
     display: none;
   }
-  .mac-only {
+  .target-note {
     display: none;
     margin-top: var(--s-3);
   }
-  .mac-only:target {
+  .target-note:target {
     display: block;
   }
   .dialog-note {

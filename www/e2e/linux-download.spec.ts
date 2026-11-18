@@ -97,4 +97,35 @@ test.describe('on Windows', () => {
     await expect(dialog.locator('[data-waitlist-done]')).toBeVisible()
     expect(posted).toContain('name="platform"\r\n\r\nwindows\r\n')
   })
+  // The worker sends /download from Windows to /#windows (worker.js).
+  test('/#windows says Gui is not out for Windows and opens the waitlist', async ({ page }) => {
+    await page.goto('/#windows')
+    const dialog = page.getByRole('dialog', { name: 'Gui for Windows' })
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: 'Close' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(page.locator('#windows')).toBeVisible()
+    await expect(page.locator('#windows')).toContainText("Gui isn't out for Windows yet.")
+    await expect(page.locator('#mac-only')).toBeHidden()
+  })
+})
+
+test.describe('on Windows without JavaScript', () => {
+  test.use({
+    javaScriptEnabled: false,
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/142.0 Safari/537.36',
+  })
+
+  test('/#windows says Gui is not out for Windows and offers the waitlist', async ({ page }) => {
+    await page.goto('/#windows')
+    const note = page.locator('#windows')
+    await expect(note).toBeVisible()
+    await expect(note).toContainText("Gui isn't out for Windows yet.")
+    await expect(note.getByRole('button', { name: 'Sign up for the waitlist' })).toBeVisible()
+    await expect(page.locator('#mac-only')).toBeHidden()
+    // Chrome opens the dialog from the button by itself (commandfor), without the script.
+    await note.getByRole('button', { name: 'Sign up for the waitlist' }).click()
+    await expect(page.getByRole('dialog', { name: 'Gui for Windows' })).toBeVisible()
+  })
 })
