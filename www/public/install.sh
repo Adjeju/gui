@@ -95,6 +95,17 @@ running() {
   return 1
 }
 
+# True when files $1 and $2 have the same bytes. Without cmp, they count as different.
+same() {
+  if has cmp; then
+    cmp -s "$1" "$2"
+  elif has sha512sum || has shasum || has openssl; then
+    [ "$(sha512_hex "$1")" = "$(sha512_hex "$2")" ]
+  else
+    return 1
+  fi
+}
+
 install_gui() {
   case $(uname -s) in
     Linux) ;;
@@ -153,6 +164,10 @@ install_gui() {
   chmod 755 "$tmp"
   was_running=no
   running "$app" && was_running=yes
+  # Whether this replaces a different file: reinstalling the same version changes nothing a
+  # running Gui would need a restart for.
+  changed=yes
+  if [ -f "$app" ] && same "$tmp" "$app"; then changed=no; fi
   # Moving the new file over the old one leaves a running Gui on the old file until it quits.
   mv -f "$tmp" "$app" || fail "couldn't move Gui into $dir."
   tmp=
@@ -196,7 +211,9 @@ install_gui() {
 
   say "Installed Gui $version."
   say "Open it from your app launcher, or run: $(shell_path "$app")"
-  [ "$was_running" = yes ] && say "Restart Gui to use the new version."
+  if [ "$was_running" = yes ] && [ "$changed" = yes ]; then
+    say "Restart Gui to use the new version."
+  fi
   [ "$checked" = no ] && say "The download's checksum wasn't checked: this computer has no sha512sum."
   [ "$icon" = yes ] || say "Gui's icon couldn't be added, so the launcher shows a generic one."
   if ! has fusermount3 && ! has fusermount; then
