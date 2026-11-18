@@ -7,26 +7,38 @@
  * - `unconnected`: Gui passed its server, and a turn ended without a single request from that
  *   session reaching it (an agent may withhold MCP servers by its own rules). Some agents
  *   only connect when they first need a tool, so this waits for a turn
- *   to end, and a request arriving later clears it.
+ *   to end, and a request arriving later clears it. Others connect while the session is
+ *   still starting (Muse Code, before it answers), which counts the same.
  *
  * Said once per chat: shown from when it's known until the user sends a message with it on
  * screen (`messageSent`), or until it no longer holds.
  */
 export type ToolReachNotice = 'unsupported' | 'unconnected'
 
-type State = 'none' | 'unsupported' | 'waiting' | 'connected' | 'unconnected'
+type State = 'none' | 'starting' | 'unsupported' | 'waiting' | 'connected' | 'unconnected'
 
 export class ToolReach {
   private state: State = 'none'
   private said = false
+  /** A request reached Gui's server while the session was still starting. */
+  private early = false
+
+  /** A session is about to start; what the last one did no longer counts. */
+  starting() {
+    this.state = 'starting'
+    this.early = false
+  }
 
   /** A session started: Gui had `offered` tool servers for it and passed `sent` of them on. */
   started(offered: number, sent: number) {
-    this.state = offered === 0 ? 'none' : sent === 0 ? 'unsupported' : 'waiting'
+    const waiting = this.early ? 'connected' : 'waiting'
+    this.state = offered === 0 ? 'none' : sent === 0 ? 'unsupported' : waiting
+    this.early = false
   }
 
   /** A request from this session reached Gui's server. */
   connected() {
+    if (this.state === 'starting') this.early = true
     if (this.state === 'waiting' || this.state === 'unconnected') this.state = 'connected'
   }
 

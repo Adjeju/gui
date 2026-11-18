@@ -28,6 +28,27 @@ test('an agent that connected is never mentioned', () => {
   expect(reach.notice).toBeNull()
 })
 
+test('an agent that connects while its session is still starting counts as connected', () => {
+  const reach = new ToolReach()
+  // Muse Code connects before it answers session/new or session/resume.
+  reach.starting()
+  reach.connected()
+  reach.started(1, 1)
+  reach.turnEnded()
+  expect(reach.notice).toBeNull()
+})
+
+test('a restarted session is judged on its own, not on the one before', () => {
+  const reach = new ToolReach()
+  reach.starting()
+  reach.connected()
+  reach.started(1, 1)
+  reach.starting()
+  reach.started(1, 1)
+  reach.turnEnded()
+  expect(reach.notice).toBe('unconnected')
+})
+
 test('one sent tools waits for a turn to end before saying it never connected', () => {
   const reach = new ToolReach()
   reach.started(1, 1)

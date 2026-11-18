@@ -2102,6 +2102,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       onExit: (error) => this.onAgentExit(agent, error),
     })
     this.agent = agent
+    this.toolReach.starting()
     const access = this.options.toolAccess(() => {
       if (this.toolAccess !== access) return
       this.toolReach.connected()
