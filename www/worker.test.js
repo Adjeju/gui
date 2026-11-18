@@ -696,6 +696,78 @@ test('unknown events, unknown props and values that do not fit are dropped, not 
   expect(JSON.stringify(events)).not.toContain('evil')
 })
 
+test('the failure, turn and framework events keep only the values on their lists', async () => {
+  posthog()
+  env.POSTHOG_KEY = 'phc_test'
+  const response = await sendUsage({
+    installId: INSTALL,
+    events: [
+      {
+        event: 'turn_finished',
+        props: {
+          agent: 'codex',
+          outcome: 'failed',
+          reason: 'rate_limited',
+          picked: 'yes',
+          tools: 'no',
+          mode: 'own',
+        },
+      },
+      {
+        event: 'turn_finished',
+        props: {
+          agent: 'claude',
+          outcome: 'failed',
+          reason: 'Error: ENOENT /Users/someone/app',
+          picked: 'true',
+          tools: 'maybe',
+          mode: 'yolo',
+          error: 'boom',
+        },
+      },
+      { event: 'project_opened', props: { framework: 'astro' } },
+      { event: 'project_opened', props: { framework: 'my-secret-framework', root: '/Users/x' } },
+      { event: 'app_start_failed', props: { reason: 'install_failed' } },
+      { event: 'app_start_failed', props: { reason: 'npm ERR! code E404', command: 'npm i' } },
+      { event: 'agent_unavailable', props: { agent: 'gemini', reason: 'too_old' } },
+      { event: 'agent_unavailable', props: { agent: 'claude', reason: 'not_installed' } },
+      { event: 'update_failed', props: { stage: 'download' } },
+      { event: 'update_failed', props: { stage: 'check' } },
+      { event: 'dev_server_crashed', props: { reason: 'exited' } },
+    ],
+  })
+  expect(response.status).toBe(204)
+  const events = await sent()
+  /** @param {any} e */
+  const props = (e) => {
+    const { $ip, $geoip_disable, $process_person_profile, country, ...rest } = e.properties
+    return { event: e.event, ...rest }
+  }
+  expect(events.map(props)).toEqual([
+    {
+      event: 'turn_finished',
+      agent: 'codex',
+      outcome: 'failed',
+      reason: 'rate_limited',
+      picked: 'yes',
+      tools: 'no',
+      mode: 'own',
+    },
+    { event: 'turn_finished', agent: 'claude', outcome: 'failed' },
+    { event: 'project_opened', framework: 'astro' },
+    { event: 'project_opened' },
+    { event: 'app_start_failed', reason: 'install_failed' },
+    { event: 'app_start_failed' },
+    { event: 'agent_unavailable', agent: 'gemini', reason: 'too_old' },
+    { event: 'agent_unavailable', agent: 'claude' },
+    { event: 'update_failed', stage: 'download' },
+    { event: 'update_failed' },
+  ])
+  for (const leaked of ['ENOENT', 'Users', 'secret', 'npm', 'boom']) {
+    expect(JSON.stringify(events)).not.toContain(leaked)
+  }
+})
+
 test('a batch is capped, and an event time that could not be real is now', async () => {
   posthog()
   env.POSTHOG_KEY = 'phc_test'

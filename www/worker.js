@@ -398,15 +398,59 @@ async function crash(request, env) {
  */
 const VERSION = /^[\w.+-]{1,40}$/
 const NAME = /^[a-z][\w-]{0,39}$/i
+const YES_NO = ['yes', 'no']
+/** The same lists as the app's (src/main/analytics-queue.ts) */
+const TURN_FAILURES = [
+  'signed_out',
+  'too_old',
+  'agent_quit',
+  'context_too_long',
+  'no_credit',
+  'servers_busy',
+  'rate_limited',
+  'server_error',
+  'offline',
+  'other',
+]
+const FRAMEWORKS = [
+  'next',
+  'vite',
+  'astro',
+  'nuxt',
+  'remix',
+  'react-router',
+  'angular',
+  'gatsby',
+  'react-scripts',
+  'docusaurus',
+  'vitepress',
+  'parcel',
+  'webpack',
+  'vinxi',
+  'other',
+  'none',
+  'unknown',
+]
 /** @type {Record<string, Record<string, RegExp | string[]>>} */
 const EVENTS = {
   app_opened: { version: VERSION, os: NAME, osVersion: VERSION, arch: NAME },
-  turn_finished: { agent: NAME, outcome: ['done', 'failed', 'stopped'], provider: NAME },
-  project_opened: {},
+  turn_finished: {
+    agent: NAME,
+    outcome: ['done', 'failed', 'stopped'],
+    provider: NAME,
+    reason: TURN_FAILURES,
+    picked: YES_NO,
+    tools: YES_NO,
+    mode: ['ask', 'auto', 'own'],
+  },
+  project_opened: { framework: FRAMEWORKS },
   canvas_created: {},
   preview_opened: {},
+  app_start_failed: { reason: ['install_failed', 'command_missing', 'exited', 'other'] },
   agent_connected: { agent: NAME },
+  agent_unavailable: { agent: NAME, reason: ['signed_out', 'too_old', 'error'] },
   update_installed: { from: VERSION, to: VERSION },
+  update_failed: { stage: ['download', 'install'] },
 }
 /** A batch is a few kilobytes; much more isn't one. */
 const MAX_USAGE_BYTES = 64_000
