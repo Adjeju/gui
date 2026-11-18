@@ -58,9 +58,9 @@ To install your build as `/Applications/Gui.app`, with the `gui` terminal comman
 
 ### Linux
 
-On Linux, you need Bun 1.4+, git, and a C++ toolchain (`gcc`, `g++`, `make`, `python3`) to compile `node-pty`. Run `bun install` and `bun run dev` as above.
+To install the official Linux build, run `curl -fsSL https://usegui.com/install.sh | sh`. It installs the AppImage for x64 or arm64 to `~/.local/share/gui` and adds Gui to your app launcher. The AppImage and a `.deb` are also at [usegui.com/download](https://usegui.com/download).
 
-Official Linux builds (an AppImage and a `.deb`, for x64 and arm64) are at [usegui.com/download](https://usegui.com/download). To package Gui yourself, run `bun run dist:linux`. It writes an AppImage and a `.deb` to `release/`. The `.deb` build needs `libxcrypt-compat` on Fedora. In Gui, use **Gui → 'gui' Command → Install 'gui' Command…** to add the `gui` command to `~/.local/bin`.
+To build it from source, you need Bun 1.4+, git, and a C++ toolchain (`gcc`, `g++`, `make`, `python3`) to compile `node-pty`. Run `bun install` and `bun run dev` as above. To package Gui yourself, run `bun run dist:linux`. It writes an AppImage and a `.deb` to `release/`. The `.deb` build needs `libxcrypt-compat` on Fedora. In Gui, use **Gui → 'gui' Command → Install 'gui' Command…** to add the `gui` command to `~/.local/bin`.
 
 Narrated recordings are not transcribed on Linux.
 
