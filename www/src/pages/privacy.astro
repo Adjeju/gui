@@ -6,16 +6,16 @@ import TextPage from '../components/TextPage.astro'
   title="Privacy"
   description="What Gui collects, why, and how to remove it."
   path="/privacy"
-  updated="November 16, 2026"
+  updated="November 17, 2026"
 >
   <p>
     Work In Progress LLC (“WIP”) makes Gui. This page tells you what Gui collects about you, why,
     and how to remove it. If you have a question, send an email to <a href="mailto:hello@usegui.com">hello@usegui.com</a>.
   </p>
 
-  <h2>Your projects stay on your Mac</h2>
+  <h2>Your projects stay on your computer</h2>
   <p>
-    Gui runs your app and your agent on your Mac. Gui does not send your code, your files, your
+    Gui runs your app and your agent on your computer. Gui does not send your code, your files, your
     chats, or your screenshots to us. Gui sends us only two things about how it runs: crash
     reports and usage data, below. You can turn off each of them.
   </p>
@@ -28,9 +28,9 @@ import TextPage from '../components/TextPage.astro'
   <h2>Crash reports</h2>
   <p>
     When Gui has an error or a part of Gui stops, Gui sends a crash report to us. It contains the
-    error message, where in Gui’s code the error occurred, the Gui and macOS versions, the type of
-    Mac processor, your country, and the date. Gui removes your user name from file paths before it
-    sends the report. A crash report does not contain your code, your files, your chats, or the
+    error message, where in Gui’s code the error occurred, the Gui version, the version of macOS
+    (on Linux, of the Linux kernel), the type of processor, your country, and the date. Gui
+    removes your user name from file paths before it sends the report. A crash report does not contain your code, your files, your chats, or the
     pages that you preview. We use crash reports only to repair Gui. To stop them, turn off Send
     crash reports in Gui, under Settings → Account.
   </p>
@@ -41,7 +41,10 @@ import TextPage from '../components/TextPage.astro'
     use. Gui sends an event when:
   </p>
   <ul>
-    <li>Gui opens. The event contains the Gui and macOS versions and the type of Mac processor.</li>
+    <li>
+      Gui opens. The event contains the Gui version, the operating system (macOS or Linux) and its
+      version (on Linux, the Linux kernel version), and the type of processor.
+    </li>
     <li>
       Your agent finishes a message. The event contains the agent (only “custom” for an agent that
       you added yourself), whether the message finished, failed, or was stopped, and the model
@@ -85,7 +88,7 @@ import TextPage from '../components/TextPage.astro'
       Whether you choose to get emails about Gui. This is off when you make an account. You can turn it on or off in Settings → Account.
     </li>
     <li>
-      A record of each Mac that is signed in. We keep only a hash of its sign-in token, not the
+      A record of each computer that is signed in. We keep only a hash of its sign-in token, not the
       token.
     </li>
   </ul>
@@ -105,9 +108,9 @@ import TextPage from '../components/TextPage.astro'
 
   <h2>The website</h2>
   <p>
-    If you sign up for the Windows and Linux waitlist on usegui.com, we keep your email address,
-    the platform that you select, your country, and the date. We use your address only to tell you
-    when Gui is available for that platform.
+    If you sign up for the Windows waitlist on usegui.com, we keep your email address, the
+    platform, your country, and the date. We use your address only to tell you when Gui is
+    available for that platform.
   </p>
   <p>
     When you download Gui from usegui.com, we count the download. We keep the date, your country,
@@ -128,7 +131,7 @@ import TextPage from '../components/TextPage.astro'
   <p>
     To delete your Gui account and all the data above, send an email to{' '}
     <a href="mailto:hello@usegui.com">hello@usegui.com</a> from the address on your account. Signing
-    out in Gui removes the sign-in from that Mac only. To remove your address from the waitlist,
+    out in Gui removes the sign-in from that computer only. To remove your address from the waitlist,
     send an email to the same address.
   </p>
 
