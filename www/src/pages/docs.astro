@@ -73,11 +73,11 @@ const shortcuts = [
 
   <h2 id="start">What you need</h2>
   <ul>
-    <li>A Mac with Apple silicon (M1 or later) and macOS 13 or later.</li>
+    <li>A Mac with Apple silicon (M1 or later) and macOS 13 or later, or a Linux computer (x86_64 or arm64).</li>
     <li>A Gui account. Sign in with Google, GitHub, or a code sent to your email. Gui is free during the alpha.</li>
     <li>
       A coding agent, for example Claude Code or Codex. Gui does not include an AI model. It uses
-      the agent on your Mac, with your login and your plan.
+      the agent on your computer, with your login and your plan.
     </li>
   </ul>
   <p>
@@ -338,7 +338,7 @@ const shortcuts = [
   </p>
   <p>
     The agent works on the project or canvas in Gui’s front window, and you watch it there. It
-    only works on this Mac, while you’re signed in to Gui. The setup includes a token: keep it to
+    only works on this computer, while you’re signed in to Gui. The setup includes a token: keep it to
     yourself, and click <strong>New token</strong> if it gets out.
   </p>
   <p>
@@ -349,7 +349,7 @@ const shortcuts = [
 
   <h2 id="github">GitHub</h2>
   <p>
-    <strong>Clone…</strong> on the start screen copies a repository to your Mac. Type its name or
+    <strong>Clone…</strong> on the start screen copies a repository to your computer. Type its name or
     address, or connect GitHub to choose from your repositories, private ones too. In{' '}
     <strong>Settings&nbsp;→ GitHub</strong>, you can connect or disconnect GitHub and choose the
     repositories that Gui can get. Gui uses the connection only to clone.
@@ -375,8 +375,9 @@ const shortcuts = [
 
   <h2 id="data">Your data</h2>
   <p>
-    Your projects stay on your Mac. Gui keeps your chats, the copies for Undo, recordings and
-    canvases in <code>~/Library/Application Support/Gui</code>. Gui does not send your code,
+    Your projects stay on your computer. Gui keeps your chats, the copies for Undo, recordings and
+    canvases in <code>~/Library/Application Support/Gui</code> on a Mac and in
+    <code>~/.config/Gui</code> on Linux. Gui does not send your code,
     files, chats or screenshots to us. Your agent sends your prompts and code to the company that
     makes it, under that company’s terms.
   </p>
@@ -395,7 +396,7 @@ const shortcuts = [
   <ul>
     <li>
       <strong>Help&nbsp;→ Contact Support</strong> starts an email to{' '}
-      <a href="mailto:hello@usegui.com">hello@usegui.com</a> with your Gui and macOS versions in
+      <a href="mailto:hello@usegui.com">hello@usegui.com</a> with your Gui and system versions in
       it.
     </li>
     <li><a href={feedback} target="_blank" rel="noopener">Send a message on X</a>.</li>
