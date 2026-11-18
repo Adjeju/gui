@@ -22,6 +22,11 @@ const lists = new Map<AgentId, ModelSettings>()
 /** Checks running at once, now and at most */
 const checks = { running: 0, most: 0 }
 class AgentMissingError extends Error {}
+class AgentAuthError extends Error {
+  readonly methods = []
+}
+/** Agents whose check finds the user isn't signed in */
+const signedOut = new Set<AgentId>()
 /** Holds the scan for installed agents open, to act while launch is still getting to the checks. */
 let scanning: Promise<void> = Promise.resolve()
 
@@ -49,7 +54,7 @@ mock.module('../../src/main/agents', () => ({
   },
 }))
 mock.module('../../src/main/agent', () => ({
-  AgentAuthError: class extends Error {},
+  AgentAuthError,
   AgentSession: class {
     constructor(readonly id: AgentId) {}
     async start() {
@@ -59,6 +64,7 @@ mock.module('../../src/main/agent', () => ({
       await new Promise((resolve) => setTimeout(resolve, 2))
       checks.running--
       if (gone.has(this.id)) throw new AgentMissingError(`${this.id} isn't installed.`)
+      if (signedOut.has(this.id)) throw new AgentAuthError(`Sign in to ${this.id}.`)
       return { models: lists.get(this.id) ?? null }
     }
     dispose() {}
@@ -103,6 +109,7 @@ beforeEach(() => {
   userData = mkdtempSync(join(tmpdir(), 'gui-agent-status-'))
   started.length = 0
   gone.clear()
+  signedOut.clear()
   lists.clear()
   checks.most = 0
   scanning = Promise.resolve()
@@ -230,4 +237,88 @@ test('an agent’s models are listed from its last check until it is checked aga
   store.dispose()
   store = new AgentHealthStore()
   expect(store.listedModels('opencode')).toBeNull()
+})
+
+// Each check starts the agent's CLI, so the checks after launch skip an agent a check found in
+// the last day: it lists its models from then, and is checked when the user picks it.
+
+const HOUR = 60 * 60_000
+const T = Date.UTC(2026, 10, 17)
+const kimi: ModelSettings = {
+  model: { id: 'model', value: 'k3', options: [{ value: 'k3', name: 'Kimi K3', group: null }] },
+  effort: null,
+  provider: null,
+}
+/** A launch at `now`: the agents in use, then the others in the background. */
+async function launchAt(now: number) {
+  store = new AgentHealthStore(() => now)
+  await store.checkOnLaunch('claude')
+  started.length = 0
+  await store.checkInBackground()
+}
+
+test('after launch, an agent checked less than a day ago isn’t checked again', async () => {
+  setPrefs({ disabledAgents: [] })
+  lists.set('opencode', kimi)
+  await launchAt(T)
+  expect(started).toContain('opencode')
+  expect(started).toContain('kiro')
+  store.dispose()
+
+  // Next launch, an hour on: its list from then, unchecked. Agents with no list are checked.
+  await launchAt(T + HOUR)
+  expect(started).not.toContain('opencode')
+  expect(started).toContain('kiro')
+  expect(statusOf('opencode')).toBe('unknown')
+  expect(store.listedModels('opencode')).toEqual({ model: kimi.model, provider: null })
+  // Picked by the user: checked right away all the same.
+  store.ensureChecked('opencode')
+  await until(() => statusOf('opencode') === 'ready')
+  expect(started).toContain('opencode')
+  store.dispose()
+
+  // A day after its last check: checked again.
+  await launchAt(T + 26 * HOUR)
+  expect(started).toContain('opencode')
+})
+
+test('a clock set back makes the last check’s time due', async () => {
+  setPrefs({ disabledAgents: [] })
+  lists.set('opencode', kimi)
+  await launchAt(T)
+  store.dispose()
+  await launchAt(T - HOUR)
+  expect(started).toContain('opencode')
+})
+
+test('an agent not signed in isn’t started again until a day on, unless the user asks', async () => {
+  setPrefs({ disabledAgents: [] })
+  signedOut.add('opencode')
+  await launchAt(T)
+  expect(statusOf('opencode')).toBe('signed-out')
+  store.dispose()
+
+  await launchAt(T + HOUR)
+  expect(started).not.toContain('opencode')
+  expect(store.listedModels('opencode')).toBeNull()
+  await store.check('opencode')
+  expect(statusOf('opencode')).toBe('signed-out')
+  store.dispose()
+
+  await launchAt(T + 26 * HOUR)
+  expect(started).toContain('opencode')
+})
+
+test('a check that fails doesn’t count, so the next launch checks again', async () => {
+  setPrefs({ disabledAgents: [] })
+  lists.set('opencode', kimi)
+  await launchAt(T - 26 * HOUR)
+  store.dispose()
+  gone.add('opencode')
+  await launchAt(T)
+  expect(statusOf('opencode')).toBe('not-installed')
+  store.dispose()
+  gone.clear()
+  await launchAt(T + HOUR)
+  expect(started).toContain('opencode')
 })
