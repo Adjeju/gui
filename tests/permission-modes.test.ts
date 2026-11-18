@@ -39,8 +39,8 @@ const muse: PermissionControls = {
 /** The modes `muse acp` 1.4.23 offers: its approval policies. */
 const MUSE_MODES = ['allowAll', 'promptUnmatched', 'onRequest', 'denyUnmatched']
 const antigravity: PermissionControls = { mode: { ask: ['default'], auto: ['auto', 'default'] } }
-/** The modes `agy acp` names (1.5.11): `auto` only where the account has Auto mode. */
-const AGY_MODES = ['default', 'accept-edits', 'plan', 'auto']
+/** The modes `agy acp` 1.5.11 offers; `auto` only where the account has Auto mode. */
+const AGY_MODES = ['default', 'accept-edits', 'auto', 'plan']
 const CLAUDE_MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']
 
 describe('ownPermissions: does the agent decide what it asks, rather than Gui?', () => {
@@ -125,7 +125,6 @@ describe('permissionChanges', () => {
   })
 
   test('Antigravity CLI: Ask is Default, Auto is its Auto, or Default where it has none', () => {
-    // A session starts in Auto unless the user saved another mode.
     expect(permissionChanges(antigravity, 'ask', withModes('auto', AGY_MODES))).toEqual({
       changes: [{ kind: 'mode', modeId: 'default' }],
       missing: [],

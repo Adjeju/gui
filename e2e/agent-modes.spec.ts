@@ -15,7 +15,7 @@ import { expect, test } from './helpers/test'
  * Speaks ACP (ndjson JSON-RPC) on stdio, as `kind`: `muse` offers `muse acp`'s modes (its
  * approval policies) as a `mode` config option and as ACP session modes, and starts in
  * Allow all (as a user's own settings may pick); `grok` has no modes; `antigravity` offers
- * `agy acp`'s modes the same two ways, and starts in Auto as agy does with no saved mode. A
+ * `agy acp`'s modes the same two ways, and starts in Default, as agy 1.5.11 did. A
  * prompt containing SWITCH=<mode> changes the mode itself and reports only the mode; one
  * containing RUN asks to run a command.
  */
@@ -25,15 +25,15 @@ const [log, kind] = process.argv.slice(2)
 const MODES = kind === 'antigravity' ? [
   { id: 'default', name: 'Default' },
   { id: 'accept-edits', name: 'Accept edits' },
-  { id: 'plan', name: 'Plan' },
   { id: 'auto', name: 'Auto' },
+  { id: 'plan', name: 'Plan' },
 ] : [
   { id: 'allowAll', name: 'Allow all' },
   { id: 'promptUnmatched', name: 'Ask before unmatched actions' },
   { id: 'onRequest', name: 'Ask on request' },
   { id: 'denyUnmatched', name: 'Deny unmatched actions' },
 ]
-const state = { mode: kind === 'antigravity' ? 'auto' : 'allowAll' }
+const state = { mode: kind === 'antigravity' ? 'default' : 'allowAll' }
 const select = (id, name, currentValue, options, extra = {}) =>
   ({ id, name, type: 'select', currentValue, options, ...extra })
 const configOptions = () => {
@@ -320,17 +320,17 @@ test('Ask sets Antigravity CLI to Default and Auto to its Auto, and a mode it pi
   const agent = await useStandIn(session, 'antigravity', 'antigravity')
   const { chat } = session
 
-  // Auto: agy's session already starts in its Auto mode, so nothing changes.
+  // Auto (a fresh profile's default): before the first prompt, from Default to agy's Auto.
   await autoModeIs(session, true)
   await turn(session, 0, 'Hello')
-  expect(steps(agent.runs()[0])).toEqual(['prompt'])
+  expect(steps(agent.runs()[0])).toEqual(['mode=auto', 'prompt'])
   await modeIs(session, 'Auto')
 
   // Ask between turns applies at once: Default, which asks before every edit and command.
   await autoChip(chat).click()
   await autoModeIs(session, false)
   await modeIs(session, 'Default')
-  expect(steps(agent.runs()[0])).toEqual(['prompt', 'mode=default'])
+  expect(steps(agent.runs()[0])).toEqual(['mode=auto', 'prompt', 'mode=default'])
 
   // The agent enters Plan itself: the header shows it, and Auto then sets Auto.
   await turn(session, 1, 'SWITCH=plan Plan the next step')
@@ -338,5 +338,11 @@ test('Ask sets Antigravity CLI to Default and Auto to its Auto, and a mode it pi
   await autoChip(chat).click()
   await autoModeIs(session, true)
   await modeIs(session, 'Auto')
-  expect(steps(agent.runs()[0])).toEqual(['prompt', 'mode=default', 'prompt', 'mode=auto'])
+  expect(steps(agent.runs()[0])).toEqual([
+    'mode=auto',
+    'prompt',
+    'mode=default',
+    'prompt',
+    'mode=auto',
+  ])
 })

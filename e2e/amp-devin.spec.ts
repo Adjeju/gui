@@ -272,10 +272,9 @@ process.stdin.on('data', chunk => {
 `
 
 /**
- * `agy acp` as 1.5.11 answers `initialize`, signed in: it takes HTTP MCP servers only when
- * run with --process-per-session. Its modes come as a `mode` config option and as session
- * modes (the binary has both; their names are a guess), here starting in Accept edits as a
- * user's own saved mode may pick.
+ * `agy acp` as 1.5.11 answers, signed in: it takes HTTP MCP servers only when run with
+ * --process-per-session, and its modes come as a `mode` config option and as session modes.
+ * Here it starts in Accept edits, as a user's own saved mode may pick.
  */
 const AGY_SCRIPT = String.raw`
 const { appendFileSync } = require('node:fs')
@@ -291,8 +290,8 @@ const notify = (sessionId, update) => write({ method: 'session/update', params: 
 const availableModes = [
   { id: 'default', name: 'Default' },
   { id: 'accept-edits', name: 'Accept edits' },
-  { id: 'plan', name: 'Plan' },
   { id: 'auto', name: 'Auto' },
+  { id: 'plan', name: 'Plan' },
 ]
 let mode = 'accept-edits'
 const configOptions = () => [{
