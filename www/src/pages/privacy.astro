@@ -6,7 +6,7 @@ import TextPage from '../components/TextPage.astro'
   title="Privacy"
   description="What Gui collects, why, and how to remove it."
   path="/privacy"
-  updated="November 17, 2026"
+  updated="November 18, 2026"
 >
   <p>
     Work In Progress LLC (“WIP”) makes Gui. This page tells you what Gui collects about you, why,
@@ -48,13 +48,36 @@ import TextPage from '../components/TextPage.astro'
     <li>
       Your agent finishes a message. The event contains the agent (only “custom” for an agent that
       you added yourself), whether the message finished, failed, or was stopped, and the model
-      provider that you selected for the agent, if the agent has one.
+      provider that you selected for the agent, if the agent has one. It also contains whether the
+      message included an element or area that you picked in the preview, whether the agent used
+      Gui’s own tools, and whether Ask, Auto, or the agent’s own settings decided what the agent
+      can do. If the message failed, the event contains the reason from a fixed list: not signed
+      in, agent too old, agent stopped, chat too long, out of credit, servers busy, too many
+      requests, server problem, no connection, or other.
     </li>
-    <li>You open a project.</li>
+    <li>
+      You open a project. The event contains the framework that starts your app, from a fixed list
+      (for example Next.js, Vite, or Astro), “other”, “none” if nothing starts, or “unknown” if you
+      have not chosen the app yet.
+    </li>
     <li>You make a canvas.</li>
     <li>Your app opens in the preview.</li>
+    <li>
+      Your app does not start. The event contains the reason from a fixed list: the install failed,
+      a command is missing, the start command stopped, or other. Gui sends each reason one time
+      each time that you open the project.
+    </li>
     <li>You connect an agent, when you install it or sign in to it. The event contains the agent.</li>
+    <li>
+      Gui cannot use an agent that you installed. The event contains the agent and the reason:
+      not signed in, too old, or error. Gui sends each agent and reason one time each time that Gui
+      opens.
+    </li>
     <li>Gui updates. The event contains the old version and the new version.</li>
+    <li>
+      Gui finds an update but cannot download it or install it. The event contains which step
+      failed.
+    </li>
   </ul>
   <p>
     Each event also contains a random ID that Gui makes for your copy of Gui, your country, and the
@@ -63,7 +86,8 @@ import TextPage from '../components/TextPage.astro'
   <p>
     Usage data never contains your code, your files, the names or paths of your projects and files,
     your chats, your prompts, what your agent writes, the addresses of the pages that you preview,
-    your name, your email address, or your IP address.
+    the commands that start your app, error messages, your name, your email address, or your IP
+    address.
   </p>
   <p>
     When Gui checks for updates, we count the check. We keep the Gui version, the update channel
