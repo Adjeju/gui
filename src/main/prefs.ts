@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { readFileSync, renameSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { app } from 'electron'
-import { parseRecents, withRecent } from '../shared/recent-models'
+import { currentModelValue, parseRecents, withRecent } from '../shared/recent-models'
 import {
   type AgentId,
   DEFAULT_AGENT_ID,
@@ -111,7 +111,15 @@ function agentSettings(value: unknown): Prefs['agentSettings'] {
   return Object.fromEntries(
     Object.entries(value)
       .filter(([id]) => isAgentId(id))
-      .map(([id, settings]) => [id, stringRecord(settings)]),
+      .map(([id, settings]) => [
+        id,
+        Object.fromEntries(
+          Object.entries(stringRecord(settings)).map(([key, saved]) => [
+            key,
+            currentModelValue(id, saved),
+          ]),
+        ),
+      ]),
   )
 }
 

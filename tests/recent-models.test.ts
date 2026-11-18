@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test'
 import { MAX_RECENT_MODELS } from '../src/shared/bounded'
-import { listedRecents, parseRecents, withRecent } from '../src/shared/recent-models'
+import {
+  currentModelValue,
+  listedRecents,
+  parseRecents,
+  withRecent,
+} from '../src/shared/recent-models'
 import type { AgentSetting, RecentModel } from '../src/shared/types'
 
 // The model picker's Recent (prefs.json `recentModels`): newest first, each once, capped, and
@@ -89,4 +94,32 @@ test('shown with their names, without agents switched off or models no longer li
     { ...recent('fx', 'kimi', 'codex'), name: 'KIMI' },
     { ...recent('codex', 'gpt-5'), name: 'GPT-5' },
   ])
+})
+
+test("a Muse Code model saved through Gui's earlier adapter reads as the id `muse acp` uses", () => {
+  const adapter = (json: string) => `muse-model:${encodeURIComponent(json)}`
+  expect(currentModelValue('muse', adapter('["meta",null,"muse-spark-1.3"]'))).toBe('muse-spark-1.3')
+  expect(currentModelValue('muse', adapter('["echo",null,"muse-spark-1.2"]'))).toBe('muse-spark-1.2')
+  expect(currentModelValue('muse', 'muse-wonder-full-1.0')).toBe('muse-wonder-full-1.0')
+  // Another agent's value, and malformed ones, stay as they are.
+  const meta = adapter('["meta",null,"x"]')
+  expect(currentModelValue('claude', meta)).toBe(meta)
+  for (const bad of [
+    'muse-model:',
+    'muse-model:%E0%A4%A',
+    'muse-model:not json',
+    adapter('{"id":"x"}'),
+    adapter('["meta",null]'),
+    adapter('["meta",null,""]'),
+    adapter('["meta",null,7]'),
+    adapter('null'),
+  ]) {
+    expect(currentModelValue('muse', bad)).toBe(bad)
+  }
+  // Recents: decoded, and a copy saved both ways appears once.
+  const recents = parseRecents([
+    { agentId: 'muse', model: adapter('["meta",null,"muse-spark-1.3"]'), provider: null },
+    { agentId: 'muse', model: 'muse-spark-1.3', provider: null },
+  ])
+  expect(recents).toEqual([recent('muse', 'muse-spark-1.3')])
 })

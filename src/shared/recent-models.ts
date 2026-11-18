@@ -13,6 +13,24 @@ export function withRecent(
   return [entry, ...list.filter((recent) => !same(recent, entry))].slice(0, Math.max(0, max))
 }
 
+const MUSE_ADAPTER_MODEL = 'muse-model:'
+
+/**
+ * A model value saved for `agentId`, as its agent names it now. Gui's earlier Muse Code
+ * adapter named each model `muse-model:` and URL-encoded JSON `["<provider>", null, "<id>"]`;
+ * `muse acp` names it `<id>`. Anything else, malformed values included, is kept as it is.
+ */
+export function currentModelValue(agentId: AgentId, value: string): string {
+  if (agentId !== 'muse' || !value.startsWith(MUSE_ADAPTER_MODEL)) return value
+  try {
+    const parsed: unknown = JSON.parse(decodeURIComponent(value.slice(MUSE_ADAPTER_MODEL.length)))
+    const id = Array.isArray(parsed) && parsed.length === 3 ? parsed[2] : null
+    return typeof id === 'string' && id ? id : value
+  } catch {
+    return value
+  }
+}
+
 const text = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= MAX_MODEL_TEXT
 
@@ -23,7 +41,7 @@ export function parseRecents(value: unknown, max = MAX_RECENT_MODELS): RecentMod
   for (const item of value) {
     const { agentId, model, provider } = (item ?? {}) as Record<string, unknown>
     if (!isAgentId(agentId) || !text(model) || !(provider === null || text(provider))) continue
-    const entry = { agentId, model, provider }
+    const entry = { agentId, model: currentModelValue(agentId, model), provider }
     if (!list.some((recent) => same(recent, entry))) list.push(entry)
     if (list.length >= max) break
   }
