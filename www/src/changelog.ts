@@ -14,6 +14,8 @@ export const releases: Release[] = [
     version: '0.1.0-alpha.26',
     date: '2026-11-18',
     changes: [
+      'Gui now works with Antigravity CLI, Google’s replacement for Gemini CLI, which Gui no longer has. It needs agy 1.5.0 or newer, and Gui’s preview and canvas tools work with it.',
+      'If you used Gemini CLI in Gui, you’re switched to Antigravity CLI. Your Gemini chats stay, and continue there in a new session.',
       'Muse Code now runs on Muse’s own ACP server. Gui’s preview and canvas tools work in every project you’ve trusted in Gui, without trusting it in Muse first, and the model you picked carries over.',
       'Muse Code needs version 1.4.23 or newer. With an older one, Gui says how to update it instead of starting it.',
       'Muse Code no longer has an effort picker or the Read-only and Plan modes, which came from the adapter Gui used before. Muse uses the effort in its own settings.',
