@@ -68,6 +68,13 @@ const POPOVER_GAP = 4
 const POPOVER_WIDTH = 336
 /** In a tall panel a popover stops growing here and scrolls. */
 const POPOVER_MAX_HEIGHT = 440
+/**
+ * Off a [data-popover-anchor] frame, the least height worth opening into. With less (a short
+ * panel over a tall composer) it opens from the button's own row instead, over the rest of the
+ * frame. The model picker's search, tabs and effort levels take about 160px; this keeps its list
+ * a bit over 100px.
+ */
+const POPOVER_MIN_HEIGHT = 264
 
 /**
  * Places a popover against `button`'s right edge, above it unless there's more room below.
@@ -75,14 +82,23 @@ const POPOVER_MAX_HEIGHT = 440
  * ([data-chat-panel]) and takes the height there is. Inside a [data-popover-anchor] frame (the
  * composer) it opens off the frame rather than the button, so it doesn't cover the frame's edge,
  * and spans it as the composer's command menu does: it covers what's above edge to edge rather
- * than leaving a sliver of it showing beside it.
+ * than leaving a sliver of it showing beside it. When that leaves it too short
+ * (POPOVER_MIN_HEIGHT), it opens off the button's own row in the frame instead, covering the rest
+ * of the frame while it's open.
  */
 export function placePopover(button: HTMLElement): PopoverPlacement {
   const panel = (button.closest('[data-chat-panel]') ?? document.body).getBoundingClientRect()
   const box = button.getBoundingClientRect()
-  const anchor = button.closest('[data-popover-anchor]')?.getBoundingClientRect()
+  const frame = button.closest('[data-popover-anchor]')
+  const anchor = frame?.getBoundingClientRect()
   // Above or below the frame; it grows from the button.
-  const edge = anchor ?? box
+  let edge = anchor ?? box
+  if (frame && anchor && roomOff(anchor, panel) < POPOVER_MIN_HEIGHT) {
+    // The frame's row that holds the button: opening off it covers the rest of the frame.
+    const row = [...frame.children].find((child) => child.contains(button))
+    const rowBox = row?.getBoundingClientRect() ?? box
+    if (roomOff(rowBox, panel) > roomOff(anchor, panel)) edge = rowBox
+  }
   const width = anchor ? anchor.width : Math.min(POPOVER_WIDTH, panel.width - POPOVER_EDGE * 2)
   const left = anchor
     ? anchor.left
@@ -90,8 +106,7 @@ export function placePopover(button: HTMLElement): PopoverPlacement {
         panel.left + POPOVER_EDGE,
         Math.min(box.right - width, panel.right - POPOVER_EDGE - width),
       )
-  const above = edge.top - POPOVER_GAP - panel.top - POPOVER_EDGE
-  const below = panel.bottom - POPOVER_EDGE - edge.bottom - POPOVER_GAP
+  const { above, below } = room(edge, panel)
   const x = Math.round(Math.min(Math.max(box.left + box.width / 2 - left, 0), width))
   return above >= below
     ? {
@@ -110,6 +125,20 @@ export function placePopover(button: HTMLElement): PopoverPlacement {
         top: edge.bottom + POPOVER_GAP,
         origin: `${x}px 0`,
       }
+}
+
+/** The height a popover off `edge` has above and below it, inside the panel. */
+function room(edge: DOMRect, panel: DOMRect) {
+  return {
+    above: edge.top - POPOVER_GAP - panel.top - POPOVER_EDGE,
+    below: panel.bottom - POPOVER_EDGE - edge.bottom - POPOVER_GAP,
+  }
+}
+
+/** The height on the roomier side of `edge`. */
+function roomOff(edge: DOMRect, panel: DOMRect) {
+  const { above, below } = room(edge, panel)
+  return Math.max(above, below)
 }
 
 interface PopoverProps extends ComponentProps<'div'> {

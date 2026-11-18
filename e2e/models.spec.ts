@@ -263,10 +263,16 @@ async function expectPlaced(session: GuiSession, dialog: Locator, button: Locato
   const panel = await session.chat.locator('[data-chat-panel]').boundingBox()
   const box = await dialog.boundingBox()
   const anchor = await button.boundingBox()
-  // It opens over the frame's edge rather than covering it.
+  // It opens over the frame's edge rather than covering it, unless that leaves it too short:
+  // then it opens off the button's own row in the frame, covering the message box.
   const frame = button.locator('xpath=ancestor::*[@data-popover-anchor][1]')
-  const above = (await frame.count()) ? await frame.boundingBox() : anchor
-  if (!panel || !box || !anchor || !above)
+  const framed = (await frame.count()) > 0
+  const frameBox = framed ? await frame.boundingBox() : anchor
+  const row = framed
+    ? await button.locator('xpath=ancestor::*[parent::*[@data-popover-anchor]][1]').boundingBox()
+    : null
+  const above = frameBox && box && row && box.y + box.height > frameBox.y ? row : frameBox
+  if (!panel || !box || !anchor || !above || !frameBox)
     throw new Error('The picker, its button or the panel has no box')
   expect(box.x).toBeGreaterThanOrEqual(panel.x)
   expect(box.y).toBeGreaterThanOrEqual(panel.y)
@@ -274,13 +280,13 @@ async function expectPlaced(session: GuiSession, dialog: Locator, button: Locato
   expect(box.y + box.height).toBeLessThanOrEqual(above.y)
   expect(above.y - (box.y + box.height)).toBeLessThanOrEqual(8)
   const right = anchor.x + anchor.width
-  if (above !== anchor) {
-    expect(Math.abs(box.x - above.x)).toBeLessThan(1)
-    expect(Math.abs(box.width - above.width)).toBeLessThan(1)
+  if (framed) {
+    expect(Math.abs(box.x - frameBox.x)).toBeLessThan(1)
+    expect(Math.abs(box.width - frameBox.width)).toBeLessThan(1)
   } else if (right - box.width >= panel.x + 8)
     expect(Math.abs(box.x + box.width - right)).toBeLessThan(1)
   else expect(Math.abs(box.x - (panel.x + 8))).toBeLessThan(1)
-  return { panel, box }
+  return { panel, box, overFrame: above !== frameBox }
 }
 
 test('the model picker searches the models, sets the model and effort, and new sessions start with them', async ({
@@ -358,7 +364,7 @@ test('the model picker searches the models, sets the model and effort, and new s
   const anthropic = list.getByRole('group', { name: 'Anthropic' })
   await expect(anthropic.getByRole('option')).toHaveCount(7)
   await expect(anthropic.getByRole('option').first()).toHaveText('Claude Opus 4.1')
-  await expectPlaced(session, dialog, button)
+  expect((await expectPlaced(session, dialog, button)).overFrame).toBe(false)
 
   // Scrolled into a provider's models, its header stays pinned at the top of the list, so
   // every row still says whose model it is.
@@ -482,7 +488,10 @@ test('the model picker searches the models, sets the model and effort, and new s
   }, 'the smallest panel')
   await sageHigh.click()
   await tab('Models').click()
+  // With the tool notice in the composer there isn't room above it, so it covers the message box.
+  await expect(chat.locator('[data-tool-notice]')).toBeVisible()
   const small = await expectPlaced(session, dialog, sageHigh)
+  expect(small.overFrame).toBe(true)
   expect(small.box.height).toBeGreaterThan(200)
   const listBox = await list.boundingBox()
   expect(listBox?.height).toBeGreaterThan(100)
@@ -575,7 +584,7 @@ test('a short model list is driven from the search field', async ({ launch }) =>
   await expect(search).toBeFocused()
   await expect(options).toHaveText(['Swift', 'Sage', 'Atlas'])
   await expect(list.getByRole('group')).toHaveCount(0)
-  await expectPlaced(session, dialog, button)
+  expect((await expectPlaced(session, dialog, button)).overFrame).toBe(false)
   await session.shot('model-picker-short')
 
   await session.chat.keyboard.press('ArrowDown')
