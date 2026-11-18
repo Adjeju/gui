@@ -57,6 +57,11 @@ const PINNED: readonly AgentId[] = ['claude', 'codex']
  * that agent's CLI.
  */
 const BACKGROUND_CHECKS = 2
+/**
+ * The background checks skip an agent a check found less than this long ago: its models from
+ * then are listed, and it's checked when the user picks it.
+ */
+const BACKGROUND_CHECK_AGE_MS = 24 * 60 * 60_000
 /** Download progress is pushed to every window; a 100 MB download has thousands of chunks. */
 const PROGRESS_INTERVAL_MS = 150
 /** An agent that becomes ready from one of these was just connected (usage data, analytics.ts). */
@@ -134,7 +139,8 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
     diskFile(() => join(app.getPath('userData'), 'agent-models.json')),
   )
 
-  constructor() {
+  /** `now` is the clock the background checks go by. */
+  constructor(private readonly now: () => number = Date.now) {
     super()
     // Every window and every chat listens.
     this.setMaxListeners(0)
@@ -213,13 +219,16 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
 
   /**
    * After launch: every other enabled agent, a few at a time, so the picker can list and search
-   * every agent's models. Only agents whose state isn't known yet; no prompt is sent.
+   * every agent's models. Only agents whose state isn't known yet, and that a check hasn't found
+   * in the last day (those list their models from then); no prompt is sent.
    */
   async checkInBackground() {
     if (this.disposed) return
     await this.rescan()
+    const now = this.now()
     const queue = this.list()
       .filter((agent) => agent.enabled && agent.status === 'unknown' && this.checkable(agent))
+      .filter((agent) => !this.modelCache.fresh(agent.id, now, BACKGROUND_CHECK_AGE_MS))
       .map((agent) => agent.id)
     const next = async () => {
       for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
@@ -632,9 +641,11 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
     const current = this.health.get(id)
     if (!current) return
     this.health.set(id, { ...current, ...patch })
-    if (patch.models) this.modelCache.set(id, patch.models)
+    if (patch.models) this.modelCache.set(id, patch.models, this.now())
     // Ready with none: it has no models to list any more.
     else if (patch.status === 'ready' && patch.models === null) this.modelCache.delete(id)
+    // Not signed in: starting it again tomorrow is soon enough, unless the user asks.
+    else if (patch.status === 'signed-out') this.modelCache.checkedWithout(id, this.now())
     this.emit('change', this.list())
   }
 }

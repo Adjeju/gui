@@ -38,23 +38,39 @@ export function listOf(models: ModelSettings | AgentModelList): AgentModelList {
   return { model: trim(models.model), provider: models.provider && trim(models.provider) }
 }
 
-/** The file's lists, by agent: the well-formed ones, at most MAX_CACHED_MODEL_AGENTS. */
-export function parseModelCache(raw: unknown): Map<AgentId, AgentModelList> {
-  const lists = new Map<AgentId, AgentModelList>()
+/**
+ * What the file holds for one agent: its list (null for an agent whose check found none to
+ * list, kept only for its time), and when a check last found it (null in files from before
+ * times were kept: due for a check).
+ */
+export type CachedModels = { list: AgentModelList | null; checkedAt: number | null }
+
+const time = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+
+/** The file's entries, by agent: the well-formed ones, at most MAX_CACHED_MODEL_AGENTS. */
+export function parseModelCache(raw: unknown): Map<AgentId, CachedModels> {
+  const entries = new Map<AgentId, CachedModels>()
   const { version, agents } = (raw ?? {}) as Record<string, unknown>
   if (version !== VERSION || !agents || typeof agents !== 'object' || Array.isArray(agents)) {
-    return lists
+    return entries
   }
   for (const [id, entry] of Object.entries(agents)) {
-    if (lists.size >= MAX_CACHED_MODEL_AGENTS) break
+    if (entries.size >= MAX_CACHED_MODEL_AGENTS) break
     if (!isAgentId(id)) continue
     const fields = (entry ?? {}) as Record<string, unknown>
+    const checkedAt = time(fields.checkedAt)
+    if (fields.model === undefined) {
+      // No list, only when it was last checked.
+      if (checkedAt !== null) entries.set(id, { list: null, checkedAt })
+      continue
+    }
     const model = setting(fields.model)
     const provider = fields.provider === null ? null : setting(fields.provider)
     if (!model || (fields.provider !== null && !provider)) continue
-    lists.set(id, { model, provider })
+    entries.set(id, { list: { model, provider }, checkedAt })
   }
-  return lists
+  return entries
 }
 
 /**
@@ -63,7 +79,7 @@ export function parseModelCache(raw: unknown): Map<AgentId, AgentModelList> {
  * can take a message is its check's to say.
  */
 export class ModelCache {
-  private lists: Map<AgentId, AgentModelList> | null = null
+  private entries: Map<AgentId, CachedModels> | null = null
   private writer: CoalescedFile
 
   constructor(
@@ -71,40 +87,70 @@ export class ModelCache {
     files: FileLayer,
   ) {
     this.writer = new CoalescedFile(
-      () => JSON.stringify({ version: VERSION, agents: Object.fromEntries(this.all()) }),
+      () =>
+        JSON.stringify({
+          version: VERSION,
+          agents: Object.fromEntries(
+            [...this.all()].map(([id, { list, checkedAt }]) => [
+              id,
+              list ? { ...list, checkedAt } : { checkedAt },
+            ]),
+          ),
+        }),
       files,
       (error) => console.error('[gui] failed to save the agents’ models', error),
     )
   }
 
   private all() {
-    if (!this.lists) {
+    if (!this.entries) {
       try {
-        this.lists = parseModelCache(JSON.parse(readFileSync(this.file(), 'utf8')))
+        this.entries = parseModelCache(JSON.parse(readFileSync(this.file(), 'utf8')))
       } catch {
-        this.lists = new Map()
+        this.entries = new Map()
       }
     }
-    return this.lists
+    return this.entries
   }
 
   get(id: AgentId): AgentModelList | null {
-    return this.all().get(id) ?? null
+    return this.all().get(id)?.list ?? null
   }
 
-  /** Remembers `models` as the agent's list; the newest MAX_CACHED_MODEL_AGENTS agents are kept. */
-  set(id: AgentId, models: ModelSettings | AgentModelList) {
-    const lists = this.all()
+  /**
+   * Whether a check found the agent less than `maxAge` ago. A time from before the file kept
+   * times, or one in the future (the clock was changed), isn't.
+   */
+  fresh(id: AgentId, now: number, maxAge: number) {
+    const checkedAt = this.all().get(id)?.checkedAt ?? null
+    return checkedAt !== null && checkedAt <= now && now - checkedAt < maxAge
+  }
+
+  /**
+   * Remembers `models` as the agent's list, found by a check at `now`; the newest
+   * MAX_CACHED_MODEL_AGENTS agents are kept. The same list again still moves its time.
+   */
+  set(id: AgentId, models: ModelSettings | AgentModelList, now: number) {
     const list = listOf(models)
-    if (JSON.stringify(lists.get(id)) === JSON.stringify(list)) return
-    lists.delete(id)
-    lists.set(id, list)
-    while (lists.size > MAX_CACHED_MODEL_AGENTS) {
-      const oldest = lists.keys().next().value
-      if (oldest === undefined) break
-      lists.delete(oldest)
+    const current = this.all().get(id)
+    if (current?.list && JSON.stringify(current.list) === JSON.stringify(list)) {
+      if (current.checkedAt === now) return
+      current.checkedAt = now
+      this.writer.changed()
+      return
     }
-    this.writer.changed()
+    this.put(id, { list, checkedAt: now })
+  }
+
+  /**
+   * A check at `now` found the agent can't list models (not signed in, say). Only its time is
+   * kept, so it isn't started again for nothing; a list it has stays, with its own time.
+   */
+  checkedWithout(id: AgentId, now: number) {
+    const current = this.all().get(id)
+    if (current?.list) return
+    if (current?.checkedAt === now) return
+    this.put(id, { list: null, checkedAt: now })
   }
 
   delete(id: AgentId) {
@@ -114,5 +160,17 @@ export class ModelCache {
   /** At quit: what the file doesn't hold yet. */
   flushSync() {
     this.writer.flushSync()
+  }
+
+  private put(id: AgentId, entry: CachedModels) {
+    const entries = this.all()
+    entries.delete(id)
+    entries.set(id, entry)
+    while (entries.size > MAX_CACHED_MODEL_AGENTS) {
+      const oldest = entries.keys().next().value
+      if (oldest === undefined) break
+      entries.delete(oldest)
+    }
+    this.writer.changed()
   }
 }
