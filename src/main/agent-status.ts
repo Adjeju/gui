@@ -34,18 +34,6 @@ import { getShellEnv } from './shell-env'
 import { runInTerminal } from './terminal'
 
 const CHECK_TIMEOUT_MS = 45_000
-
-/** Each agent's reasons it couldn't be used that usage data has counted this launch */
-const unavailable = new Set<string>()
-
-/** An installed agent's check failed: counted once per agent and reason each launch. */
-function countUnavailable(id: AgentId, reason: AgentUnavailable) {
-  const agent = usageAgent(id)
-  const key = `${agent}:${reason}`
-  if (unavailable.has(key)) return
-  unavailable.add(key)
-  track('agent_unavailable', { agent, reason })
-}
 /** For the check's switch to the user's provider: listing it is a nicety, not the check. */
 const PROVIDER_TIMEOUT_MS = 10_000
 /** Browser sign-in waits on the user. */
@@ -118,6 +106,18 @@ const unchecked = (
   binary: null,
   models: null,
 })
+
+/** Each agent's reasons it couldn't be used that usage data has counted this launch */
+const unavailable = new Set<string>()
+
+/** An installed agent's check failed: counted once per agent and reason each launch. */
+function countUnavailable(id: AgentId, reason: AgentUnavailable) {
+  const agent = usageAgent(id)
+  const key = `${agent}:${reason}`
+  if (unavailable.has(key)) return
+  unavailable.add(key)
+  track('agent_unavailable', { agent, reason })
+}
 
 /**
  * Every agent Gui knows (built in and from agents.json), whether it's installed, and
