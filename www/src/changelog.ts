@@ -11,6 +11,15 @@ export interface Release {
 
 export const releases: Release[] = [
   {
+    version: '0.1.0-alpha.26',
+    date: '2026-11-18',
+    changes: [
+      'Muse Code now runs on Muse’s own ACP server. Gui’s preview and canvas tools work in every project you’ve trusted in Gui, without trusting it in Muse first, and the model you picked carries over.',
+      'Muse Code needs version 1.4.23 or newer. With an older one, Gui says how to update it instead of starting it.',
+      'Muse Code no longer has an effort picker or the Read-only and Plan modes, which came from the adapter Gui used before. Muse uses the effort in its own settings.',
+    ],
+  },
+  {
     version: '0.1.0-alpha.25',
     date: '2026-11-18',
     changes: [
