@@ -39,7 +39,7 @@ Gui speaks the [Agent Client Protocol](https://agentclientprotocol.com) and reus
 | Cursor | `cursor-agent acp`, or `agent acp` when that command is Cursor's | `cursor-agent login` |
 | fx | `fx acp` | `fx login` |
 | jcode | `jcode acp` | `jcode`, which runs its setup |
-| Gemini CLI | `gemini --acp` | `gemini`, or `GEMINI_API_KEY` |
+| Antigravity CLI | `agy acp --process-per-session` (agy 1.5.0+) | `agy acp --login` |
 
 Gui runs the agents it finds on your PATH, and offers a Sign in button that runs the login for you. Any other ACP agent can be added in **Settings → Agents**.
 
