@@ -17,6 +17,7 @@ export const releases: Release[] = [
       'Muse Code now runs on Muse’s own ACP server. Gui’s preview and canvas tools work in every project you’ve trusted in Gui, without trusting it in Muse first, and the model you picked carries over.',
       'Muse Code needs version 1.4.23 or newer. With an older one, Gui says how to update it instead of starting it.',
       'Muse Code no longer has an effort picker or the Read-only and Plan modes, which came from the adapter Gui used before. Muse uses the effort in its own settings.',
+      'In Ask mode, Muse Code runs commands in its own sandbox without asking. They can change files in your project; the sandbox blocks writes outside it.',
       'Usage data now says why a message, an agent, your app’s start or an update failed, which framework a project uses, and whether a message used a pick or Gui’s tools. The privacy page lists each one.',
     ],
   },
