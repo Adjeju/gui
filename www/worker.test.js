@@ -1,5 +1,6 @@
 import { Database as SQLite } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { AGENT_FAILURES, FRAMEWORKS } from '../src/main/analytics-queue.ts'
 import worker from './worker.js'
 
 const migrations = async () =>
@@ -942,4 +943,25 @@ test('/waitlist refuses another platform', async () => {
   const response = await signUp({ email: 'qa@example.invalid', platform: 'mac' })
   expect(response.status).toBe(400)
   expect(db.query('SELECT * FROM waitlist').all()).toEqual([])
+})
+
+test("every failure and framework the app can send is on the site's lists", async () => {
+  posthog()
+  env.POSTHOG_KEY = 'phc_test'
+  const reasons = [...AGENT_FAILURES, 'other']
+  const frameworks = [...FRAMEWORKS, 'other', 'none', 'unknown']
+  const response = await sendUsage({
+    installId: INSTALL,
+    events: [
+      ...reasons.map((reason) => ({
+        event: 'turn_finished',
+        props: { agent: 'codex', outcome: 'failed', reason },
+      })),
+      ...frameworks.map((framework) => ({ event: 'project_opened', props: { framework } })),
+    ],
+  })
+  expect(response.status).toBe(204)
+  const events = await sent()
+  expect(events.slice(0, reasons.length).map((e) => e.properties.reason)).toEqual(reasons)
+  expect(events.slice(reasons.length).map((e) => e.properties.framework)).toEqual(frameworks)
 })
