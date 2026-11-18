@@ -74,6 +74,11 @@ export default {
       if (/iPhone|iPod|Android/.test(agent)) {
         return Response.redirect(new URL('/#mac-only', request.url).toString(), 303)
       }
+      // Windows is not out yet. It goes back to the page, which says so and offers the waitlist,
+      // and is not counted. Tools like curl say nothing about Windows and still get the DMG.
+      if (/Windows/.test(agent)) {
+        return Response.redirect(new URL('/#windows', request.url).toString(), 303)
+      }
       // Linux gets the download page for its processor. Chrome always says x86_64, so that is
       // the default, and the page links to the other.
       if (/Linux/.test(agent)) {

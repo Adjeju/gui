@@ -407,6 +407,31 @@ test('/download on a phone goes back to the page, though Android says it is Linu
   expect(await counted()).toEqual([])
 })
 
+const WINDOWS =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/142.0 Safari/537.36'
+const WINDOWS_FIREFOX =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:146.0) Gecko/20100101 Firefox/146.0'
+
+for (const agent of [WINDOWS, WINDOWS_FIREFOX]) {
+  test(`/download on Windows goes back to the page and is not counted: ${agent}`, async () => {
+    files['Gui-alpha-arm64.dmg'] = 'alpha dmg'
+    const response = await get('/download', { 'user-agent': agent })
+    expect(response.status).toBe(303)
+    expect(response.headers.get('location')).toBe('https://usegui.com/#windows')
+    expect(await counted()).toEqual([])
+  })
+}
+
+for (const agent of ['curl/8.7.1', '']) {
+  test(`/download by ${agent || 'a client without a user agent'} is still the DMG`, async () => {
+    files['Gui-alpha-arm64.dmg'] = 'alpha dmg'
+    const response = await get('/download', agent ? { 'user-agent': agent } : {})
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('alpha dmg')
+    expect(await counted()).toEqual([{ file: 'Gui-alpha-arm64.dmg' }])
+  })
+}
+
 test('a Linux download is the alpha copy until a stable release uploads its own', async () => {
   files['Gui-alpha-x86_64.AppImage'] = 'alpha appimage'
   const response = await get('/download/Gui-x86_64.AppImage', { 'user-agent': LINUX_CHROME })
