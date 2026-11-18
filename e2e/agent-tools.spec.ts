@@ -276,7 +276,7 @@ process.stdin.on('data', chunk => {
 })
 `
 
-/** Puts the chat on Pi (sent no tools) or Muse (sent them, never connects), as stand-ins. */
+/** Puts the chat on a stand-in in Pi's place (sent no tools) or Muse's (sent them, never connects). */
 async function installQuietAgent(session: GuiSession, agentId: 'pi' | 'muse') {
   const script = join(session.fixture.base, 'quiet-agent.cjs')
   writeFileSync(script, QUIET_AGENT)
@@ -322,10 +322,7 @@ test("an agent sent Gui's tools that never connects says so after its turn, unti
   const notice = session.chat.locator('[data-tool-notice]')
 
   await say(session, 'hello')
-  await expect(notice).toHaveText(
-    "Muse Code hasn't connected to Gui's preview and canvas tools. Muse only loads tools in folders you've trusted in it: run muse in this project once and accept, then start a new chat.",
-  )
-  await expect(notice.locator('code')).toHaveText('muse')
+  await expect(notice).toHaveText("Muse Code hasn't connected to Gui's preview and canvas tools.")
   await session.shot('tool-notice-unconnected')
 
   // A new chat may say it again; connecting, even after its turn, clears it.

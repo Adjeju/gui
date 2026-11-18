@@ -12,14 +12,13 @@ import { expect, test } from './helpers/test'
 // records every request. No agent login or usage is needed.
 
 /**
- * Speaks ACP (ndjson JSON-RPC) on stdio, as `kind`: `muse` offers Muse Code's modes as a
- * `mode` config option and as ACP session modes, plus its native approval policies;
- * `muse-old` is an older Muse host, with its modes only as session modes and only the
- * onRequest policy; `grok` has no modes; `gemini` has Gemini CLI's approval levels as session
+ * Speaks ACP (ndjson JSON-RPC) on stdio, as `kind`: `muse` offers `muse acp`'s modes (its
+ * approval policies) as a `mode` config option and as ACP session modes, and starts in
+ * Allow all (as a user's own settings may pick); `grok` has no modes; `gemini` has Gemini CLI's approval levels as session
  * modes only, starts in Auto Edit (as a user's own settings may pick), and says each mode
  * change as a `[MODE_UPDATE] <mode>` message rather than a mode update. A prompt containing
- * SWITCH=<mode> changes the mode itself (like Muse's /plan) and reports only the mode; one
- * containing RUN asks to run a command.
+ * SWITCH=<mode> changes the mode itself and reports only the mode; one containing RUN asks
+ * to run a command.
  */
 const AGENT_SCRIPT = String.raw`
 const { appendFileSync } = require('node:fs')
@@ -30,15 +29,12 @@ const MODES = kind === 'gemini' ? [
   { id: 'yolo', name: 'YOLO' },
   { id: 'plan', name: 'Plan' },
 ] : [
-  { id: 'default', name: 'On request' },
-  { id: 'readOnly', name: 'Read-only' },
-  { id: 'plan', name: 'Plan' },
-  { id: 'bypassApprovals', name: 'Auto-approve' },
-  { id: 'rejectApprovals', name: 'Reject prompts' },
+  { id: 'allowAll', name: 'Allow all' },
+  { id: 'promptUnmatched', name: 'Ask before unmatched actions' },
+  { id: 'onRequest', name: 'Ask on request' },
+  { id: 'denyUnmatched', name: 'Deny unmatched actions' },
 ]
-const POLICIES =
-  kind === 'muse' ? ['onRequest', 'promptUnmatched', 'denyUnmatched', 'allowAll'] : ['onRequest']
-const state = { mode: kind === 'gemini' ? 'autoEdit' : 'default', nativeApprovalPolicy: 'onRequest' }
+const state = { mode: kind === 'gemini' ? 'autoEdit' : 'allowAll' }
 const select = (id, name, currentValue, options, extra = {}) =>
   ({ id, name, type: 'select', currentValue, options, ...extra })
 const configOptions = () => {
@@ -46,13 +42,8 @@ const configOptions = () => {
   if (kind === 'grok') {
     return [select('model', 'Model', 'grok-code', [{ value: 'grok-code', name: 'Grok Code' }], { category: 'model' })]
   }
-  const policies = POLICIES.map((value) => ({ value, name: value }))
-  const options = [select('nativeApprovalPolicy', 'Native approval policy', state.nativeApprovalPolicy, policies)]
-  if (kind === 'muse') {
-    const modes = MODES.map(({ id, name }) => ({ value: id, name }))
-    options.unshift(select('mode', 'Mode', state.mode, modes, { category: 'mode' }))
-  }
-  return options
+  const modes = MODES.map(({ id, name }) => ({ value: id, name }))
+  return [select('mode', 'Mode', state.mode, modes, { category: 'mode' })]
 }
 const session = () => ({
   configOptions: configOptions(),
@@ -139,7 +130,7 @@ process.stdin.on('data', (chunk) => {
 })
 `
 
-type Kind = 'muse' | 'muse-old' | 'grok' | 'gemini'
+type Kind = 'muse' | 'grok' | 'gemini'
 
 interface Call {
   pid: number
@@ -150,8 +141,6 @@ interface Call {
 interface StandIn {
   /** The requests each chat session's agent process received, oldest process first. */
   runs: () => Call[][]
-  /** Launches the agent as another kind from its next session on. */
-  become: (kind: Kind) => void
 }
 
 /**
@@ -163,18 +152,14 @@ async function useStandIn(session: GuiSession, id: AgentId, kind: Kind): Promise
   const log = join(base, 'agent-calls.ndjson')
   const script = join(base, 'modes-agent.cjs')
   writeFileSync(script, AGENT_SCRIPT)
-  const become = (as: Kind) => {
-    const standIn = { command: electronExecutable(), args: [script, log, as] }
-    const env = { ELECTRON_RUN_AS_NODE: '1' }
-    writeFileSync(standInsFile(session.fixture), JSON.stringify({ [id]: { ...standIn, env } }))
-  }
-  become(kind)
+  const standIn = { command: electronExecutable(), args: [script, log, kind] }
+  const env = { ELECTRON_RUN_AS_NODE: '1' }
+  writeFileSync(standInsFile(session.fixture), JSON.stringify({ [id]: { ...standIn, env } }))
   await waitFor(async () => (await session.state()).project !== null, 'the project to open')
   await session.chrome.evaluate((agentId) => window.gui.setAgent(agentId), id)
   const selected = async () => (await session.chatSnapshot()).meta.agentId === id
   await waitFor(selected, 'the agent to be selected')
   return {
-    become,
     runs: () => {
       if (!existsSync(log)) return []
       const calls = readFileSync(log, 'utf8')
@@ -238,7 +223,7 @@ async function turn(session: GuiSession, index: number, text: string) {
 
 type PermissionCard = Extract<TurnItem, { kind: 'permission' }>
 
-test('Ask and Auto set Muse Code’s own mode and approval policy, and leave a mode it picks', async ({
+test('Ask and Auto set Muse Code’s approval mode, and leave a mode it picks', async ({
   launch,
 }) => {
   const session = await launch({ fixture: 'vite' })
@@ -246,33 +231,28 @@ test('Ask and Auto set Muse Code’s own mode and approval policy, and leave a m
   const agent = await useStandIn(session, 'muse', 'muse')
   const { chat } = session
 
-  // Auto (a fresh profile's default): before the first prompt, Auto-approve through the
-  // `mode` config option. The approval policy is already the one Auto wants.
+  // Auto (a fresh profile's default): before the first prompt, Ask on request through the
+  // `mode` config option, so Muse asks only about what it says needs approval.
   await autoModeIs(session, true)
   await turn(session, 0, 'Hello')
   expect(agent.runs()).toHaveLength(1)
-  expect(steps(agent.runs()[0])).toEqual(['mode=bypassApprovals', 'prompt'])
-  await modeIs(session, 'Auto-approve')
+  expect(steps(agent.runs()[0])).toEqual(['mode=onRequest', 'prompt'])
+  await modeIs(session, 'Ask on request')
 
-  // Ask between turns applies at once: On request, and the policy that asks about every
-  // call the user's rules don't allow.
+  // Ask between turns applies at once: the mode that asks about every action the user's
+  // own Muse rules don't cover.
   await autoChip(chat).click()
   await autoModeIs(session, false)
-  await modeIs(session, 'On request')
-  expect(steps(agent.runs()[0])).toEqual([
-    'mode=bypassApprovals',
-    'prompt',
-    'mode=default',
-    'nativeApprovalPolicy=promptUnmatched',
-  ])
+  await modeIs(session, 'Ask before unmatched actions')
+  expect(steps(agent.runs()[0])).toEqual(['mode=onRequest', 'prompt', 'mode=promptUnmatched'])
 
-  // The agent switches itself to Plan, reporting only its mode: Gui shows it, and the
-  // next turn keeps it.
-  await turn(session, 1, 'SWITCH=plan Plan the next step')
-  await modeIs(session, 'Plan')
+  // The agent switches itself to another mode, reporting only its mode: Gui shows it, and
+  // the next turn keeps it.
+  await turn(session, 1, 'SWITCH=denyUnmatched Be strict')
+  await modeIs(session, 'Deny unmatched actions')
   await turn(session, 2, 'Go on')
-  await modeIs(session, 'Plan')
-  expect(steps(agent.runs()[0]).slice(4)).toEqual(['prompt', 'prompt'])
+  await modeIs(session, 'Deny unmatched actions')
+  expect(steps(agent.runs()[0]).slice(3)).toEqual(['prompt', 'prompt'])
 
   // Auto during a turn waits for the next prompt (the agent is busy).
   expect(await send(chat, 'RUN the tests')).toBe(true)
@@ -292,29 +272,12 @@ test('Ask and Auto set Muse Code’s own mode and approval policy, and leave a m
   )
   expect((await session.waitForTurn(3)).turn.status).toBe('done')
   await sleep(500)
-  expect(steps(agent.runs()[0]).slice(6)).toEqual(['prompt'])
-  await modeIs(session, 'Plan')
+  expect(steps(agent.runs()[0]).slice(5)).toEqual(['prompt'])
+  await modeIs(session, 'Deny unmatched actions')
   await turn(session, 4, 'Carry on')
-  expect(steps(agent.runs()[0]).slice(7)).toEqual([
-    'mode=bypassApprovals',
-    'nativeApprovalPolicy=onRequest',
-    'prompt',
-  ])
-  await modeIs(session, 'Auto-approve')
+  expect(steps(agent.runs()[0]).slice(6)).toEqual(['mode=onRequest', 'prompt'])
+  await modeIs(session, 'Ask on request')
   await session.shot('agent-mode-auto')
-
-  // An older host offers the mode only as session modes, and onRequest only: Gui uses
-  // session/set_mode, and leaves the policy it can't change.
-  agent.become('muse-old')
-  await chat.evaluate(() => window.gui.newSession())
-  await waitFor(async () => (await session.chatSnapshot()).turns.length === 0, 'a new chat')
-  await turn(session, 0, 'Hello')
-  expect(agent.runs()).toHaveLength(2)
-  expect(steps(agent.runs()[1])).toEqual(['set_mode bypassApprovals', 'prompt'])
-  await modeIs(session, 'Auto-approve')
-  await autoChip(chat).click()
-  await modeIs(session, 'On request')
-  expect(steps(agent.runs()[1])).toEqual(['set_mode bypassApprovals', 'prompt', 'set_mode default'])
 })
 
 test('Ask and Auto start Grok Build’s session with its own permission mode, resuming it on a switch', async ({

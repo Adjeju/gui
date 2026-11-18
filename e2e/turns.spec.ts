@@ -6,17 +6,16 @@ import { electronExecutable, sleep, waitFor } from './helpers/env'
 import { type GuiSession, standInsFile } from './helpers/session'
 import { expect, test } from './helpers/test'
 
-// How a turn reads in the chat: steps folded into a summary, adapter bookkeeping left out,
-// permission cards as questions with their buttons in macOS order, effort levels under
+// How a turn reads in the chat: steps folded into a summary, permission cards as questions with their buttons in macOS order, effort levels under
 // Gui's own names, the transcript pinned to its newest line as the composer's stack grows,
 // and a browser error Vite re-logs counted once. A stand-in ACP agent (a small Node script)
-// takes Muse Code's place through GUI_AGENT_STAND_INS, so it gets Muse's settings, including
-// the rule that hides its `reminderChild` rows. No agent login or usage is needed.
+// takes Muse Code's place through GUI_AGENT_STAND_INS, so it gets Muse's settings. No agent
+// login or usage is needed.
 
 /**
  * Speaks ACP (ndjson JSON-RPC) on stdio. Offers a model and an effort setting whose levels
  * are the ids Gui names itself plus one it doesn't ("turbo"). A prompt containing NOISE
- * reads a file and runs a command around a Muse `reminderChild` bookkeeping call; ASK asks
+ * reads a file and runs a command; ASK asks
  * to run a command; LONG writes a long answer, starts a step, and then waits for Stop. FAIL
  * fails the first time with the provider's raw overloaded error, and answers the next. EDIT
  * asks to edit package.json, with the change it would make. PLAN finishes a two-item plan.
@@ -26,17 +25,16 @@ import { expect, test } from './helpers/test'
 const AGENT_SCRIPT = String.raw`
 const { appendFileSync } = require('node:fs')
 const [log] = process.argv.slice(2)
-const state = { mode: 'default', nativeApprovalPolicy: 'onRequest', model: 'swift', effort: 'xhigh' }
+const state = { mode: 'allowAll', model: 'swift', effort: 'xhigh' }
 const EFFORTS = [['minimal', 'Minimal'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'],
   ['xhigh', 'Xhigh'], ['max', 'Max'], ['turbo', 'Turbo mode']]
 const select = (id, name, currentValue, options, extra = {}) =>
   ({ id, name, type: 'select', currentValue, options, ...extra })
 const configOptions = () => [
   select('mode', 'Mode', state.mode,
-    [{ value: 'default', name: 'On request' }, { value: 'bypassApprovals', name: 'Auto-approve' }],
+    [['allowAll', 'Allow all'], ['promptUnmatched', 'Ask before unmatched actions'],
+      ['onRequest', 'Ask on request']].map(([value, name]) => ({ value, name })),
     { category: 'mode' }),
-  select('nativeApprovalPolicy', 'Native approval policy', state.nativeApprovalPolicy,
-    ['onRequest', 'promptUnmatched'].map((value) => ({ value, name: value }))),
   select('model', 'Model', state.model,
     [{ value: 'swift', name: 'Swift' }, { value: 'sage', name: 'Sage' }], { category: 'model' }),
   select('effort', 'Effort', state.effort,
@@ -72,11 +70,9 @@ const prompt = async ({ sessionId, prompt }) => {
   }
   if (text.includes('FAIL')) say('Recovered.')
   if (text.includes('NOISE')) {
-    tool('reminder-1', 'reminderChild: inProgress', 'other')
     tool('read-1', 'Read src/App.tsx', 'read', { locations: [{ path: cwd + '/src/App.tsx' }] })
     await sleep(1100)
     done('read-1')
-    done('reminder-1', { title: 'reminderChild: completed' })
     tool('lint-1', 'npm run lint', 'execute')
     done('lint-1')
     say('Checked.')
@@ -240,8 +236,7 @@ test('a turn reads as steps, permission cards ask in macOS order, effort levels 
   await chat.evaluate(() => window.gui.setAutoApprove(false))
   await waitFor(async () => !(await session.chatSnapshot()).meta.autoApprove, 'Ask mode')
 
-  // Muse's reminder bookkeeping never reaches the turn; the real steps fold into a summary
-  // with how long they took, and open to human labels with the raw command beside them.
+  // The steps fold into a summary with how long they took, and open to human labels with the raw command beside them.
   expect(await send(chat, 'NOISE Check the button.')).toBe(true)
   const { turn: checked } = await session.waitForTurn(0)
   expect(checked.status).toBe('done')
@@ -254,7 +249,6 @@ test('a turn reads as steps, permission cards ask in macOS order, effort levels 
     /^Read App\.tsx\s*src\/App\.tsx/,
     /^Run a command\s*npm run lint/,
   ])
-  await expect(chat.getByText(/reminderChild/)).toHaveCount(0)
 
   // The card asks a question, shows the command, and offers Don't allow, then Allow: last,
   // and primary. The agent's "Always allow" isn't offered (Auto mode does that job).
