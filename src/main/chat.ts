@@ -49,12 +49,7 @@ import { AgentAuthError, type AgentInfo, AgentSession, type PermissionResolver }
 import { AgentMissingError } from './agent-binaries'
 import { type PermissionRequest, parseModelSettings, QUESTION_KIND } from './agent-protocol'
 import { agentHealth } from './agent-status'
-import {
-  declaresOwnPermissions,
-  opensWebsites,
-  type PermissionPolicy,
-  toolsHint,
-} from './agents'
+import { declaresOwnPermissions, opensWebsites, type PermissionPolicy, toolsHint } from './agents'
 import { trackTurn } from './analytics'
 import { autoApproval, isAutoApprove, requestPaths, SENSITIVE_PATH } from './auto-approve'
 import {
