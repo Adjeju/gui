@@ -19,9 +19,9 @@ const site = 'https://usegui.com'
 // Where feedback goes: a direct message on X.
 const feedback = 'https://x.com/bridgertower'
 const github = 'https://github.com/brijr/gui'
-const title = 'Gui — Web design and UI design with your AI agent, on Mac'
+const title = 'Gui — Web design and UI design with your AI agent, on Mac and Linux'
 const description =
-  'Gui is a Mac app for web design and UI design. Select an element in your real app and tell your AI agent what to change. The agent changes the code.'
+  'Gui is a Mac and Linux app for web design and UI design. Select an element in your real app and tell your AI agent what to change. The agent changes the code.'
 
 const agentNames = [
   'Claude Code',
@@ -104,7 +104,7 @@ const questions = [
   },
   {
     q: 'Which computer do I need?',
-    a: 'A Mac with Apple silicon (M1 or later) and macOS 13 or later. Recordings with your voice need macOS 26 or later.',
+    a: 'A Mac with Apple silicon (M1 or later) and macOS 13 or later, or a Linux computer (x86_64 or arm64). Recordings with your voice need macOS 26 or later.',
   },
 ]
 
@@ -133,7 +133,7 @@ const structuredData = {
       description,
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
       applicationCategory: 'DesignApplication',
-      operatingSystem: 'macOS',
+      operatingSystem: 'macOS, Linux',
       downloadUrl: `${site}/download`,
       image: `${site}/og.jpg`,
       publisher: { '@id': `${site}/#wip` },
@@ -177,7 +177,7 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
     Design on your <span data-demo-target>real app</span>.{' '}<br />
     Tell your AI coding agent what to change.
   </h1>
-  <p class="sub">Gui is a Mac app. Select an element, describe a change, and your AI coding agent edits the code. Start with a canvas or open a project.</p>
+  <p class="sub">Gui runs on Mac and Linux. Select an element, describe a change, and your AI coding agent edits the code. Start with a canvas or open a project.</p>
 
 
   <div class="try">
@@ -203,29 +203,29 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
   </p>
 
   <!-- Phones are sent here by the worker when there is no script to open the dialog. -->
-  <p class="mac-only" id="mac-only">Gui is a Mac app. Open usegui.com on your Mac to download it.</p>
+  <p class="mac-only" id="mac-only">Gui runs on Mac and Linux. Open usegui.com on your computer to download it.</p>
 
   <section class="waitlist" id="waitlist">
     <p>
-      For Macs with Apple silicon and macOS 13 or later. Gui is{' '}
-      <a href={github} target="_blank" rel="noopener">open source</a>. Windows and Linux are coming soon.{' '}
+      For Macs with Apple silicon and macOS 13 or later, and for Linux on x86_64 or arm64. Gui is{' '}
+      <a href={github} target="_blank" rel="noopener">open source</a>. Windows is coming.{' '}
       <button class="waitlist-open" type="button" commandfor="waitlist-dialog" command="show-modal">
         Sign up for the waitlist
       </button>
     </p>
-    <p class="waitlist-joined" id="waitlist-joined">You are on the waitlist. We send you an email when Gui is available.</p>
+    <p class="waitlist-joined" id="waitlist-joined">You are on the waitlist. We send you an email when Gui is available on Windows.</p>
   </section>
 
   <dialog class="dialog" id="mac-dialog" closedby="closerequest" aria-labelledby="mac-title" autofocus>
     <button class="dialog-close" type="button" commandfor="mac-dialog" command="close" aria-label="Close">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
     </button>
-    <h2 id="mac-title">Gui is a Mac app</h2>
+    <h2 id="mac-title">Gui runs on Mac and Linux</h2>
     <div class="dialog-body">
-      <p>You cannot install Gui on this device. Open usegui.com on your Mac to download it.</p>
-      <button class="dialog-button" type="button" data-share>Send the link to your Mac</button>
+      <p>You cannot install Gui on this device. Open usegui.com on your computer to download it.</p>
+      <button class="dialog-button" type="button" data-share>Send the link to your computer</button>
       <p class="dialog-note">
-        Windows and Linux are coming soon.{' '}
+        Windows is coming.{' '}
         <button class="waitlist-open" type="button" commandfor="waitlist-dialog" command="show-modal" data-mac-waitlist>
           Sign up for the waitlist
         </button>
@@ -237,9 +237,9 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
     <button class="dialog-close" type="button" commandfor="waitlist-dialog" command="close" aria-label="Close">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
     </button>
-    <h2 id="waitlist-title">Gui for Windows and Linux</h2>
+    <h2 id="waitlist-title">Gui for Windows</h2>
     <form class="waitlist-form" action="/waitlist" method="post" data-waitlist>
-      <p>Sign up for the waitlist. We send you one email when Gui is available on your platform.</p>
+      <p>Sign up for the waitlist. We send you one email when Gui is available on Windows.</p>
       <label class="waitlist-field">
         <span>Email</span>
         <input
@@ -252,20 +252,14 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
           autofocus
         />
       </label>
-      <fieldset class="waitlist-field">
-        <legend>Platform</legend>
-        <div class="waitlist-platforms">
-          <label><input type="radio" name="platform" value="windows" checked />Windows</label>
-          <label><input type="radio" name="platform" value="linux" />Linux</label>
-        </div>
-      </fieldset>
+      <input type="hidden" name="platform" value="windows" />
       <!-- People don't see this field; bots fill it in, and the worker does not save them. -->
       <input class="waitlist-trap" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" />
       <p class="waitlist-status" role="status" data-waitlist-status></p>
       <button class="dialog-button" type="submit">Sign up</button>
     </form>
     <div class="waitlist-done" data-waitlist-done hidden>
-      <p>You are on the waitlist. We send you an email when Gui is available.</p>
+      <p>You are on the waitlist. We send you an email when Gui is available on Windows.</p>
       <button class="dialog-button" type="button" commandfor="waitlist-dialog" command="close">Done</button>
     </div>
   </dialog>
@@ -300,7 +294,7 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
   <section id="cost">
     <h2>Cost and setup</h2>
     <p>Gui is free to use during alpha. Connect your own AI coding agent and use your existing account and plan. You pay the agent provider directly; Gui adds no AI usage charges.</p>
-    <p>The Mac app needs a Gui account and an AI coding agent. Gui can install Claude Code or Codex and help you sign in. You can start with New canvas without a project.</p>
+    <p>Gui needs a Gui account and an AI coding agent. Gui can install Claude Code or Codex and help you sign in. You can start with New canvas without a project.</p>
   </section>
 
   <section>
@@ -549,21 +543,25 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
     }
   })
 
-  // Gui is a Mac app: on a phone or tablet, the download button explains that instead of
-  // downloading a DMG. iPadOS says it is a Mac, but a Mac has no touch screen.
+  // Gui runs on Macs and Linux. On a phone or tablet, the download button explains that instead
+  // of downloading a DMG. iPadOS says it is a Mac, but a Mac has no touch screen.
   const ua = navigator.userAgent
-  const notMac = /iPhone|iPad|iPod|Android/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
-  if (notMac) {
-    document.querySelector('.download-button')!.addEventListener('click', (event) => {
-      event.preventDefault()
-      showDialog(macDialog)
-    })
-  }
+  const downloadButton = document.querySelector<HTMLAnchorElement>('.download-button')!
+  const downloadLabel = document.querySelector('[data-download-label]')!
+  const phone = /iPhone|iPad|iPod|Android/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
   // On Linux, /download is the Linux download page, which has its own steps (worker.js).
   const linux = /Linux/.test(ua) && !/Android/.test(ua)
-  if (linux) document.querySelector('[data-download-label]')!.textContent = 'Download for Linux'
-  document.querySelector('.download-button')!.addEventListener('click', () => {
-    if (!notMac && !linux) document.querySelector<HTMLElement>('[data-download-help]')!.hidden = false
+  // Windows is not out yet: the button opens the Windows waitlist, not the Mac's DMG.
+  const windows = /Windows/.test(ua)
+  if (linux) downloadLabel.textContent = 'Download for Linux'
+  if (windows) downloadLabel.textContent = 'Join the Windows waitlist'
+  downloadButton.addEventListener('click', (event) => {
+    if (phone || windows) {
+      event.preventDefault()
+      showDialog(phone ? macDialog : dialog)
+    } else if (!linux) {
+      document.querySelector<HTMLElement>('[data-download-help]')!.hidden = false
+    }
   })
   // The worker's /downloads is the counted total. If it is missing, show nothing.
   const count = document.querySelector<HTMLElement>('[data-download-count]')
@@ -578,19 +576,19 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
       })
       .catch(() => {})
   }
-  // The share sheet sends the link to the Mac (AirDrop, Messages, Mail). Without it, copy the link.
+  // The share sheet sends the link to the computer (AirDrop, Messages, Mail). Without it, copy the link.
   const share = macDialog.querySelector<HTMLButtonElement>('[data-share]')!
   if (!navigator.share) share.textContent = 'Copy the link'
   share.addEventListener('click', async () => {
     const url = 'https://usegui.com/'
     if (navigator.share) {
-      await navigator.share({ title: 'Gui', text: 'Gui for Mac', url }).catch(() => {})
+      await navigator.share({ title: 'Gui', text: 'Gui for Mac and Linux', url }).catch(() => {})
     } else {
       try {
         await navigator.clipboard.writeText(url)
         share.textContent = 'Link copied'
       } catch {
-        share.textContent = 'Open usegui.com on your Mac'
+        share.textContent = 'Open usegui.com on your computer'
       }
     }
   })
@@ -898,12 +896,8 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
     display: grid;
     gap: var(--s-1);
     min-width: 0;
-    padding: 0;
-    border: 0;
   }
-  .waitlist-field > span,
-  .waitlist-field legend {
-    padding: 0;
+  .waitlist-field > span {
     margin-bottom: var(--s-1);
     font-size: var(--t-small);
     font-weight: 400;
@@ -922,27 +916,6 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
   }
   .waitlist-field input[type='email']::placeholder {
     color: var(--muted);
-  }
-  .waitlist-platforms {
-    display: flex;
-    gap: var(--s-2);
-  }
-  .waitlist-platforms label {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-2);
-    height: 2.5rem;
-    padding: 0 var(--s-3);
-    border: 1px solid var(--rule);
-    border-radius: 999px;
-    cursor: pointer;
-  }
-  .waitlist-platforms label:has(:checked) {
-    border-color: var(--fg);
-  }
-  .waitlist-platforms input {
-    margin: 0;
-    accent-color: var(--fg);
   }
   .dialog-button {
     justify-self: start;
@@ -970,9 +943,6 @@ const wide = '(min-width: 72rem) 68rem, calc(100vw - 3rem)'
   .waitlist-open:focus-visible {
     outline: 2px solid var(--fg);
     outline-offset: 2px;
-  }
-  .waitlist-platforms input:focus-visible {
-    outline-offset: 1px;
   }
   .waitlist-trap {
     position: absolute;

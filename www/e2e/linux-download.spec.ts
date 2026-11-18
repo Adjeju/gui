@@ -42,7 +42,9 @@ async function clickDownload(page: Page, name: string) {
   const download = page.getByRole('link', { name, exact: true })
   await expect(download).toHaveAttribute('href', '/download')
   // Runs after the page's own click handler on the button, and only stops the navigation.
-  await page.evaluate(() => addEventListener('click', (event) => event.preventDefault()))
+  await page.evaluate(() =>
+    addEventListener('click', (event) => event.preventDefault(), { once: true }),
+  )
   await download.click()
 }
 
@@ -69,5 +71,30 @@ test.describe('on a Mac', () => {
     await clickDownload(page, 'Download for Mac')
     await expect(page.locator('[data-download-help]')).toBeVisible()
     await expect(page.locator('[data-download-help]')).toContainText('open Gui.dmg')
+  })
+})
+
+test.describe('on Windows', () => {
+  test.use({
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/142.0 Safari/537.36',
+  })
+
+  test('the home page offers the Windows waitlist, not the Mac download', async ({ page }) => {
+    let posted = ''
+    await page.route('**/waitlist', async (route) => {
+      posted = route.request().postData() ?? ''
+      await route.fulfill({ json: { ok: true } })
+    })
+    await clickDownload(page, 'Join the Windows waitlist')
+    await expect(page.locator('[data-download-help]')).toBeHidden()
+    const dialog = page.getByRole('dialog', { name: 'Gui for Windows' })
+    await expect(dialog).toBeVisible()
+    // Windows is the only platform on the waitlist, so there is nothing to choose.
+    await expect(dialog.getByRole('radio')).toHaveCount(0)
+    await dialog.getByRole('textbox', { name: 'Email', exact: true }).fill('qa@example.invalid')
+    await dialog.getByRole('button', { name: 'Sign up', exact: true }).click()
+    await expect(dialog.locator('[data-waitlist-done]')).toBeVisible()
+    expect(posted).toContain('name="platform"\r\n\r\nwindows\r\n')
   })
 })

@@ -44,12 +44,12 @@ test('launch waitlist survives a double click and Back dismisses only the dialog
   page,
 }) => {
   await page.getByRole('button', { name: 'Sign up for the waitlist', exact: true }).dblclick()
-  await expect(page.getByRole('dialog', { name: 'Gui for Windows and Linux' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Gui for Windows' })).toBeVisible()
   await page.goBack()
-  await expect(page.getByRole('dialog', { name: 'Gui for Windows and Linux' })).toBeHidden()
+  await expect(page.getByRole('dialog', { name: 'Gui for Windows' })).toBeHidden()
   await expect(page).toHaveURL('http://127.0.0.1:4329/')
   await page.goForward()
-  await expect(page.getByRole('dialog', { name: 'Gui for Windows and Linux' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Gui for Windows' })).toBeVisible()
 })
 
 test('launch waitlist drops a late submission after closing and reopening', async ({ page }) => {
@@ -64,7 +64,7 @@ test('launch waitlist drops a late submission after closing and reopening', asyn
     await route.fulfill({ json: { ok: true } })
   })
   await page.getByRole('button', { name: 'Sign up for the waitlist', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Gui for Windows and Linux' })
+  const dialog = page.getByRole('dialog', { name: 'Gui for Windows' })
   await dialog.getByRole('textbox', { name: 'Email', exact: true }).fill('qa@example.invalid')
   await dialog.getByRole('button', { name: 'Sign up', exact: true }).click()
   await expect.poll(() => submitted).toBe(1)
