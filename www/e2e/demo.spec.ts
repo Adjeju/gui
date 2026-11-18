@@ -106,6 +106,9 @@ test('opening and closing run at a steady frame rate', async ({ page }) => {
 
 test('the scripted session makes the words semi-bold, and Undo takes it back', async ({ page }) => {
   await open(page)
+  // The session selects the words first: the outline and its label are on them.
+  await expect(page.locator('[data-selected]')).toHaveClass(/is-on/)
+  await expect(page.locator('[data-selected] .mark-label')).toContainText('span')
   await untilIdle(page)
 
   const words = page.locator('[data-demo-target]')
@@ -119,9 +122,9 @@ test('the scripted session makes the words semi-bold, and Undo takes it back', a
   await expect(chat).toContainText('2 steps ·')
   await expect(page.getByText('Select something in the preview, then try a change.')).toBeHidden()
 
-  // The selection outline and its label are on the words.
-  await expect(page.locator('[data-selected]')).toHaveClass(/is-on/)
-  await expect(page.locator('[data-selected] .mark-label')).toContainText('span')
+  // Sending cleared the selection, as in the app; the message keeps what it was about.
+  await expect(page.locator('[data-selected]')).not.toHaveClass(/is-on/)
+  await expect(chat.locator('.row.you .chip')).toContainText('Text')
 
   await chat.getByRole('button', { name: 'Undo' }).click()
   await expect.poll(weight).toBe('250')
@@ -164,6 +167,10 @@ test('links on the page do not navigate while the demo is open', async ({ page }
 test('a message the demo can not do gets an honest answer', async ({ page }) => {
   await open(page)
   await untilIdle(page)
+  // Sending the example cleared its selection; with nothing selected the answer is to select
+  // something first, so select the paragraph to ask the demo for something it can't do.
+  await page.locator('.sub').click({ position: { x: 20, y: 8 } })
+  await expect(page.locator('[data-selected] .mark-label')).toContainText(/^p/)
   const input = page.getByRole('textbox', { name: 'Message' })
   await input.fill('Make the whole page pink')
   await input.press('Enter')

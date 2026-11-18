@@ -2,32 +2,41 @@ import { expect, type Page, test } from '@playwright/test'
 
 test.use({ reducedMotion: 'reduce' })
 
+/** Opens the demo and waits out the example, which always plays first (there is no skip). */
 async function tryYourself(page: Page) {
   await page.getByRole('button', { name: 'Try it now', exact: true }).click()
   await expect(page.locator('[data-demo]')).toHaveAttribute('data-state', 'intro')
-  await page.getByRole('button', { name: 'Try it yourself', exact: true }).click()
-  await expect(page.locator('[data-demo]')).toHaveAttribute('data-state', 'idle')
+  await expect(page.locator('[data-demo-status]')).toHaveText(
+    'Example playing. This browser demo has no live AI agent.',
+  )
+  await expect(page.locator('[data-demo]')).toHaveAttribute('data-state', 'idle', {
+    timeout: 40_000,
+  })
 }
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
 })
 
-test('launch demo skips the example, and accepts ordinary bold wording', async ({ page }) => {
+test('launch demo plays the example, and accepts ordinary bold wording', async ({ page }) => {
   await tryYourself(page)
-  await expect(
-    page.getByText('Browser demo: bold, serif, or blue. No live AI agent.'),
-  ).toBeVisible()
-  await expect(page.locator('[data-transcript] .you')).toHaveCount(0)
+  await expect(page.locator('[data-demo-status]')).toHaveText(
+    'Your turn. Select text and try bold or blue.',
+  )
+  // The example's own message
+  await expect(page.locator('[data-transcript] .you')).toHaveCount(1)
   await page.locator('[data-demo-target]').click()
   const words = page.locator('[data-demo-target]')
   const before = await words.evaluate((el) => getComputedStyle(el).fontWeight)
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Make this bold.')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
   await expect(page.locator('[data-demo]')).toHaveAttribute('data-state', 'idle')
-  await expect(page.locator('[data-transcript] .you')).toHaveCount(1)
+  await expect(page.locator('[data-transcript] .you')).toHaveCount(2)
   await expect.poll(() => words.evaluate((el) => getComputedStyle(el).fontWeight)).not.toBe(before)
-  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  // The newest card's Undo; the example's card has one too.
+  const undo = page.getByRole('button', { name: 'Undo', exact: true })
+  await expect(undo).toHaveCount(2)
+  await undo.last().click()
   await expect.poll(() => words.evaluate((el) => getComputedStyle(el).fontWeight)).toBe(before)
 })
 
