@@ -186,7 +186,7 @@ test('the start tab offers project actions; a project fills the toolbar, without
   await session.shot('running')
 })
 
-test('logs open in the drawer from the status menu and ⌘J; a crash shows a bar instead', async ({
+test('logs open in the drawer from the status menu and ⌘J; a crash dims the page under a card that offers them', async ({
   launch,
 }) => {
   const session = await launch({ fixture: 'vite' })
@@ -220,24 +220,31 @@ test('logs open in the drawer from the status menu and ⌘J; a crash shows a bar
   await clickMenu(session, 'Hide Terminal')
   await waitFor(async () => !(await drawerOpen(session)), 'the drawer to close from the menu')
 
-  // The dev server crashes: its last page stays, the status turns red, and instead of raw
-  // output a bar under the canvas offers the logs and a restart.
+  // The dev server crashes: its last page stays, dimmed so it doesn't pass for live, the
+  // status turns red, and instead of raw output a card over it says why, with the logs.
   killAll(devServerPids(root))
   const crashed = await waitFor(async () => {
     const state = await session.state()
-    return state.devServer.status === 'exited' ? state : null
-  }, 'the dev server to exit')
+    return state.devServer.status === 'exited' && !state.preview.visible ? state : null
+  }, 'the dev server to exit and its page to dim')
   expect(crashed.devServer.exitCode).not.toBe(0)
-  expect(crashed.preview.visible).toBe(true)
+  expect(crashed.preview.still).toMatch(/^data:image\/jpeg;base64,/)
   expect(crashed.drawer.open).toBe(false)
+  await expect(session.chrome.locator('[data-preview-still]')).toBeVisible()
   await expect(serverStatus(session)).toHaveAccessibleName('Dev server: Stopped with an error')
-  const crashBar = session.chrome.getByRole('alert')
-  await expect(crashBar).toContainText('Your app stopped with an error')
-  await session.shot('crash-bar')
+  const canvas = session.chrome.getByRole('main')
+  await expect(canvas.getByText('Your app stopped', { exact: true })).toBeVisible()
+  await expect(canvas).toContainText('terminated by signal SIGKILL')
+  // The bar under a page that's still on screen isn't shown over the card too.
+  await expect(session.chrome.getByRole('alert')).toHaveCount(0)
+  await session.shot('crash-card')
 
-  await crashBar.getByRole('button', { name: 'Show logs' }).click()
-  await waitFor(() => logsOpen(session), 'the logs to open from the crash bar')
-  await expect(crashBar).toHaveCount(0)
+  await canvas.getByRole('button', { name: 'Show logs' }).click()
+  await waitFor(() => logsOpen(session), 'the logs to open from the crash card')
+  await expect(canvas.getByRole('button', { name: 'Hide logs' })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  )
   const drawer = session.chrome.getByRole('region', { name: 'Terminal' })
   await expect(drawer).toContainText('Stopped with an error')
   await session.shot('crash-logs')
@@ -246,6 +253,8 @@ test('logs open in the drawer from the status menu and ⌘J; a crash shows a bar
   await session.waitForPreview()
   await expect(serverStatus(session)).toHaveAccessibleName('Dev server: Running')
   await expect(drawer).not.toContainText('Stopped with an error')
+  await expect(session.chrome.locator('[data-preview-still]')).toHaveCount(0)
+  await expect(canvas.getByText('Your app stopped', { exact: true })).toHaveCount(0)
 })
 
 test('a preview that fails to load says why, and Try again loads it once it can', async ({
