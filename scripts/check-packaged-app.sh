@@ -46,7 +46,6 @@ for module in \
   ./node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js \
   ./node_modules/@agentclientprotocol/codex-acp/dist/index.js \
   ./node_modules/pi-acp/dist/index.js \
-  ./node_modules/@bex-co/muse-code-acp/dist/index.js \
   ./node_modules/amp-acp/dist/index.js \
   electron-updater node-pty zod @agentclientprotocol/sdk source-map-js \
   @modelcontextprotocol/sdk/server/mcp.js @modelcontextprotocol/sdk/server/streamableHttp.js; do
