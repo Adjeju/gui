@@ -34,6 +34,11 @@ export type AgentLaunch =
       env: Record<string, string>
       /** Another name the CLI may be installed under, tried when `command` isn't found */
       fallback?: CommandFallback
+      /**
+       * The oldest version Gui runs, read from `<command> --version` before each start, and
+       * the command that updates it
+       */
+      minVersion?: { version: string; update: string }
     }
 
 /** A project's Ask or Auto (see ChatMeta.autoApprove), as a session applies it. */
@@ -48,8 +53,6 @@ export type PermissionPolicy = 'ask' | 'auto'
 export interface PermissionControls {
   /** The session's mode: its config option in the `mode` category, else its ACP modes */
   mode?: Record<PermissionPolicy, string[]>
-  /** Other select config options, by id */
-  options?: Record<string, Record<PermissionPolicy, string[]>>
   /** Sent as `_meta` on session/new and session/load; takes effect when a session starts */
   sessionMeta?: Record<PermissionPolicy, Record<string, unknown>>
 }
@@ -65,22 +68,12 @@ export interface AgentDefinition extends AgentInfo {
   ownPermissions?: true
   /** How to sign in, shown when the agent reports the user isn't signed in */
   signIn: string | null
-  /**
-   * What to do when the agent hasn't connected to Gui's tools after a turn (tool-reach.ts),
-   * for an agent with its own reason it may not (Muse only loads them in folders trusted in it)
-   */
-  toolsHint?: string
   /** Gui can run this agent's ACP sign-in flow itself (it opens the browser) */
   inAppSignIn: boolean
   /** Official install page, for agents the user installs themselves */
   installUrl?: string
   /** Sign-in Gui can start in Terminal: the command, and what to do once it runs */
   terminalSignIn?: { command: string; hint: string }
-  /**
-   * Tool calls the agent reports for its own bookkeeping rather than work: the title of a
-   * call of no particular kind ('other'). They, and their updates, never reach the chat.
-   */
-  hiddenTools?: RegExp
   /**
    * A message the agent sends to say its mode changed, rather than `current_mode_update`;
    * the first group is the mode's id. Such messages update the mode and never reach the chat.
@@ -257,30 +250,25 @@ const LAUNCH: Record<string, Omit<AgentDefinition, keyof AgentInfo>> = {
     ownPermissions: true,
   },
   muse: {
-    // Muse Code speaks its own session protocol; the bundled adapter (built on Meta's
-    // Muse Code SDK) drives the user's `muse`.
-    launch: adapter('@bex-co/muse-code-acp', { requires: 'muse' }),
+    // Muse Code serves ACP itself. In a folder the user hasn't trusted in Muse, it withholds
+    // every MCP server it's given, Gui's tools included; --trust-workspace trusts the folder
+    // for this run only (Muse's trust.json is left as it is), which also loads its Muse skills,
+    // rules (AGENTS.md, CLAUDE.md) and hooks. Gui only starts a session in a folder the user
+    // trusted in Gui, so that trust is the same one.
+    launch: {
+      ...cli('muse', 'acp', '--trust-workspace'),
+      // Older Muse has no `acp` command, and would take the word as a prompt.
+      minVersion: { version: '1.4.23', update: 'MUSE_SYNC_UPDATE=1 muse --version' },
+    },
     signIn: 'Sign in from Settings → Agents, or run `muse login` in a terminal.',
     inAppSignIn: false,
     installUrl: 'https://dev.meta.ai/docs/muse-code/',
     terminalSignIn: { command: 'muse login', hint: 'Follow the steps to sign in.' },
-    // Muse withholds every MCP server in a folder the user hasn't trusted in Muse. Gui
-    // leaves that choice to the user: trusting also loads the folder's own Muse skills and rules.
-    toolsHint:
-      "Muse only loads tools in folders you've trusted in it: run `muse` in this project once and accept, then start a new chat.",
-    // The adapter reports Muse's reminder attribution cards as calls titled
-    // `reminderChild: <status>`; workflows and subagents, which are real work, stay.
-    hiddenTools: /^reminderChild: [\w ]+$/,
-    // On request passes approvals on to Gui; Auto-approve picks Muse's approve-once
-    // choice at every stage, with the sandbox still on. For Ask, Muse 1.2.1+ also offers
-    // the native policy that asks about every call the user's own rules don't allow
-    // (onRequest lets known-safe ones run); older hosts offer only onRequest.
-    permissions: {
-      mode: { ask: ['default'], auto: ['bypassApprovals'] },
-      options: {
-        nativeApprovalPolicy: { ask: ['promptUnmatched', 'onRequest'], auto: ['onRequest'] },
-      },
-    },
+    // Muse's modes are its approval policies. Ask uses the one that asks about every action
+    // the user's own Muse rules don't cover (onRequest where it's missing); Auto asks only
+    // about what Muse says needs approval, and Gui's Auto rules answer. Not Allow all,
+    // which never asks, so Gui's rules would never see a request.
+    permissions: { mode: { ask: ['promptUnmatched', 'onRequest'], auto: ['onRequest'] } },
   },
 }
 
@@ -292,10 +280,6 @@ const BUILT_IN: readonly AgentDefinition[] = AGENTS.map((agent) => ({
 /** The agent's own settings decide what it asks (AgentDefinition.ownPermissions). */
 export const declaresOwnPermissions = (id: AgentId) =>
   BUILT_IN.some((agent) => agent.id === id && agent.ownPermissions === true)
-
-/** The agent's hint for when it hasn't connected to Gui's tools (AgentDefinition.toolsHint). */
-export const toolsHint = (id: AgentId) =>
-  BUILT_IN.find((agent) => agent.id === id)?.toolsHint ?? null
 
 /**
  * Whether the agent is offered preview_open_website. Opening a website asks the user first

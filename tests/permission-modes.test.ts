@@ -13,22 +13,19 @@ const setting = (id: string, value: string, values: string[]): AgentSetting => (
   options: values.map((v) => ({ value: v, name: v, group: null })),
 })
 
-/** A session offering a `mode` config option and, optionally, other options. */
-const withModeOption = (value: string, values: string[], others: AgentSetting[] = []) =>
-  ({
-    modeOption: setting('mode', value, values),
-    modes: null,
-    option: (id) => others.find((other) => other.id === id) ?? null,
-  }) satisfies OfferedControls
+/** A session offering a `mode` config option. */
+const withModeOption = (value: string, values: string[]): OfferedControls => ({
+  modeOption: setting('mode', value, values),
+  modes: null,
+})
 
 /** A session offering ACP session modes only. */
 const withModes = (current: string, offered: string[]): OfferedControls => ({
   modeOption: null,
   modes: { current, offered },
-  option: () => null,
 })
 
-const nothing: OfferedControls = { modeOption: null, modes: null, option: () => null }
+const nothing: OfferedControls = { modeOption: null, modes: null }
 
 // As declared in src/main/agents.ts, and as each agent advertised it on session/new.
 const claude: PermissionControls = { mode: { ask: ['default'], auto: ['auto', 'acceptEdits'] } }
@@ -37,9 +34,10 @@ const grok: PermissionControls = {
   sessionMeta: { ask: { yoloMode: false, autoMode: false }, auto: { autoMode: true } },
 }
 const muse: PermissionControls = {
-  mode: { ask: ['default'], auto: ['bypassApprovals'] },
-  options: { nativeApprovalPolicy: { ask: ['promptUnmatched', 'onRequest'], auto: ['onRequest'] } },
+  mode: { ask: ['promptUnmatched', 'onRequest'], auto: ['onRequest'] },
 }
+/** The modes `muse acp` 1.4.23 offers: its approval policies. */
+const MUSE_MODES = ['allowAll', 'promptUnmatched', 'onRequest', 'denyUnmatched']
 const gemini: PermissionControls = { mode: { ask: ['default'], auto: ['default'] } }
 const GEMINI_MODES = ['default', 'autoEdit', 'yolo', 'plan']
 const CLAUDE_MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']
@@ -59,9 +57,10 @@ describe('ownPermissions: does the agent decide what it asks, rather than Gui?',
     expect(decides(grok, nothing)).toBe(false)
   })
 
-  test('no when only another option offers an ask-first value', () => {
-    const policy = setting('nativeApprovalPolicy', 'onRequest', ['onRequest', 'allowAll'])
-    expect(decides(muse, withModeOption('plan', ['plan'], [policy]))).toBe(false)
+  test('no for Muse Code, whose modes include the one Ask wants, or its fallback', () => {
+    expect(decides(muse, withModeOption('allowAll', MUSE_MODES))).toBe(false)
+    expect(decides(muse, withModeOption('allowAll', ['allowAll', 'onRequest']))).toBe(false)
+    expect(decides(muse, withModeOption('allowAll', ['allowAll']))).toBe(true)
   })
 
   test('yes when the mode Ask wants is renamed or missing', () => {
@@ -137,15 +136,19 @@ describe('permissionChanges', () => {
     expect(ownPermissions({ permissions: gemini }, withModes('autoEdit', GEMINI_MODES))).toBe(false)
   })
 
-  test('skips an option the session lacks, but sets one it has', () => {
-    const modes = ['default', 'bypassApprovals']
-    expect(permissionChanges(muse, 'auto', withModeOption('default', modes))).toEqual({
-      changes: [{ kind: 'option', configId: 'mode', value: 'bypassApprovals' }],
+  test("Muse Code: Ask asks about what its rules don't cover, Auto only what it says needs approval", () => {
+    expect(permissionChanges(muse, 'ask', withModeOption('allowAll', MUSE_MODES))).toEqual({
+      changes: [{ kind: 'option', configId: 'mode', value: 'promptUnmatched' }],
       missing: [],
     })
-    const policy = setting('nativeApprovalPolicy', 'onRequest', ['onRequest', 'promptUnmatched'])
-    expect(permissionChanges(muse, 'ask', withModeOption('default', modes, [policy]))).toEqual({
-      changes: [{ kind: 'option', configId: 'nativeApprovalPolicy', value: 'promptUnmatched' }],
+    expect(permissionChanges(muse, 'auto', withModeOption('promptUnmatched', MUSE_MODES))).toEqual({
+      changes: [{ kind: 'option', configId: 'mode', value: 'onRequest' }],
+      missing: [],
+    })
+    // Without promptUnmatched, Ask falls back to onRequest.
+    const fewer = withModeOption('allowAll', ['allowAll', 'onRequest'])
+    expect(permissionChanges(muse, 'ask', fewer)).toEqual({
+      changes: [{ kind: 'option', configId: 'mode', value: 'onRequest' }],
       missing: [],
     })
   })

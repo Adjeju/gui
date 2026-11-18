@@ -68,8 +68,8 @@ export function commandLabel(command: AgentCommand): string {
 /**
  * Commands an agent runs on the session itself rather than as a request to the model.
  * They have no use for the picked element or images, and some refuse to run with them
- * (Muse's /rename and /status, Claude Code's /context), so they go alone. Every other
- * command (skills, prompts, /review) takes the message's context along.
+ * (Claude Code's /context), so they go alone. Every other command (skills, prompts,
+ * /review) takes the message's context along.
  */
 const SESSION_COMMANDS = new Set([
   'autocompact',

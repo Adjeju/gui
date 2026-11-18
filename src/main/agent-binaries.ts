@@ -76,21 +76,27 @@ function parseVersion(text: string) {
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null
 }
 
+/** Whether `version` (a CLI's `--version` output) is `floor` or later; false when it has none. */
+export function meetsVersion(version: string, floor: string) {
+  const have = parseVersion(version)
+  const min = parseVersion(floor)
+  if (!have || !min) return false
+  for (let i = 0; i < 3; i++) {
+    if (have[i] !== min[i]) return (have[i] ?? 0) > (min[i] ?? 0)
+  }
+  return true
+}
+
 /**
  * Codex may use any CLI at or above the adapter's minimum; the agent health check
  * verifies startup. Claude stays on the SDK's minor line.
  */
 function compatible(id: PinnedAgentId, version: string, spec: AgentBinary) {
+  if (id === 'codex') return meetsVersion(version, spec.minCliVersion)
   const have = parseVersion(version)
   const min = parseVersion(spec.minCliVersion)
   const line = parseVersion(spec.cliVersion)
   if (!have || !min || !line) return false
-  if (id === 'codex') {
-    for (let i = 0; i < 3; i++) {
-      if (have[i] !== min[i]) return (have[i] ?? 0) > (min[i] ?? 0)
-    }
-    return true
-  }
   return have[0] === line[0] && have[1] === line[1] && have[2] >= min[2]
 }
 
@@ -112,7 +118,8 @@ async function isExecutable(path: string) {
   }
 }
 
-function cliVersion(path: string, env: NodeJS.ProcessEnv) {
+/** The version a CLI's `--version` prints, as `x.y.z`; null when it prints none. */
+export function cliVersion(path: string, env: NodeJS.ProcessEnv) {
   return new Promise<string | null>((resolve) => {
     execFile(path, ['--version'], { timeout: VERSION_TIMEOUT_MS, env }, (error, stdout) => {
       const version = error ? null : parseVersion(stdout)

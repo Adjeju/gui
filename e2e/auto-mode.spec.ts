@@ -54,7 +54,7 @@ const SCENARIOS = {
       locations: [{ path: root + '/src/App.tsx' }],
     },
     { toolCallId: 'search-1', title: 'Search the project', kind: 'search', locations: [{ path: root }] },
-    // Like Muse: no locations, the path is in the tool's input.
+    // No locations: the path is in the tool's input.
     { toolCallId: 'edit-in-1', title: 'edit_file', kind: 'edit', rawInput: { path: 'src/App.tsx' } },
   ],
 }

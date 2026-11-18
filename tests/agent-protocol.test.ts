@@ -333,7 +333,7 @@ describe('mcpServersFor', () => {
   const stdio: acp.McpServer = { name: 'local', command: 'tool', args: [], env: [] }
 
   test('HTTP servers go to an agent that advertises them', () => {
-    // As @bex-co/muse-code-acp 0.11.0 advertises it.
+    // As `muse acp` 1.4.23 advertises { http: true, sse: false }.
     expect(mcpServersFor({ mcpCapabilities: { http: true } }, [http, stdio])).toEqual([http, stdio])
   })
 

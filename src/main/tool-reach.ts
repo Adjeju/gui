@@ -5,8 +5,8 @@
  * - `unsupported`: Gui had tools for the session and passed none on, because the agent can't
  *   take them (it doesn't advertise HTTP MCP, like Pi). Known as the session starts.
  * - `unconnected`: Gui passed its server, and a turn ended without a single request from that
- *   session reaching it (Muse in a folder the user hasn't trusted in Muse withholds every MCP
- *   server). Some agents only connect when they first need a tool, so this waits for a turn
+ *   session reaching it (an agent may withhold MCP servers by its own rules). Some agents
+ *   only connect when they first need a tool, so this waits for a turn
  *   to end, and a request arriving later clears it.
  *
  * Said once per chat: shown from when it's known until the user sends a message with it on
@@ -52,15 +52,10 @@ export class ToolReach {
   }
 }
 
-/** The notice in plain words, with the agent's own hint for when it never connected. */
-export function toolReachText(
-  notice: ToolReachNotice,
-  agentName: string,
-  hint: string | null,
-): string {
+/** The notice in plain words. */
+export function toolReachText(notice: ToolReachNotice, agentName: string): string {
   if (notice === 'unsupported') {
     return `${agentName} can't use Gui's preview and canvas tools. It can still read and edit your files.`
   }
-  const text = `${agentName} hasn't connected to Gui's preview and canvas tools.`
-  return hint ? `${text} ${hint}` : text
+  return `${agentName} hasn't connected to Gui's preview and canvas tools.`
 }

@@ -98,8 +98,12 @@ test('shown with their names, without agents switched off or models no longer li
 
 test("a Muse Code model saved through Gui's earlier adapter reads as the id `muse acp` uses", () => {
   const adapter = (json: string) => `muse-model:${encodeURIComponent(json)}`
-  expect(currentModelValue('muse', adapter('["meta",null,"muse-spark-1.3"]'))).toBe('muse-spark-1.3')
-  expect(currentModelValue('muse', adapter('["echo",null,"muse-spark-1.2"]'))).toBe('muse-spark-1.2')
+  expect(currentModelValue('muse', adapter('["meta",null,"muse-spark-1.3"]'))).toBe(
+    'muse-spark-1.3',
+  )
+  expect(currentModelValue('muse', adapter('["echo",null,"muse-spark-1.2"]'))).toBe(
+    'muse-spark-1.2',
+  )
   expect(currentModelValue('muse', 'muse-wonder-full-1.0')).toBe('muse-wonder-full-1.0')
   // Another agent's value, and malformed ones, stay as they are.
   const meta = adapter('["meta",null,"x"]')

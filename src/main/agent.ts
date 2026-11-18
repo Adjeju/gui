@@ -12,11 +12,16 @@ import {
   agentName,
   type ModelSettings,
 } from '../shared/types'
-import { AgentMissingError, pinnedAgent, requireAgentBinary } from './agent-binaries'
+import {
+  AgentMissingError,
+  cliVersion,
+  meetsVersion,
+  pinnedAgent,
+  requireAgentBinary,
+} from './agent-binaries'
 import {
   displayedModes,
   errorDetail,
-  findSetting,
   formQuestions,
   mcpServersFor,
   modeNoticeUpdate,
@@ -99,10 +104,31 @@ async function requireExecutable(
   return path
 }
 
+/**
+ * Refuses a CLI older than `minVersion`, or one whose version can't be read, before it's
+ * started: an older one may not have the command Gui runs, and take its arguments as
+ * something else (an older `muse` reads `acp` as a prompt).
+ */
+async function requireVersion(
+  agent: AgentDefinition,
+  path: string,
+  minVersion: { version: string; update: string },
+  env: NodeJS.ProcessEnv,
+) {
+  const version = await cliVersion(path, env)
+  if (version && meetsVersion(version, minVersion.version)) return
+  const have = version ? ` (yours is ${version})` : ''
+  throw new DetailedError(
+    `Gui needs ${agent.name} ${minVersion.version} or newer${have}. Update it by running \`${minVersion.update}\` in a terminal, then try again.`,
+    version ? null : `\`${path} --version\` didn't print a version.`,
+  )
+}
+
 async function spawnSpec(agent: AgentDefinition, env: NodeJS.ProcessEnv): Promise<SpawnSpec> {
   const { launch } = agent
   if (launch.kind === 'command') {
     const command = await requireExecutable(agent, launch.command, env, launch.fallback)
+    if (launch.minVersion) await requireVersion(agent, command, launch.minVersion, env)
     return { command, args: launch.args, env: launch.env }
   }
   const cliPath = launch.requires ? await requireExecutable(agent, launch.requires, env) : null
@@ -276,9 +302,6 @@ export class AgentSession {
   private declared: DeclaredControls = {}
   /** The Ask or Auto the session started with (see StartOptions.permissions) */
   private startedWith: PermissionPolicy | undefined
-  /** Bookkeeping calls this agent reports (AgentDefinition.hiddenTools), and those seen so far */
-  private hiddenTools: RegExp | undefined
-  private hiddenCalls = new Set<string>()
   /** How this agent says a mode change as a message (AgentDefinition.modeNotice) */
   private modeNotice: RegExp | undefined
   /** A greeting the agent sends unprompted once the session starts (see sessionGreeting) */
@@ -314,7 +337,6 @@ export class AgentSession {
       ownPermissions: definition.ownPermissions,
     }
     this.startedWith = permissions
-    this.hiddenTools = definition.hiddenTools
     this.modeNotice = definition.modeNotice
     const meta = sessionMeta(definition, permissions)
     const spec = await spawnSpec(definition, shellEnv)
@@ -378,7 +400,7 @@ export class AgentSession {
           if (from === null && shown.sessionUpdate === 'current_mode_update') {
             this.rememberMode(shown.currentModeId)
           }
-          if (this.isHidden(shown)) continue
+          if (this.isGreeting(shown)) continue
           this.handlers.onUpdate(shown, from)
         }
       })
@@ -599,7 +621,6 @@ export class AgentSession {
         modes && Array.isArray(modes.availableModes)
           ? { current: modes.currentModeId, offered: modes.availableModes.map((mode) => mode.id) }
           : null,
-      option: (id) => findSetting(this.configOptions, (option) => option.id === id),
     }
   }
 
@@ -794,22 +815,18 @@ export class AgentSession {
     if (mode && this.modes) this.modes = { ...this.modes, currentModeId: mode.value }
   }
 
-  /** A bookkeeping call the definition hides (AgentDefinition.hiddenTools), or an update to one. */
-  private isHidden(update: acp.SessionNotification['update']) {
+  /** The greeting the agent sends unprompted (see sessionGreeting), which never reaches the chat. */
+  private isGreeting(update: acp.SessionNotification['update']) {
     if (
-      this.greeting !== null &&
-      update.sessionUpdate === 'agent_message_chunk' &&
-      update.content.type === 'text' &&
-      update.content.text === this.greeting
+      this.greeting === null ||
+      update.sessionUpdate !== 'agent_message_chunk' ||
+      update.content.type !== 'text' ||
+      update.content.text !== this.greeting
     ) {
-      this.greeting = null
-      return true
+      return false
     }
-    if (update.sessionUpdate === 'tool_call_update') return this.hiddenCalls.has(update.toolCallId)
-    if (update.sessionUpdate !== 'tool_call' || !this.hiddenTools) return false
-    const hidden = (update.kind ?? 'other') === 'other' && this.hiddenTools.test(update.title)
-    if (hidden) this.hiddenCalls.add(update.toolCallId)
-    return hidden
+    this.greeting = null
+    return true
   }
 
   private rememberMode(modeId: string) {

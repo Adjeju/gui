@@ -81,7 +81,7 @@ export const SENSITIVE_PATH = new RegExp(
 /** Tool kinds that change files: they must name every file, and none may be sensitive. */
 const FILE_CHANGES = new Set(['edit', 'delete', 'move'])
 
-/** Where agents that send no `locations` (like Muse) put a file's path in the tool's input. */
+/** Where agents that send no `locations` put a file's path in the tool's input. */
 const PATH_FIELDS = ['path', 'file_path', 'filePath', 'notebook_path']
 
 const isReject = (option: PermissionOption | undefined) =>

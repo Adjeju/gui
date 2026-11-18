@@ -66,24 +66,21 @@ test('it is said once per chat: gone after the next message, back in a new chat'
 
 test("two chats' sessions don't affect each other", () => {
   const pi = new ToolReach()
-  const muse = new ToolReach()
+  const quiet = new ToolReach()
   pi.started(1, 1)
-  muse.started(1, 1)
+  quiet.started(1, 1)
   pi.connected()
   pi.turnEnded()
-  muse.turnEnded()
+  quiet.turnEnded()
   expect(pi.notice).toBeNull()
-  expect(muse.notice).toBe('unconnected')
+  expect(quiet.notice).toBe('unconnected')
 })
 
-test('the words, with the agent hint only when it never connected', () => {
-  expect(toolReachText('unsupported', 'Pi', 'ignored')).toBe(
+test('the words', () => {
+  expect(toolReachText('unsupported', 'Pi')).toBe(
     "Pi can't use Gui's preview and canvas tools. It can still read and edit your files.",
   )
-  expect(toolReachText('unconnected', 'Muse Code', null)).toBe(
+  expect(toolReachText('unconnected', 'Muse Code')).toBe(
     "Muse Code hasn't connected to Gui's preview and canvas tools.",
-  )
-  expect(toolReachText('unconnected', 'Muse Code', 'Run `muse` once.')).toBe(
-    "Muse Code hasn't connected to Gui's preview and canvas tools. Run `muse` once.",
   )
 })

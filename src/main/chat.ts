@@ -49,7 +49,7 @@ import { AgentAuthError, type AgentInfo, AgentSession, type PermissionResolver }
 import { AgentMissingError } from './agent-binaries'
 import { type PermissionRequest, parseModelSettings, QUESTION_KIND } from './agent-protocol'
 import { agentHealth } from './agent-status'
-import { declaresOwnPermissions, opensWebsites, type PermissionPolicy, toolsHint } from './agents'
+import { declaresOwnPermissions, opensWebsites, type PermissionPolicy } from './agents'
 import { trackTurn } from './analytics'
 import { autoApproval, isAutoApprove, requestPaths, SENSITIVE_PATH } from './auto-approve'
 import {
@@ -2159,14 +2159,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
   /** Says what the agent can't reach of Gui's tools, under the message box (tool-reach.ts). */
   private refreshToolNotice() {
     const { notice } = this.toolReach
-    const agentId = this.meta.agentId
-    const text = notice
-      ? toolReachText(
-          notice,
-          this.meta.agentName,
-          notice === 'unconnected' ? toolsHint(agentId) : null,
-        )
-      : null
+    const text = notice ? toolReachText(notice, this.meta.agentName) : null
     if (text !== this.meta.toolNotice) this.patchMeta({ toolNotice: text })
   }
 
