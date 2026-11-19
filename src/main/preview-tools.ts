@@ -314,9 +314,16 @@ export class PageTools {
     }
     const website = page.kind === 'website'
     const assertLoaded = () => this.assertLoaded()
-    this.interactions = new PreviewInteractions(page.inspector, assertLoaded, pace, website)
+    this.interactions = new PreviewInteractions(
+      page.inspector,
+      page.viewScale,
+      assertLoaded,
+      pace,
+      website,
+    )
     this.atOnce = new PreviewInteractions(
       page.inspector,
+      page.viewScale,
       assertLoaded,
       { ...pace, paced: () => false },
       website,

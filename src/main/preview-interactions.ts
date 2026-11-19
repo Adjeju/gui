@@ -1,3 +1,9 @@
+import {
+  type ViewportPoint,
+  viewFromViewport,
+  viewportPoint,
+  viewportPointFrom,
+} from '../shared/coords'
 import type { Point } from '../shared/types'
 import { curveSamples, EASE_IN_OUT, scrollMs, typingPlan, wheelPlan } from './input-pace'
 import type { Inspector } from './inspector'
@@ -348,6 +354,12 @@ export class PreviewInteractions {
    */
   constructor(
     private readonly inspector: Inspector,
+    /**
+     * How large the page is drawn in its view (viewport.ts's emulation scale). Under that
+     * emulation Chromium takes mouse input in the drawn view's pixels, not the page's CSS
+     * pixels, so every point is converted (`mouse`) before it's sent.
+     */
+    private readonly viewScale: () => number,
     private readonly assertLoaded: () => void,
     private readonly pace: InputPace = AT_ONCE,
     private readonly website = false,
@@ -427,7 +439,7 @@ export class PreviewInteractions {
     return this.exclusive(async () => {
       const { x, y } = await this.target(selector)
       await this.pace.move({ x, y })
-      await this.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
+      await this.mouse('mouseMoved', viewportPoint(x, y))
     })
   }
 
@@ -509,14 +521,9 @@ export class PreviewInteractions {
         }>('Page.getLayoutMetrics')
         point = { x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 }
       }
+      const at = viewportPointFrom(point)
       const wheel = (delta: Point) =>
-        this.cmd('Input.dispatchMouseEvent', {
-          type: 'mouseWheel',
-          x: point.x,
-          y: point.y,
-          deltaX: delta.x,
-          deltaY: delta.y,
-        })
+        this.mouse('mouseWheel', at, { deltaX: delta.x, deltaY: delta.y })
       if (!this.pace.paced()) {
         await wheel({ x: deltaX, y: deltaY })
         return
@@ -629,22 +636,22 @@ export class PreviewInteractions {
     }
   }
 
-  private async clickAt({ x, y }: { x: number; y: number }) {
-    await this.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
-    await this.cmd('Input.dispatchMouseEvent', {
-      type: 'mousePressed',
-      x,
-      y,
-      button: 'left',
-      clickCount: 1,
-    })
-    await this.cmd('Input.dispatchMouseEvent', {
-      type: 'mouseReleased',
-      x,
-      y,
-      button: 'left',
-      clickCount: 1,
-    })
+  private async clickAt(target: { x: number; y: number }) {
+    const at = viewportPointFrom(target)
+    const press = { button: 'left', clickCount: 1 }
+    await this.mouse('mouseMoved', at)
+    await this.mouse('mousePressed', at, press)
+    await this.mouse('mouseReleased', at, press)
+  }
+
+  /**
+   * A mouse event at `at`, a point in the page's viewport (CSS pixels): sent where the page is
+   * drawn, in the view's pixels, since a device frame or a zoom draws it at `viewScale`.
+   * Unlocked: callers hold the inspector's lock, so the scale can't change under them.
+   */
+  private mouse(type: string, at: ViewportPoint, params: Record<string, unknown> = {}) {
+    const { x, y } = viewFromViewport(at, this.viewScale())
+    return this.cmd('Input.dispatchMouseEvent', { type, x, y, ...params })
   }
 
   private async key(key: PreviewKey, shift: boolean) {

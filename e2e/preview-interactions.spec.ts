@@ -90,7 +90,7 @@ test('agent tools discover controls, click, hover, type, press keys and scroll',
     .poll(() => page.locator('#scroller').evaluate((node) => node.scrollTop))
     .toBeGreaterThan(0)
 
-  // CDP input uses CSS coordinates even when Gui draws the mobile viewport smaller.
+  // Input still lands on its target when Gui draws the mobile viewport smaller.
   await session.chrome.evaluate(() => window.gui.setViewport('mobile'))
   await ask(session, [
     { name: 'preview_click', args: { selector: '#open' } },
@@ -198,4 +198,77 @@ test('the agent’s pointer shows for every click, walkthrough or not', async ({
   await expect(overlay.locator('[data-guide-pointer]')).toBeVisible()
   await expect(overlay.locator('[data-guide-outline]')).toHaveCount(0)
   await expect(overlay.getByRole('status')).toHaveCount(0)
+})
+
+/** What Playwright passes to `app.evaluate` callbacks. */
+type ElectronModule = typeof import('electron/main')
+
+/** Narrower than Laptop's 1440 px plus the canvas around it, so its frame is drawn scaled down. */
+const SMALL_WINDOW = { width: 1200, height: 800 }
+
+// Links at the far right, where a press sent in CSS pixels to a frame drawn smaller lands well
+// past them (at the target ÷ the frame's scale).
+const NAV_APP = `export default function App() {
+  return <main>
+    <nav style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, padding: 16 }}>
+      <a id="home" href="#home">Home</a><a id="work" href="#work">Work</a><a id="about" href="#about">About</a>
+    </nav>
+    <div id="panel" style={{ position: 'fixed', right: 0, bottom: 0, width: 200, height: 150, overflow: 'auto' }}><div style={{ height: 800 }}>Panel</div></div>
+  </main>
+}`
+
+test('agent clicks land on their target in a scaled-down device frame', async ({ launch }) => {
+  const session = await launch({ fixture: 'vite' })
+  await session.waitForPreview()
+  writeFileSync(join(session.fixture.root, 'src', 'App.tsx'), NAV_APP)
+  writeFileSync(join(session.fixture.root, 'src', 'index.css'), 'body { margin: 0; }')
+  const page = await session.previewPage()
+  await expect(page.locator('#about')).toHaveText('About')
+  await installToolAgent(session)
+
+  await session.app.evaluate(
+    ({ BrowserWindow }: ElectronModule, size) =>
+      BrowserWindow.getAllWindows()[0]?.setContentSize(size.width, size.height),
+    SMALL_WINDOW,
+  )
+  await session.chrome.evaluate(() => window.gui.setViewport('laptop'))
+  await expect
+    .poll(async () => (await session.state()).preview.frame?.scale ?? 1)
+    .toBeLessThan(0.95)
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(1440)
+
+  // Where each press arrives, in the page's CSS pixels.
+  await page.evaluate(() => {
+    const downs: { x: number; y: number }[] = []
+    ;(window as unknown as { downs: typeof downs }).downs = downs
+    addEventListener(
+      'mousedown',
+      (event) => downs.push({ x: event.clientX, y: event.clientY }),
+      true,
+    )
+  })
+  const box = await page.locator('#about').evaluate((node) => {
+    const rect = node.getBoundingClientRect()
+    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+  })
+
+  const [clicked] = await ask(session, [{ name: 'preview_click', args: { selector: '#about' } }])
+  expect(clicked.isError, JSON.stringify(clicked)).not.toBe(true)
+  const downs = await page.evaluate(
+    () => (window as unknown as { downs: { x: number; y: number }[] }).downs,
+  )
+  const landed = `pressed at ${JSON.stringify(downs)}, aimed at ${JSON.stringify(box)}`
+  expect(downs, landed).toHaveLength(1)
+  expect(Math.abs(downs[0].x - box.x), landed).toBeLessThan(2)
+  expect(Math.abs(downs[0].y - box.y), landed).toBeLessThan(2)
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#about')
+
+  // A wheel goes where it's aimed too: a panel in the far corner scrolls, not the page.
+  const [scrolled] = await ask(session, [
+    { name: 'preview_scroll', args: { selector: '#panel', deltaY: 200 } },
+  ])
+  expect(scrolled.isError, JSON.stringify(scrolled)).not.toBe(true)
+  await expect
+    .poll(() => page.locator('#panel').evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(0)
 })

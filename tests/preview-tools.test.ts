@@ -49,6 +49,8 @@ function page(options: {
   loading?: boolean
   /** What the page says to preview_wait's check, call by call */
   present?: () => unknown
+  /** How large the page is drawn in its device frame */
+  viewScale?: number
 }) {
   const sent: { method: string; params?: Record<string, unknown> }[] = []
   const answers: Record<string, (params?: Record<string, unknown>) => unknown> = {
@@ -116,6 +118,7 @@ function page(options: {
       screenshot: null,
       crop: null,
     }),
+    viewScale: () => options.viewScale ?? 1,
     guide: () => true,
     pointer: {
       paced: () => options.paced ?? false,
@@ -133,6 +136,11 @@ function page(options: {
     /** What was typed, piece by piece */
     typed: () =>
       sent.filter((c) => c.method === 'Input.insertText').map((c) => String(c.params?.text)),
+    /** Each mouse event's type and where it was sent */
+    mice: () =>
+      sent
+        .filter((c) => c.method === 'Input.dispatchMouseEvent')
+        .map((c) => ({ type: c.params?.type, x: c.params?.x, y: c.params?.y })),
     /** The wheel's deltas, event by event */
     wheeled: () =>
       sent
@@ -211,6 +219,29 @@ describe('input the user watches goes at a pace they can follow', () => {
     const { tools, wheeled } = page({ paced: true })
     await tools.shown().input((interactions) => interactions.scroll(600), { atOnce: true })
     expect(wheeled()).toEqual([600])
+  })
+})
+
+describe('input in a device frame drawn smaller', () => {
+  // Under the frame's emulation, Chromium takes mouse input in the drawn view's pixels.
+  test('clicks, hovers and the wheel are sent where the target is drawn', async () => {
+    const { tools, mice, wheeled } = page({ viewScale: 0.5 })
+    await tools.shown().input((interactions) => interactions.click('#buy'))
+    await tools.shown().input((interactions) => interactions.hover('#buy'))
+    await tools.shown().input((interactions) => interactions.scroll(300, 0, '#buy'))
+    await tools.shown().input((interactions) => interactions.scroll(300))
+    const at = { x: TARGET.x * 0.5, y: TARGET.y * 0.5 }
+    expect(mice()).toEqual([
+      { type: 'mouseMoved', ...at },
+      { type: 'mousePressed', ...at },
+      { type: 'mouseReleased', ...at },
+      { type: 'mouseMoved', ...at },
+      { type: 'mouseWheel', ...at },
+      // The viewport's middle (800 × 600 CSS px)
+      { type: 'mouseWheel', x: 200, y: 150 },
+    ])
+    // How far to scroll stays the page's CSS pixels.
+    expect(wheeled()).toEqual([300, 300])
   })
 })
 
