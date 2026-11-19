@@ -1,22 +1,26 @@
 /*
  * How the agent's input moves while the user watches the preview: its pointer's glide, the
- * page scrolling to a target, typing and the wheel. Each is bounded, so the agent stays fast,
- * and none of it runs with Reduce motion or while the page is out of sight
+ * page scrolling to a target, typing and the wheel. The pointer and the scroll go slowly enough
+ * for a person to see where they're headed before the input lands, and each is bounded so a
+ * turn doesn't drag. None of it runs with Reduce motion or while the page is out of sight
  * (preview-interactions.ts). Times in milliseconds, distances in the page's CSS pixels.
  */
 
 import type { Point } from '../shared/types'
 
 /** The pointer rests this long on its target before the input lands, so the eye sees where. */
-export const DWELL_MS = 90
-/** The pointer's first appearance in a turn: it fades in on its target instead of gliding. */
-export const APPEAR_MS = 160
+export const DWELL_MS = 250
+/**
+ * The pointer's first appearance in a turn: it fades in on its target instead of gliding. The
+ * overlay's fade lasts as long (pick/overlay.tsx, data-guide-pointer).
+ */
+export const APPEAR_MS = 300
 /** The shortest and longest glide; between them, longer for a longer way. */
-export const GLIDE_MIN_MS = 160
-export const GLIDE_MAX_MS = 420
+export const GLIDE_MIN_MS = 500
+export const GLIDE_MAX_MS = 1000
 /** The page scrolling (to a target, or by the wheel): longer for a longer way, within these. */
-export const SCROLL_MIN_MS = 180
-export const SCROLL_MAX_MS = 380
+export const SCROLL_MIN_MS = 400
+export const SCROLL_MAX_MS = 750
 /** Typing: a quick typist's pace, within MAX_TYPING_MS in all and MAX_TYPING_STEPS pieces. */
 export const CHAR_MS = 40
 export const MAX_TYPING_MS = 800
@@ -37,7 +41,7 @@ export function glideMs(from: Point | null, to: Point) {
   if (!from) return APPEAR_MS
   const distance = Math.hypot(to.x - from.x, to.y - from.y)
   if (distance < 2) return 0
-  return clamp(Math.round(110 + 10 * Math.sqrt(distance)), GLIDE_MIN_MS, GLIDE_MAX_MS)
+  return clamp(Math.round(300 + 24 * Math.sqrt(distance)), GLIDE_MIN_MS, GLIDE_MAX_MS)
 }
 
 /** How long the page takes to scroll `distance` CSS pixels. */

@@ -285,6 +285,8 @@ const HELD_NOTE_MS = 3000
 const HELD_NOTE_OFFSET = 16
 /** How long the pointer shows a key the agent pressed */
 const KEY_SHOWN_MS = 900
+/** The agent's pointer fading in where it first shows: APPEAR_MS in src/main/input-pace.ts */
+const POINTER_APPEAR_MS = 300
 
 /**
  * The agent in the preview: its pointer gliding to each input's target, and in a walkthrough
@@ -346,11 +348,13 @@ function Guide({ guide }: { guide: GuideOverlay }) {
         <div
           aria-hidden="true"
           data-guide-pointer=""
-          // Fades in where it first shows, then glides as long as main waits for it (`glide`).
+          // Fades in where it first shows, over APPEAR_MS (main's input-pace.ts, which waits as
+          // long), then glides as long as main waits for it (`glide`).
           className="pointer-events-none absolute top-0 left-0 transition-transform ease-in-out motion-safe:animate-fade-in motion-reduce:transition-none"
           style={{
             transform: `translate(${target.x}px, ${target.y}px)`,
             transitionDuration: `${guide.glide}ms`,
+            animationDuration: `${POINTER_APPEAR_MS}ms`,
           }}
         >
           {guide.clicks > 0 && (

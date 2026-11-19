@@ -17,7 +17,7 @@ import {
   wheelPlan,
 } from '../src/main/input-pace'
 
-// How the agent's input moves while the user watches: bounded, so the agent stays fast.
+// How the agent's input moves while the user watches: slow enough to follow, and bounded.
 
 describe('the pointer glides', () => {
   test('in where it first shows, it fades in instead', () => {
@@ -34,6 +34,7 @@ describe('the pointer glides', () => {
     const far = glideMs({ x: 0, y: 0 }, { x: 4000, y: 0 })
     expect(near).toBeGreaterThanOrEqual(GLIDE_MIN_MS)
     expect(middle).toBeGreaterThan(near)
+    expect(middle).toBe(780)
     expect(far).toBe(GLIDE_MAX_MS)
   })
 })
