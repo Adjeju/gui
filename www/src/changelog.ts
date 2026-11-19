@@ -15,6 +15,8 @@ export const releases: Release[] = [
     date: '2026-11-18',
     changes: [
       'The agent’s pointer in the preview moves slowly enough to follow, so you can see where it’s going before it clicks.',
+      'In a device frame shown smaller than full size, the agent’s clicks, hovers and scrolls now land on what it aimed at.',
+      'When the agent checks a width after clicking around, the preview now visibly resizes into that device and holds it, as it does on its own.',
     ],
   },
   {
