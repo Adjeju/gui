@@ -11,6 +11,13 @@ export interface Release {
 
 export const releases: Release[] = [
   {
+    version: '0.1.0-alpha.27',
+    date: '2026-11-18',
+    changes: [
+      'The agent’s pointer in the preview moves slowly enough to follow, so you can see where it’s going before it clicks.',
+    ],
+  },
+  {
     version: '0.1.0-alpha.26',
     date: '2026-11-18',
     changes: [
