@@ -2380,7 +2380,14 @@ export class ProjectTab implements ChatPanelOwner {
    * (hidden, a sheet over it, picking, a website over it), `run` emulates the width alone.
    */
   private atWidth<T>(width: number, run: () => Promise<T>, current: () => boolean): Promise<T> {
-    if (!current() || !this.morphEligible()) return run()
+    if (!current()) return run()
+    // The agent has moved on from pointing: its pointer goes, so the preview can resize in
+    // sight. (A website over the app keeps its own; the app's page doesn't morph under it.)
+    if (this.picker.guiding) {
+      this.clearGuideEnd()
+      this.picker.endGuide()
+    }
+    if (!this.morphEligible()) return run()
     return this.agentViewport.check(viewportForWidth(width), () => {
       if (!current()) throw new Error('The project was closed')
       return run()

@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Viewport } from '../src/shared/types'
 import { waitFor } from './helpers/env'
 import type { GuiSession } from './helpers/session'
@@ -163,6 +165,33 @@ test("a width check resizes into the device's viewport and back", async ({ launc
     'laptop',
     'desktop',
   ])
+})
+
+// Once the agent has clicked, its pointer stays over the page until the turn ends; a width
+// check after that is a check all the same, and the preview resizes into it in sight.
+test('a width check after a click still resizes into the viewport', async ({ launch }) => {
+  const session = await launch({ fixture: 'vite' })
+  writeFileSync(
+    join(session.fixture.root, 'src', 'App.tsx'),
+    'export default function App() { return <main><button id="go">Go</button></main> }',
+  )
+  const page = await session.previewPage()
+  await expect(page.locator('#go')).toBeVisible()
+  await setup(session)
+
+  const results = await ask(session, [
+    { name: 'preview_click', args: { selector: '#go' } },
+    { name: 'preview_screenshot', args: { width: 390 } },
+    { name: 'preview_screenshot', args: { width: 820 } },
+  ])
+  expect(
+    results.every((result) => !result.isError),
+    JSON.stringify(results),
+  ).toBe(true)
+  await waitFor(async () => (await viewport(session)) === 'desktop', 'Desktop after the turn')
+  const seen = await recorded(session, 'desktop')
+  expect(seen.viewports).toEqual(['desktop', 'mobile', 'tablet', 'desktop'])
+  expect(seen.morphs).toEqual(expect.arrayContaining(['mobile', 'tablet']))
 })
 
 test("the user's viewport pick during the agent's checks stays", async ({ launch }) => {
