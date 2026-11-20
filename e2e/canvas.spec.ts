@@ -157,17 +157,18 @@ test('a canvas opens from the start screen and its frames are moved, undone, dup
   expect(desktop).toMatchObject({ id: 'desktop', x: 0, y: 0, width: 1440, height: 900 })
   // Beside the one before it, never on top of it.
   expect(mobile.x).toBeGreaterThanOrEqual(desktop.x + desktop.width)
-  // A frame narrower than a desktop one has a thumbnail twice its width, for a Retina screen
-  // at 100%; a desktop one stays 1440 wide.
-  const thumbWidth = (frame: { id: string; version: number }) =>
+  // Each frame has a thumbnail twice its width, for a Retina screen at 100%; a desktop one has
+  // a copy 1440 wide as well, for the board at middle zooms.
+  const thumbWidth = (frame: { id: string; version: number }, copy = '') =>
     chrome.evaluate(async (url) => {
       const bitmap = await createImageBitmap(await (await fetch(url)).blob())
       const width = bitmap.width
       bitmap.close()
       return width
-    }, `${opened.thumbs}/${frame.id}?v=${frame.version}`)
+    }, `${opened.thumbs}/${frame.id}${copy}?v=${frame.version}`)
   expect(await thumbWidth(mobile)).toBe(780)
-  expect(await thumbWidth(desktop)).toBe(1440)
+  expect(await thumbWidth(desktop)).toBe(2880)
+  expect(await thumbWidth(desktop, '.mid')).toBe(1440)
 
   // A page written straight to the folder joins the board.
   const root = project?.root ?? ''
