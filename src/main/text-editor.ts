@@ -1,5 +1,5 @@
-import { shell } from 'electron'
 import { IS_MAC } from '../shared/platform'
+import { openPath } from './desktop-open'
 import { findExecutable } from './executables'
 import { execFile } from './process'
 import { getShellEnv } from './shell-env'
@@ -34,6 +34,6 @@ export async function openAsText(path: string) {
       if (found && (await run(found, [desktop, path], env)).ok) return
     }
   }
-  const error = await shell.openPath(path)
+  const error = await openPath(path)
   if (error) throw new Error(`Couldn't open ${path}: ${error}`)
 }

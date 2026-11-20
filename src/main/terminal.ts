@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { app, shell } from 'electron'
+import { app } from 'electron'
 import { IS_MAC } from '../shared/platform'
+import { openPath } from './desktop-open'
 import { DEFAULT_SHELL } from './os'
 import { getShellEnv } from './shell-env'
 import { launchTerminal } from './terminal-launch'
@@ -36,7 +37,7 @@ export async function runInTerminal(command: string, intro: string) {
       ]
   await writeFile(file, script.join('\n'), { mode: 0o700 })
   if (IS_MAC) {
-    const error = await shell.openPath(file)
+    const error = await openPath(file)
     if (!error) return
     await rm(file, { force: true })
     throw new Error(`Couldn't open Terminal: ${error}`)

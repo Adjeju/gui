@@ -4,13 +4,14 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
-import { app, safeStorage, shell } from 'electron'
+import { app, safeStorage } from 'electron'
 import {
   type AccountErrorCode,
   type AccountProfile,
   type AccountState,
   invalidatesAccountSession,
 } from '../shared/account'
+import { openExternal } from './desktop-open'
 import { officialBuild } from './official-build'
 import { secureStorageProblem } from './secure-storage'
 
@@ -305,14 +306,14 @@ async function begin(link: boolean): Promise<Attempt> {
 /** Opens AuthKit in the browser; resolves once Gui is signed in. */
 export async function signIn() {
   const attempt = await begin(false)
-  await shell.openExternal(`${serviceUrl()}/signin/workos?a=${attempt.id}`)
+  await openExternal(`${serviceUrl()}/signin/workos?a=${attempt.id}`)
   return attempt.done
 }
 
 /** Adds GitHub to the signed-in account. */
 export async function connectGitHub() {
   const attempt = await begin(true)
-  await shell.openExternal(`${serviceUrl()}/signin/github?a=${attempt.id}`)
+  await openExternal(`${serviceUrl()}/signin/github?a=${attempt.id}`)
   return attempt.done
 }
 

@@ -137,6 +137,10 @@ for (const file of files) {
     failures.push(
       `${name(file)} starts PTYs itself; they go through spawnPty in src/main/process.ts`,
     )
+  if (/shell\.open(External|Path)\(/.test(contents) && !file.endsWith(`${sep}desktop-open.ts`))
+    failures.push(
+      `${name(file)} opens a link or file with Electron's shell; use src/main/desktop-open.ts, which keeps the AppImage's env out on Linux`,
+    )
   if (contents.includes('DOM.getNodeForLocation') && !file.endsWith(`${sep}inspector.ts`))
     failures.push(`${name(file)} looks up nodes by location; that stays in inspector.ts`)
 }

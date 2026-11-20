@@ -1,6 +1,7 @@
 import { join } from 'node:path'
-import { app, shell, type WebContents } from 'electron'
+import { app, type WebContents } from 'electron'
 import { sendCrashReport } from './crash-reports'
+import { openExternal } from './desktop-open'
 
 export type RendererPage = 'index' | 'chat' | 'settings' | 'pick' | 'guides'
 
@@ -36,16 +37,16 @@ export function isAppContents(wc: WebContents) {
 /** App UI never navigates or opens windows; web links go to the user's browser. */
 export function guardAppContents(wc: WebContents) {
   appContents.add(wc)
-  const openExternal = (url: string) => {
-    if (/^https?:/.test(url)) shell.openExternal(url).catch(() => undefined)
+  const openInBrowser = (url: string) => {
+    if (/^https?:/.test(url)) openExternal(url).catch(() => undefined)
   }
   wc.on('will-navigate', (event, url) => {
     if (url === wc.getURL()) return
     event.preventDefault()
-    openExternal(url)
+    openInBrowser(url)
   })
   wc.setWindowOpenHandler(({ url }) => {
-    openExternal(url)
+    openInBrowser(url)
     return { action: 'deny' }
   })
   reloadAfterCrash(wc)

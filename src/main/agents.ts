@@ -11,6 +11,7 @@ import {
   type CustomAgentEntry,
 } from '../shared/types'
 import { writeFileAtomic } from './atomic-file'
+import { openPath } from './desktop-open'
 import { type CommandFallback, findAgentCommand } from './executables'
 import { getShellEnv } from './shell-env'
 
@@ -509,7 +510,7 @@ export async function listAgents(): Promise<AgentListing> {
 export async function openCustomAgents() {
   const file = customFile()
   await writeFile(file, '{}\n', { flag: 'wx' }).catch(() => undefined)
-  const error = await shell.openPath(file)
+  const error = await openPath(file)
   if (error) shell.showItemInFolder(file)
 }
 

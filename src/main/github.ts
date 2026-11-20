@@ -1,7 +1,7 @@
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { app, shell } from 'electron'
+import { app } from 'electron'
 import type { GitHubProfile, GitHubRepository, GitHubState } from '../shared/github'
 import { asRepoToken, type RepoToken } from '../shared/tokens'
 import {
@@ -13,6 +13,7 @@ import {
   serviceUrl,
 } from './account'
 import { parseRepo } from './clone'
+import { openExternal } from './desktop-open'
 import { developerTools } from './developer-tools'
 import { execFile } from './process'
 import { ScopedRequestCache } from './scoped-request-cache'
@@ -82,7 +83,7 @@ export async function manageGitHub() {
     url.hash
   )
     throw new Error('Invalid GitHub installation address.')
-  await shell.openExternal(url.href)
+  await openExternal(url.href)
 }
 
 async function withGitHubToken<T>(

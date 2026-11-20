@@ -100,6 +100,7 @@ import { availableModels, type BoardLayout, ChatController } from './chat'
 import { discardChatImages, saveChatImages } from './chat-image-assets'
 import { listedModels, modelsUnder, offersChoice, pickerFields } from './chat-models'
 import { Checkpoints } from './checkpoints'
+import { openExternal } from './desktop-open'
 import { DevServer } from './dev-server'
 import { type DeveloperToolsStatus, developerTools } from './developer-tools'
 import { Guides } from './guides'
@@ -2610,7 +2611,7 @@ export class ProjectTab implements ChatPanelOwner {
     wc.setWindowOpenHandler(({ url }) => {
       const origin = this.devOrigin()
       if (origin && originOf(url) === origin) void this.loadPreview(url)
-      else if (/^https?:/.test(url)) shell.openExternal(url).catch(() => undefined)
+      else if (/^https?:/.test(url)) openExternal(url).catch(() => undefined)
       return { action: 'deny' }
     })
     // Navigating off-site is allowed (OAuth round-trips), but never to app protocols.
@@ -4531,7 +4532,7 @@ export class ProjectTab implements ChatPanelOwner {
         label: 'Open in Browser',
         enabled: !!url,
         click: () => {
-          if (url) shell.openExternal(this.state.preview.url ?? url).catch(() => undefined)
+          if (url) openExternal(this.state.preview.url ?? url).catch(() => undefined)
         },
       },
     ]

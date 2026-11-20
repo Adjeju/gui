@@ -108,6 +108,7 @@ import { offersChoice } from './chat'
 import { isImageAsset } from './chat-image-assets'
 import { cloneRepo, parseRepo } from './clone'
 import { errorReport, sendCrashReport } from './crash-reports'
+import { openExternal } from './desktop-open'
 import { applyDevFlags } from './dev-flags'
 import { developerTools } from './developer-tools'
 import { cloneGitHub } from './github'
@@ -2183,10 +2184,10 @@ function buildMenu() {
           click: withTabs((w) => w.setShortcutsOpen(!w.shortcutsOpen)),
         }),
         { type: 'separator' },
-        { label: 'Contact Support', click: () => void shell.openExternal(supportMail()) },
-        { label: 'Gui Website', click: () => void shell.openExternal('https://usegui.com') },
-        { label: 'Privacy', click: () => void shell.openExternal('https://usegui.com/privacy') },
-        { label: 'Terms', click: () => void shell.openExternal('https://usegui.com/terms') },
+        { label: 'Contact Support', click: () => void openExternal(supportMail()) },
+        { label: 'Gui Website', click: () => void openExternal('https://usegui.com') },
+        { label: 'Privacy', click: () => void openExternal('https://usegui.com/privacy') },
+        { label: 'Terms', click: () => void openExternal('https://usegui.com/terms') },
       ],
     },
   ]

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { app, shell } from 'electron'
+import { app } from 'electron'
 import {
   AGENTS,
   type AgentHealth,
@@ -25,6 +25,7 @@ import { type AgentDefinition, listAgents } from './agents'
 import { track } from './analytics'
 import { type AgentUnavailable, agentUnavailable, usageAgent } from './analytics-queue'
 import { diskFile } from './coalesced-file'
+import { openExternal } from './desktop-open'
 import { describeError } from './errors'
 import { ModelCache } from './model-cache'
 import { getPrefs, isAgentEnabled, prefsEvents, savedAgentSettings } from './prefs'
@@ -283,7 +284,7 @@ export class AgentHealthStore extends EventEmitter<{ change: [health: AgentHealt
     const pinned = pinnedAgent(id)
     if (!pinned) {
       const url = this.health.get(id)?.installUrl
-      if (url?.startsWith('https://')) void shell.openExternal(url)
+      if (url?.startsWith('https://')) void openExternal(url)
       return Promise.resolve()
     }
     if (this.disposed || !this.health.get(id)?.install) return Promise.resolve()
