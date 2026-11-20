@@ -130,6 +130,13 @@ describe('keys on the board', () => {
     expect(
       boardKey(key('2', { code: 'Digit2', shiftKey: true, metaKey: true }), board(['a'])),
     ).toBeNull()
+    // ⌘1 to ⌘9 (tabs), ⌃1 to ⌃4 and Alt+1 to Alt+4 (device sizes) are the menu's.
+    for (const digit of '123456789') {
+      const code = `Digit${digit}`
+      expect(boardKey(key(digit, { code, metaKey: true }), board(['a']))).toBeNull()
+      expect(boardKey(key(digit, { code, ctrlKey: true }), board(['a']))).toBeNull()
+      expect(boardKey(key(digit, { code, altKey: true }), board(['a']))).toBeNull()
+    }
   })
 
   test('the selection is drawn where it is mid-nudge', () => {

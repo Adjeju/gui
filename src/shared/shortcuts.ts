@@ -35,6 +35,12 @@ export interface ShortcutSpec {
   accelerator: string
   /** Other keys for the same command, hidden from the menu (Safari's ⇧⌘] for the next tab) */
   alternates?: readonly string[]
+  /**
+   * For a key per place, as a browser's ⌘1 to ⌘8 show tabs 1 to 8: `accelerator` is the
+   * first place's key and `through` the last numbered one's, then `last` picks the last place
+   * however many there are (⌘9). Each is a hidden item of its own in the menu (`placeKeys`).
+   */
+  places?: { through: string; last: string }
   /** Null for a key a page handles itself, with no menu item (`matchesShortcut`) */
   menu: ShortcutMenu | null
   group: ShortcutGroup
@@ -607,6 +613,14 @@ export const SHORTCUTS = {
     group: 'tabs',
     description: 'Show the next tab',
   },
+  showTab: {
+    label: 'Show Tab',
+    accelerator: 'CmdOrCtrl+1',
+    places: { through: 'CmdOrCtrl+8', last: 'CmdOrCtrl+9' },
+    menu: 'window',
+    group: 'tabs',
+    description: 'Show tab 1 to 8, or the last tab',
+  },
 } as const satisfies Record<string, ShortcutSpec>
 
 export type ShortcutId = keyof typeof SHORTCUTS
@@ -626,6 +640,36 @@ export const VIEWPORT_SHORTCUTS: Record<DeviceViewport, ShortcutId> = {
   laptop: 'viewportLaptop',
   tablet: 'viewportTablet',
   mobile: 'viewportMobile',
+}
+
+/** Which tab, or other place, a key of a `places` shortcut picks: 1 for the first. */
+export type Place = number | 'last'
+
+/**
+ * A `places` shortcut's keys, each with the place it picks: ⌘1 to ⌘8 for 1 to 8, then ⌘9 for
+ * the last. Empty for any other shortcut.
+ */
+export function placeKeys(id: ShortcutId): { accelerator: string; place: Place }[] {
+  const { accelerator, places }: ShortcutSpec = SHORTCUTS[id]
+  if (!places) return []
+  const prefix = accelerator.slice(0, accelerator.lastIndexOf('+') + 1)
+  const first = Number(parse(accelerator).key)
+  const through = Number(parse(places.through).key)
+  const numbered = Array.from({ length: through - first + 1 }, (_, i) => ({
+    accelerator: `${prefix}${first + i}`,
+    place: first + i,
+  }))
+  return [...numbered, { accelerator: places.last, place: 'last' }]
+}
+
+/**
+ * The index of the tab a place picks among `count` tabs, or null for none: a number past the
+ * last tab picks nothing, as in a browser, while 'last' always has one.
+ */
+export function placeIndex(place: Place, count: number): number | null {
+  if (count < 1) return null
+  if (place === 'last') return count - 1
+  return Number.isInteger(place) && place >= 1 && place <= count ? place - 1 : null
 }
 
 /** Every shortcut, in the sheet's order within each group. */
@@ -750,11 +794,14 @@ function matchesAccelerator(event: KeyPress, accelerator: string): boolean {
 }
 
 /**
- * A viewport's key (⌃1 to ⌃4): the app menu's even in a terminal, which would otherwise type it
- * (on Linux, Alt+1; on a Mac, ⌃2 is NUL and ⌃4 ^\).
+ * A tab's key (⌘1 to ⌘9) or a viewport's (⌃1 to ⌃4): the app menu's even in a terminal, which
+ * would otherwise type them (on Linux, Ctrl+1 and Alt+1; on a Mac, ⌃2 is NUL and ⌃4 ^\).
  */
-export function isViewportKey(event: KeyPress): boolean {
-  const accelerators = Object.values(VIEWPORT_SHORTCUTS).map((id) => SHORTCUTS[id].accelerator)
+export function isTabOrViewportKey(event: KeyPress): boolean {
+  const accelerators = [
+    ...placeKeys('showTab').map((key) => key.accelerator),
+    ...Object.values(VIEWPORT_SHORTCUTS).map((id) => SHORTCUTS[id].accelerator),
+  ]
   return accelerators.some((accelerator) => matchesAccelerator(event, accelerator))
 }
 

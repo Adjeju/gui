@@ -62,6 +62,15 @@ function ShortcutGroup({ name, shortcuts }: { name: string; shortcuts: Shortcut[
             <span className="min-w-0 flex-1 text-pretty">{shortcut.description}</span>
             <span className="flex shrink-0 items-center gap-1.5">
               <Keys keys={acceleratorKeys(shortcut.accelerator)} />
+              {/* A key per place in one row: ⌘1 – ⌘8 or ⌘9, not nine. */}
+              {shortcut.places && (
+                <>
+                  <span className="text-caption text-subtle">–</span>
+                  <Keys keys={acceleratorKeys(shortcut.places.through)} />
+                  <span className="text-caption text-subtle">or</span>
+                  <Keys keys={acceleratorKeys(shortcut.places.last)} />
+                </>
+              )}
               {shortcut.alternates?.map((keys) => (
                 <span key={keys} className="flex items-center gap-1.5">
                   <span className="text-caption text-subtle">or</span>

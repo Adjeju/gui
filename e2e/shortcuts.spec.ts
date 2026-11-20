@@ -7,6 +7,7 @@ import {
   acceleratorKeys,
   allShortcuts,
   ariaShortcut,
+  placeKeys,
   SHORTCUT_GROUPS,
   type ShortcutId,
   shortcut,
@@ -402,6 +403,16 @@ test('every shortcut in the registry is in the app menu, and ⌘/ lists them all
       expect(entries.filter((entry) => entry.label === shortcut.label)).toEqual([])
       continue
     }
+    // A key per place (⌘1 to ⌘9): an item each, all hidden, all working.
+    if (shortcut.places) {
+      for (const { accelerator } of placeKeys(shortcut.id)) {
+        expect(
+          entries.find((entry) => entry.accelerator === accelerator),
+          `${shortcut.id} on ${accelerator}`,
+        ).toMatchObject({ visible: false, worksHidden: true, menu: 'Window' })
+      }
+      continue
+    }
     const labels = shortcut.menuLabels
       ? [shortcut.menuLabels.show, shortcut.menuLabels.hide]
       : [shortcut.label]
@@ -455,6 +466,13 @@ test('every shortcut in the registry is in the app menu, and ⌘/ lists them all
     await expect(row).toContainText(acceleratorKeys(shortcut.accelerator).join(''))
     for (const keys of shortcut.alternates ?? []) {
       await expect(row).toContainText(`or${acceleratorKeys(keys).join('')}`)
+    }
+    // One row for a key per place: ⌘1 – ⌘8 or ⌘9.
+    if (shortcut.places) {
+      const { through, last } = shortcut.places
+      await expect(row).toContainText(
+        `–${acceleratorKeys(through).join('')}or${acceleratorKeys(last).join('')}`,
+      )
     }
   }
   await session.shot('shortcuts-light')
@@ -809,6 +827,109 @@ test('in a terminal, ⌘D and ⌘↩ go on to the app, and ⌘⌫ deletes the li
   // The card waits for its answer; the app's ⌘↩, Agent → Allow, gives it.
   await clickMenu(session, 'Allow')
   expect((await answered(outcomes, 1))[0]?.outcome.optionId).toBe('allow')
+})
+
+/** Runs the app menu's item on `accelerator`, shown or hidden, as pressing its keys does. */
+function pressAccelerator(session: GuiSession, accelerator: string) {
+  return session.app.evaluate(({ Menu }, keys) => {
+    const find = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
+      for (const item of items) {
+        const works =
+          item.visible ||
+          (item as { acceleratorWorksWhenHidden?: boolean }).acceleratorWorksWhenHidden
+        if (item.accelerator === keys && works) return item
+        const inner = item.submenu && find(item.submenu.items)
+        if (inner) return inner
+      }
+      return undefined
+    }
+    const item = find(Menu.getApplicationMenu()?.items ?? [])
+    if (!item) throw new Error(`No menu item on ${keys}`)
+    item.click()
+  }, accelerator)
+}
+
+/**
+ * Presses each of `keys` in `page` and says which the page took: one it didn't take goes on to
+ * the app menu, as Electron sends it every key a page leaves alone.
+ */
+async function keysTaken(page: Page, keys: string[]): Promise<boolean[]> {
+  await page.evaluate(() => {
+    const taken: boolean[] = []
+    Object.assign(window, { guiTaken: taken })
+    window.addEventListener('keydown', (event) => {
+      if (event.code.startsWith('Digit')) taken.push(event.defaultPrevented)
+    })
+  })
+  for (const key of keys) await page.keyboard.press(key)
+  return page.evaluate(() => (window as unknown as { guiTaken: boolean[] }).guiTaken)
+}
+
+test('⌘1 to ⌘8 show a tab by its place and ⌘9 the last, from any page; ⌃1 to ⌃4 the sizes', async ({
+  launch,
+}) => {
+  const session = await launch({ fixture: 'vite', env: SHELL })
+  await session.waitForPreview()
+  await session.app.evaluate(setContentSize, WINDOW)
+  const project = (await session.state()).activeTab
+  // Two more tabs: three in all, the last one showing.
+  await session.chrome.evaluate(() => window.gui.newTab())
+  await session.chrome.evaluate(() => window.gui.newTab())
+  const tabs = await waitFor(async () => {
+    const state = await session.state()
+    return state.tabs.length === 3 ? state.tabs.map((tab) => tab.id) : null
+  }, 'three tabs')
+  const showing = (id: string | undefined, what: string) =>
+    waitFor(async () => (await session.state()).activeTab === id, what)
+  await showing(tabs[2], 'the new tab')
+  expect(tabs[0]).toBe(project)
+
+  // ⌘1 the first, ⌘3 the third, ⌘9 the last.
+  await pressAccelerator(session, 'CmdOrCtrl+1')
+  await showing(tabs[0], '⌘1: the first tab')
+  await pressAccelerator(session, 'CmdOrCtrl+3')
+  await showing(tabs[2], '⌘3: the third tab')
+  await pressAccelerator(session, 'CmdOrCtrl+2')
+  await showing(tabs[1], '⌘2: the second tab')
+  await pressAccelerator(session, 'CmdOrCtrl+9')
+  await showing(tabs[2], '⌘9: the last tab')
+  // A number past the last tab does nothing.
+  await pressAccelerator(session, 'CmdOrCtrl+1')
+  await showing(tabs[0], '⌘1 again')
+  await pressAccelerator(session, 'CmdOrCtrl+5')
+  await sleep(300)
+  expect((await session.state()).activeTab).toBe(tabs[0])
+
+  // ⌃1 to ⌃4 the device sizes (Alt+1 to Alt+4 off a Mac), now that ⌘1 to ⌘4 are the tabs'.
+  const mac = process.platform === 'darwin'
+  const device = mac ? 'Ctrl' : 'Alt'
+  for (const [key, id] of [
+    ['2', 'laptop'],
+    ['3', 'tablet'],
+    ['4', 'mobile'],
+    ['1', 'desktop'],
+  ] as const) {
+    await pressAccelerator(session, `${device}+${key}`)
+    await waitFor(async () => (await session.state()).preview.viewport === id, `${id} on ${key}`)
+  }
+
+  // No page keeps the keys from the menu: the message box, the preview's page, a terminal
+  // (which types every other ⌃ key). ⌘1 stands for all nine: the same keys reach the menu.
+  await session.waitForPreview()
+  const command = mac ? 'Meta' : 'Control'
+  const sizeKey = mac ? 'Control' : 'Alt'
+  const pressed = [`${command}+Digit1`, ...['1', '2', '3', '4'].map((d) => `${sizeKey}+Digit${d}`)]
+  const untaken = pressed.map(() => false)
+  const box = session.chat.getByRole('textbox')
+  await box.focus()
+  expect(await keysTaken(session.chat, pressed), 'the message box').toEqual(untaken)
+  await expect(box).toHaveValue('')
+  const preview = await session.previewPage()
+  await preview.locator('body').focus()
+  expect(await keysTaken(preview, pressed), "the preview's page").toEqual(untaken)
+  await clickMenu(session, 'Show Terminal')
+  await waitFor(() => terminalFocused(session.chrome), 'the keyboard in the terminal')
+  expect(await keysTaken(session.chrome, pressed), 'the terminal').toEqual(untaken)
 })
 
 test('zoom steps a device frame from 25% to fit and zooms the desktop page, per viewport', async ({

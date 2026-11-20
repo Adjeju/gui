@@ -54,6 +54,7 @@ import { IS_MAC } from '../shared/platform'
 import { PreviewGuides } from '../shared/preview-guides'
 import { MAX_PREVIEW_TEXT, PreviewText } from '../shared/preview-text'
 import {
+  placeKeys,
   SHORTCUTS,
   type ShortcutId,
   type ShortcutSpec,
@@ -2143,6 +2144,16 @@ function buildMenu() {
         { type: 'separator' },
         ...item('previousTab', { click: withTabs((w) => w.showAdjacentTab(-1)) }),
         ...item('nextTab', { click: withTabs((w) => w.showAdjacentTab(1)) }),
+        // ⌘1 to ⌘9, hidden as in a browser: the menu stays short, and ⌘/ lists them.
+        ...placeKeys('showTab').map(
+          ({ accelerator, place }): MenuItemConstructorOptions => ({
+            label: place === 'last' ? 'Show Last Tab' : `Show Tab ${place}`,
+            accelerator,
+            visible: false,
+            acceleratorWorksWhenHidden: true,
+            click: withTabs((w) => w.showTabAt(place)),
+          }),
+        ),
         {
           id: MOVE_TAB_ITEM,
           label: 'Move Tab to New Window',

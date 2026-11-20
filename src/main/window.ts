@@ -11,6 +11,7 @@ import {
   TRAFFIC_LIGHTS,
 } from '../shared/layout'
 import { IS_MAC } from '../shared/platform'
+import { type Place, placeIndex } from '../shared/shortcuts'
 import type { RecentBoard, RecentProject, Rect, TabInfo, WindowState } from '../shared/types'
 import { type ClosedTab, ClosedTabs, reopenIndex } from './closed-tabs'
 import { windowChrome } from './os'
@@ -399,6 +400,13 @@ export class ProjectWindow implements TabHost {
 
   selectTab(id: string) {
     const tab = this.byId(id)
+    if (tab) this.showTab(tab)
+  }
+
+  /** ⌘1 to ⌘8 show tabs 1 to 8, and ⌘9 the last; a number past the last tab does nothing. */
+  showTabAt(place: Place) {
+    const index = placeIndex(place, this.list.length)
+    const tab = index === null ? undefined : this.list[index]
     if (tab) this.showTab(tab)
   }
 
