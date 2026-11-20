@@ -138,18 +138,13 @@ function StreamedMarkdown({ text, live }: { text: string; live: boolean }) {
       data-markdown-phase={display.complete ? 'complete' : live ? 'live' : 'settling'}
     >
       <ErrorBoundary resetKey={text} fallback={() => <p className="whitespace-pre-wrap">{text}</p>}>
-        {display.blocks.map((block, index) => (
+        {/* The unfinished block is keyed by where it starts, as it will be once it settles. */}
+        {(display.tail ? [...display.blocks, display.tail] : display.blocks).map((block, index) => (
           <Fragment key={block.key}>
             {index > 0 && '\n'}
             <MarkdownTree block={block} />
           </Fragment>
         ))}
-        {display.tail && (
-          <>
-            {display.blocks.length > 0 && '\n'}
-            <MarkdownTree block={display.tail} />
-          </>
-        )}
         {display.raw && <p className="whitespace-pre-wrap">{display.raw}</p>}
       </ErrorBoundary>
     </div>
@@ -158,8 +153,11 @@ function StreamedMarkdown({ text, live }: { text: string; live: boolean }) {
 
 export function Markdown({ text, live = false }: { text: string; live?: boolean }) {
   // Small completed messages load their parser on demand. A large archived answer, or any
-  // streaming answer, uses the same GFM parser off the renderer thread.
-  if (live || text.length > 16_384) return <StreamedMarkdown text={text} live={live} />
+  // streaming answer, uses the same GFM parser off the renderer thread. One that streamed
+  // stays there when it settles: changing renderers would draw the whole reply again.
+  const [streamed, setStreamed] = useState(live)
+  if (live && !streamed) setStreamed(true)
+  if (live || streamed || text.length > 16_384) return <StreamedMarkdown text={text} live={live} />
   return (
     <div className="markdown break-words" data-markdown-phase="complete">
       {/* Agent output: if it can't be drawn as Markdown, show it as written. */}

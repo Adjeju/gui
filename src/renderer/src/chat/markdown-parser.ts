@@ -125,7 +125,7 @@ export class StreamingMarkdown {
     let tail: MarkdownBlock | null = null
     if (last) {
       this.offset += last.position?.start.offset ?? 0
-      tail = block(`tail:${this.offset}`, text.length, html({ type: 'root', children: [last] }))
+      tail = block(String(this.offset), text.length, html({ type: 'root', children: [last] }))
     }
     // A very dense unfinished list/table also stays text: bounding bytes alone doesn't
     // bound the number of React elements a mutable root block could recreate.
