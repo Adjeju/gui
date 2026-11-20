@@ -126,12 +126,22 @@ export const MarkdownTree = memo(function MarkdownTree({ block }: { block: Markd
   return toJsxRuntime(block.tree, runtime)
 })
 
+/** Text not drawn as Markdown yet: it holds about its height, unseen, until it is. */
+function Waiting({ text }: { text: string }) {
+  return (
+    <p className="invisible whitespace-pre-wrap" aria-hidden>
+      {text}
+    </p>
+  )
+}
+
 function StreamedMarkdown({ text, live }: { text: string; live: boolean }) {
   const request = useRef<MarkdownRequest | null>(null)
   const [display, setDisplay] = useState<MarkdownDisplay>(() => ({
     blocks: [],
     tail: null,
-    raw: text,
+    raw: '',
+    waiting: text,
     complete: false,
   }))
   useEffect(() => {
@@ -157,6 +167,7 @@ function StreamedMarkdown({ text, live }: { text: string; live: boolean }) {
           </Fragment>
         ))}
         {display.raw && <p className="whitespace-pre-wrap">{display.raw}</p>}
+        {display.waiting && <Waiting text={display.waiting} />}
       </ErrorBoundary>
     </div>
   )
@@ -173,7 +184,7 @@ export function Markdown({ text, live = false }: { text: string; live?: boolean 
     <div className="markdown break-words" data-markdown-phase="complete">
       {/* Agent output: if it can't be drawn as Markdown, show it as written. */}
       <ErrorBoundary resetKey={text} fallback={() => <p className="whitespace-pre-wrap">{text}</p>}>
-        <Suspense fallback={<p className="whitespace-pre-wrap">{text}</p>}>
+        <Suspense fallback={<Waiting text={text} />}>
           <SmallMarkdown text={text} components={markdownComponents} />
         </Suspense>
       </ErrorBoundary>

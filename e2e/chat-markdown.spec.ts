@@ -81,6 +81,8 @@ async function useStandIn(session: GuiSession) {
 interface Probe {
   /** What frames showed that they shouldn't have, as runs: what, and for how many frames */
   flashes: string[]
+  /** Frames in which a reply's text wasn't drawn yet (held unseen), as runs */
+  blanks: string[]
   /** Reply elements (`.markdown`) taken out of the page while the probe ran */
   removed: number
   /** Blocks of a reply replaced by a new element with the same text: drawn again */
@@ -98,7 +100,19 @@ type ProbeWindow = Window & { __markdownProbe?: Probe }
  */
 function startProbe(page: Page) {
   return page.evaluate(() => {
-    const runs: { what: string; frames: number }[] = []
+    type Run = { what: string; frames: number }
+    const runs: Run[] = []
+    const blankRuns: Run[] = []
+    const track = (log: Run[], seen: string[]) => {
+      const what = seen.join('; ')
+      const last = log.at(-1)
+      if (!what) {
+        if (last?.what) log.push({ what: '', frames: 1 })
+      } else if (last?.what === what) last.frames++
+      else log.push({ what, frames: 1 })
+    }
+    const summary = (log: Run[]) =>
+      log.filter((run) => run.what).map((run) => `${run.what} ×${run.frames}`)
     const redrawn: string[] = []
     const blocks = new WeakMap<Element, Map<string, Element>>()
     let removed = 0
@@ -106,12 +120,14 @@ function startProbe(page: Page) {
     let running = true
     const look = () => {
       const seen: string[] = []
+      const blank: string[] = []
       for (const reply of document.querySelectorAll<HTMLElement>('[data-transcript] .markdown')) {
         const phase = reply.dataset.markdownPhase
         const raw = reply.querySelector<HTMLElement>(':scope > p.whitespace-pre-wrap')
-        if (raw && getComputedStyle(raw).visibility !== 'hidden') {
-          const shown = raw.textContent?.length ?? 0
-          seen.push(`plain text (${shown} of ${reply.textContent?.length} chars, ${phase})`)
+        if (raw) {
+          const shown = `${raw.textContent?.length} of ${reply.textContent?.length} chars, ${phase}`
+          if (getComputedStyle(raw).visibility === 'hidden') blank.push(`not drawn (${shown})`)
+          else seen.push(`plain text (${shown})`)
         }
         if (reply.querySelector('[data-markdown-rendering]')) seen.push(`partly drawn (${phase})`)
         const drawn = blocks.get(reply) ?? new Map<string, Element>()
@@ -123,12 +139,8 @@ function startProbe(page: Page) {
           drawn.set(key, block)
         }
       }
-      const what = seen.join('; ')
-      const last = runs.at(-1)
-      if (!what) {
-        if (last?.what) runs.push({ what: '', frames: 1 })
-      } else if (last?.what === what) last.frames++
-      else runs.push({ what, frames: 1 })
+      track(runs, seen)
+      track(blankRuns, blank)
     }
     const observer = new MutationObserver((records) => {
       for (const record of records) {
@@ -151,7 +163,10 @@ function startProbe(page: Page) {
     requestAnimationFrame(frame)
     ;(window as ProbeWindow).__markdownProbe = {
       get flashes() {
-        return runs.filter((run) => run.what).map((run) => `${run.what} ×${run.frames}`)
+        return summary(runs)
+      },
+      get blanks() {
+        return summary(blankRuns)
       },
       get removed() {
         return removed
@@ -176,6 +191,7 @@ function stopProbe(page: Page) {
     delete (window as ProbeWindow).__markdownProbe
     return {
       flashes: probe.flashes.slice(0, 12),
+      blanks: probe.blanks.slice(0, 12),
       removed: probe.removed,
       redrawn: probe.redrawn.slice(0, 12),
       frames: probe.frames,
@@ -239,6 +255,18 @@ test('a streamed reply keeps its elements as each block settles and as the turn 
   expect({ removed, redrawn }).toEqual({ removed: 0, redrawn: [] })
 })
 
+test('a streamed reply is formatted from its first words to its last', async ({ launch }) => {
+  const session = await launch({ fixture: 'vite' })
+  await session.declineConsentDialogs()
+  await useStandIn(session)
+  await session.waitForPreview()
+  await startProbe(session.chat)
+  await streamReply(session)
+  const { flashes, frames } = await stopProbe(session.chat)
+  expect(frames).toBeGreaterThan(10)
+  expect(flashes).toEqual([])
+})
+
 test('a restored short reply is formatted in its first frame', async ({ launch }) => {
   const session = await launch({ fixture: 'vite', reducedMotion: 'reduce' })
   await session.waitForPreview()
@@ -256,4 +284,28 @@ test('a restored short reply is formatted in its first frame', async ({ launch }
   await expect(reply.locator('strong')).toHaveText(['emphasis', '$5'])
   const probe = await stopProbe(session.chat)
   expect(probe.flashes).toEqual([])
+})
+
+const LONG = `${REPLY}\n\n`.repeat(80)
+
+/** Shows a restored chat of long replies, and waits for the newest to be drawn. */
+async function showLongReplies(session: GuiSession) {
+  expect(LONG.length).toBeGreaterThan(16_384)
+  await showTurns(
+    session,
+    Array.from({ length: 13 }, (_, index) => turn(index, LONG)),
+  )
+  const last = session.chat.locator('[data-turn-row="markdown-turn-12"] .markdown')
+  await expect(last).toHaveAttribute('data-markdown-phase', 'complete')
+  await expect(last.locator('[data-markdown-rendering]')).toHaveCount(0)
+}
+
+test('a long finished reply is never shown as plain text while it is drawn', async ({ launch }) => {
+  const session = await launch({ fixture: 'vite', reducedMotion: 'reduce' })
+  await session.waitForPreview()
+  await session.chat.evaluate(() => window.gui.expandChat())
+  await startProbe(session.chat)
+  await showLongReplies(session)
+  const { flashes } = await stopProbe(session.chat)
+  expect(flashes).toEqual([])
 })

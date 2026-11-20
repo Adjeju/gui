@@ -3,7 +3,10 @@ import { MARKDOWN_NODE_BUDGET, type MarkdownBlock, type MarkdownUpdate } from '.
 export interface MarkdownDisplay {
   blocks: MarkdownBlock[]
   tail: MarkdownBlock | null
+  /** Text shown as written: a live tail too big to parse each time, or text that failed to */
   raw: string
+  /** Text not drawn yet. It keeps its place, unseen, rather than show its Markdown as written */
+  waiting: string
   complete: boolean
 }
 
@@ -59,7 +62,13 @@ export function markdownCadence(size: number) {
 export class MarkdownRequest {
   private readonly owner = ++nextOwner
   private latest = { text: '', live: true }
-  private display: MarkdownDisplay = { blocks: [], tail: null, raw: '', complete: false }
+  private display: MarkdownDisplay = {
+    blocks: [],
+    tail: null,
+    raw: '',
+    waiting: '',
+    complete: false,
+  }
   private timer: ReturnType<typeof setTimeout> | null = null
   private paint: number | null = null
   private inFlight = false
@@ -101,7 +110,13 @@ export class MarkdownRequest {
         // An append can use an earlier result. A replacement must wait for its own parse.
         if (this.latest.text.startsWith(requested.text)) {
           if (!result)
-            this.publish({ blocks: [], tail: null, raw: this.latest.text, complete: true })
+            this.publish({
+              blocks: [],
+              tail: null,
+              raw: this.latest.text,
+              waiting: '',
+              complete: true,
+            })
           else if (result.complete && requested.text === this.latest.text && !this.latest.live) {
             this.finish(result.blocks, requested.text)
           } else if (!result.complete) {
@@ -109,6 +124,7 @@ export class MarkdownRequest {
               blocks: result.reset ? result.blocks : [...this.display.blocks, ...result.blocks],
               tail: result.tail,
               raw: result.raw,
+              waiting: '',
               complete: false,
             })
           }
@@ -145,7 +161,8 @@ export class MarkdownRequest {
       this.publish({
         blocks: drawn.slice(),
         tail: null,
-        raw: complete ? '' : source.slice(drawn.at(-1)?.end ?? 0),
+        raw: '',
+        waiting: complete ? '' : source.slice(drawn.at(-1)?.end ?? 0),
         complete,
       })
       this.paint = complete ? null : requestAnimationFrame(step)
