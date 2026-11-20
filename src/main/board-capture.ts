@@ -7,11 +7,14 @@ import {
   FRAME_MAX,
   FRAMES_DIR,
   isSharpRequest,
+  MID_THUMB_WIDTH,
   type SharpRequest,
   SMALL_THUMB_WIDTH,
   THUMB_DENSITY,
   THUMB_MAX_HEIGHT,
   THUMB_WIDTH,
+  thumbScaleOf,
+  thumbWidthOf,
 } from '../shared/board'
 import { writeFileAtomic } from './atomic-file'
 import { boardAssetSignature, pageSignature } from './board-assets'
@@ -64,11 +67,10 @@ export interface BoardCaptureRenderer {
 }
 
 /**
- * The worker a frame is laid out in: narrower than THUMB_WIDTH, at 2× (narrowed to
- * THUMB_WIDTH at most, `thumbWidthOf`); desktop frames at 1×. Two worker scales, not one for
- * every width.
+ * JPEG quality of the saved thumbnails. Captured at 2×, small text survives JPEG's halved
+ * colour resolution; above this, files grow fast for little a screen shows.
  */
-const workerScale = (width: number) => (width < THUMB_WIDTH ? THUMB_DENSITY : 1)
+const THUMB_QUALITY = 82
 
 interface CaptureHost {
   root: string
@@ -88,6 +90,8 @@ interface CachedThumbnail {
   thumbWidth?: number
   /** SMALL_THUMB_WIDTH when it was made; without a small copy, it's made again */
   smallWidth?: number
+  /** MID_THUMB_WIDTH when it was made; a wide thumbnail without its middle copy is made again */
+  midWidth?: number
   /** THUMB_DENSITY when it was made; one captured at 1× is made again */
   density?: number
 }
@@ -140,6 +144,11 @@ export class BoardCaptures {
     return join(this.host.thumbs, `${id}.small.jpg`)
   }
 
+  /** The copy the board shows at middle zooms, MID_THUMB_WIDTH wide: only a wider thumbnail has one. */
+  private midPath(id: string) {
+    return join(this.host.thumbs, `${id}.mid.jpg`)
+  }
+
   status(id: string) {
     return {
       version: this.versions.get(id) ?? this.firstVersion,
@@ -184,10 +193,13 @@ export class BoardCaptures {
     if (this.disposed) return
     await Promise.all(
       this.host.frames().map(async (frame) => {
-        const [page, thumb, small] = await Promise.all([
+        const [page, thumb, small, mid] = await Promise.all([
           pageSignature(join(this.host.root, FRAMES_DIR, `${frame.id}.html`)),
           stat(this.path(frame.id)).catch(() => null),
           stat(this.smallPath(frame.id)).catch(() => null),
+          thumbWidthOf(frame.width) > MID_THUMB_WIDTH
+            ? stat(this.midPath(frame.id)).catch(() => null)
+            : true,
         ])
         if (this.disposed) return
         if (thumb) this.captured.add(frame.id)
@@ -195,6 +207,7 @@ export class BoardCaptures {
         if (
           !thumb ||
           !small ||
+          !mid ||
           !page ||
           cached?.assets !== assets ||
           cached.page !== page ||
@@ -202,6 +215,7 @@ export class BoardCaptures {
           cached.height !== frame.height ||
           cached.thumbWidth !== THUMB_WIDTH ||
           cached.smallWidth !== SMALL_THUMB_WIDTH ||
+          cached.midWidth !== MID_THUMB_WIDTH ||
           cached.density !== THUMB_DENSITY
         )
           void this.thumbnail(frame.id)
@@ -213,7 +227,7 @@ export class BoardCaptures {
   private async sweep() {
     const frames = new Set(this.host.frames().map((frame) => frame.id))
     const files = await readdir(this.host.thumbs).catch(() => [] as string[])
-    const owner = (file: string) => file.replace(/(\.small)?\.jpg$/, '')
+    const owner = (file: string) => file.replace(/(\.small|\.mid)?\.jpg$/, '')
     await Promise.all(
       files
         .filter(
@@ -281,6 +295,7 @@ export class BoardCaptures {
     const removal = Promise.all([
       rm(this.path(id), { force: true }),
       rm(this.smallPath(id), { force: true }),
+      rm(this.midPath(id), { force: true }),
     ]).then(
       () => undefined,
       () => undefined,
@@ -318,7 +333,7 @@ export class BoardCaptures {
       if (!page || this.disposed || signal.aborted) return null
       const attempt = `${this.assets}\n${page}`
       if (this.hung.get(frame.id) === attempt) return null
-      const scale = workerScale(frame.width)
+      const scale = thumbScaleOf(frame.width)
       try {
         return await this.renderer.region(
           frame,
@@ -369,7 +384,7 @@ export class BoardCaptures {
       image = await this.renderer.render(
         frame,
         this.host.url(id),
-        workerScale(frame.width),
+        thumbScaleOf(frame.width),
         signal,
         THUMB_MAX_HEIGHT,
       )
@@ -392,13 +407,19 @@ export class BoardCaptures {
     const suffix = `${randomBytes(6).toString('hex')}.tmp`
     const temp = `${this.path(id)}.${suffix}`
     const smallTemp = `${this.smallPath(id)}.${suffix}`
+    const midTemp = `${this.midPath(id)}.${suffix}`
+    const wide = image.getSize().width > MID_THUMB_WIDTH
     try {
       await Promise.all([
-        writeFile(temp, narrow(THUMB_WIDTH).toJPEG(82)),
-        writeFile(smallTemp, narrow(SMALL_THUMB_WIDTH).toJPEG(82)),
+        writeFile(temp, narrow(THUMB_WIDTH).toJPEG(THUMB_QUALITY)),
+        writeFile(smallTemp, narrow(SMALL_THUMB_WIDTH).toJPEG(THUMB_QUALITY)),
+        wide ? writeFile(midTemp, narrow(MID_THUMB_WIDTH).toJPEG(THUMB_QUALITY)) : null,
       ])
       if (!current()) return
       await rename(smallTemp, this.smallPath(id))
+      // A frame narrowed since keeps no middle copy it would never be shown.
+      if (wide) await rename(midTemp, this.midPath(id))
+      else await rm(this.midPath(id), { force: true })
       await rename(temp, this.path(id))
       if (!current()) return
       this.cache[id] = {
@@ -408,6 +429,7 @@ export class BoardCaptures {
         height: frame.height,
         thumbWidth: THUMB_WIDTH,
         smallWidth: SMALL_THUMB_WIDTH,
+        midWidth: MID_THUMB_WIDTH,
         density: THUMB_DENSITY,
       }
       await writeFileAtomic(this.cachePath, JSON.stringify(this.cache))
@@ -417,7 +439,7 @@ export class BoardCaptures {
       this.versions.set(id, (this.versions.get(id) ?? this.firstVersion) + 1)
       this.host.changed(id)
     } finally {
-      await Promise.all([rm(temp, { force: true }), rm(smallTemp, { force: true })]).catch(
+      await Promise.all([temp, smallTemp, midTemp].map((file) => rm(file, { force: true }))).catch(
         () => undefined,
       )
     }

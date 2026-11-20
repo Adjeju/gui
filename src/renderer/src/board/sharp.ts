@@ -9,7 +9,7 @@ import {
 import { type BoardRect, boardRect, type PageRect, pageRect } from '../../../shared/coords'
 
 /*
- * Zoomed in past what a frame's thumbnail holds (a desktop frame's is one device pixel a CSS
+ * Zoomed in past what a frame's thumbnail holds (a desktop frame's is two device pixels a CSS
  * pixel, a Retina screen at 200% shows four), the board asks main for the part of the frame in
  * view again, rendered at the zoom, once the camera has held still; and draws it over the
  * thumbnail, in exactly its place (sharp-textures.ts). This is which part, at what scale:

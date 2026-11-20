@@ -470,7 +470,9 @@ test('zoomed out, the board shows small thumbnails, and full ones zoomed in, nev
   }, 'thumbnails')
   const thumbs = join(session.fixture.userData, 'canvas-thumbnails', canvas.id)
   expect(readdirSync(thumbs).sort()).toEqual(
-    expect.arrayContaining(frames.flatMap((f) => [`${f.id}.jpg`, `${f.id}.small.jpg`])),
+    expect.arrayContaining(
+      frames.flatMap((f) => [`${f.id}.jpg`, `${f.id}.mid.jpg`, `${f.id}.small.jpg`]),
+    ),
   )
   // The window can read a thumbnail's bytes with CORS, as a texture needs, not only show it.
   const fetched = await chrome.evaluate(async (url) => {

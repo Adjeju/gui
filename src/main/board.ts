@@ -289,7 +289,7 @@ export const thumbsDir = (id: string) => join(app.getPath('userData'), 'canvas-t
 
 /**
  * Where the board loads a frame's thumbnail from: `${thumbsUrl(id)}/<frame id>?v=<version>`,
- * or `<frame id>.small` for its zoomed-out copy.
+ * or `<frame id>.small` for its zoomed-out copy, `<frame id>.mid` for its middle one.
  */
 export const thumbsUrl = (id: string) => `gui-thumb://${id}`
 
@@ -303,10 +303,10 @@ export function registerThumbProtocol() {
     try {
       const url = new URL(request.url)
       const name = url.pathname.slice(1)
-      const frame = name.endsWith('.small') ? name.slice(0, -'.small'.length) : name
+      const frame = name.replace(/\.(small|mid)$/, '')
       if (!isBoardId(url.hostname) || !isFrameId(frame)) return new Response(null, { status: 404 })
       const dir = thumbsDir(url.hostname)
-      // A thumbnail made before small copies existed has none until it's made again.
+      // A thumbnail made before its smaller copies existed has none until it's made again.
       const image = await readFile(join(dir, `${name}.jpg`)).catch(() =>
         readFile(join(dir, `${frame}.jpg`)),
       )

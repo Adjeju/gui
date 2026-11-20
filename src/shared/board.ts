@@ -30,22 +30,35 @@ export const FRAME_MIN = 120
 export const FRAME_MAX = 4000
 
 /**
- * A thumbnail's widest, in pixels: a desktop frame's own width. Narrower frames are captured at
- * twice their size up to this (`thumbWidthOf`), so they stay sharp on a Retina screen at 100%.
+ * A thumbnail's widest, in pixels: a desktop frame at twice its width, so it stays sharp on a
+ * Retina screen up to 100% before any sharp tile (renderer/src/board/sharp.ts) is needed.
  */
-export const THUMB_WIDTH = 1440
+export const THUMB_WIDTH = 2880
 /** The most device pixels a thumbnail has per CSS pixel: a Retina screen's. */
 export const THUMB_DENSITY = 2
 
-/** A frame's thumbnail's width, in pixels: twice the frame's, THUMB_WIDTH at most. */
+/**
+ * How many device pixels a frame `frameWidth` wide is captured at per CSS pixel: twice, when
+ * that fits in THUMB_WIDTH; once for a wider frame (narrowed to THUMB_WIDTH, `thumbWidthOf`).
+ * Two scales, so the capture workers are two.
+ */
+export const thumbScaleOf = (frameWidth: number) =>
+  frameWidth * THUMB_DENSITY <= THUMB_WIDTH ? THUMB_DENSITY : 1
+
+/** A frame's thumbnail's width, in pixels: as captured (`thumbScaleOf`), THUMB_WIDTH at most. */
 export function thumbWidthOf(frameWidth: number) {
-  return Math.min(THUMB_WIDTH, Math.round(frameWidth * THUMB_DENSITY))
+  return Math.min(THUMB_WIDTH, Math.round(frameWidth * thumbScaleOf(frameWidth)))
 }
 /**
  * The board's zoomed-out thumbnails are this wide, in pixels: a full one decoded for a frame
  * a hundred pixels wide on screen costs its memory many times over.
  */
 export const SMALL_THUMB_WIDTH = 360
+/**
+ * A thumbnail wider than this has a copy this wide as well, for the board at middle zooms:
+ * a frame drawn a few hundred pixels wide decodes it, not one with four times the pixels.
+ */
+export const MID_THUMB_WIDTH = 1440
 /** How much of a tall frame its thumbnail shows; screenshots and exports show all of it. */
 export const THUMB_MAX_HEIGHT = 3000
 

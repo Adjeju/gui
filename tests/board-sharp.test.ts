@@ -40,20 +40,20 @@ const pixels = (tiles: SharpTile[]) =>
   tiles.reduce((sum, t) => sum + t.rect.width * t.rect.height * t.scale * t.scale, 0)
 
 test('a frame is rendered sharp only where its thumbnail holds too little for the zoom', () => {
-  // A desktop frame's thumbnail is 1 device pixel a CSS pixel; a narrower frame's, 2.
+  // A desktop frame's thumbnail, like a narrower frame's, is 2 device pixels a CSS pixel.
   expect(sharpScale(1440, 0.5, 2)).toBe(0)
-  expect(sharpScale(1440, 0.55, 2)).toBe(0)
-  expect(sharpScale(1440, 1, 2)).toBe(2)
+  expect(sharpScale(1440, 1, 2)).toBe(0)
+  expect(sharpScale(1440, 1.1, 2)).toBe(0)
   expect(sharpScale(1440, 2, 2)).toBe(4)
   // In steps of a quarter, rounded up: never less than the screen shows.
   expect(sharpScale(1440, 1.3, 2)).toBe(2.75)
-  expect(sharpScale(1440, 1, 1)).toBe(0)
-  expect(sharpScale(1440, 2, 1)).toBe(2)
+  expect(sharpScale(1440, 2, 1)).toBe(0)
+  expect(sharpScale(1440, 3, 1)).toBe(3)
   expect(sharpScale(390, 1, 2)).toBe(0)
   expect(sharpScale(390, 2, 2)).toBe(4)
-  // 1000 wide: captured at 2× and narrowed to 1440, 1.44 a CSS pixel.
-  expect(sharpScale(1000, 0.75, 2)).toBe(0)
-  expect(sharpScale(1000, 1, 2)).toBe(2)
+  // Wider than a desktop frame: captured at 1×.
+  expect(sharpScale(2000, 0.5, 2)).toBe(0)
+  expect(sharpScale(2000, 1, 2)).toBe(2)
 })
 
 test('zoomed in to 200% on a desktop frame, the part in view is asked for at 4×, with a margin', () => {
@@ -98,11 +98,11 @@ test('a tile is kept for a small pan or zoom, and made again past its margin or 
   expect(panned.rect.x).toBeGreaterThan(tile.rect.x)
   // Zoomed out a little (and still covered): at 3.75× needed, 4× is kept.
   expect(planSharp([desktop()], { x: 380, y: 235, zoom: 1.9 }, view, 2, held)[0]).toBe(tile)
-  // Zoomed out far: 4× where 2× is needed is wasted pixels, so it's made again.
-  const out = planSharp([desktop()], { x: 0, y: 0, zoom: 1 }, view, 2, held)[0]
-  expect(out.scale).toBe(2)
+  // Zoomed out far: 4× where 2.5× is needed is wasted pixels, so it's made again.
+  const out = planSharp([desktop()], { x: 0, y: 0, zoom: 1.25 }, view, 2, held)[0]
+  expect(out.scale).toBe(2.5)
   // Zoomed back to where the thumbnail is enough: nothing.
-  expect(planSharp([desktop()], { x: 0, y: 0, zoom: 0.5 }, view, 2, held)).toEqual([])
+  expect(planSharp([desktop()], { x: 0, y: 0, zoom: 1 }, view, 2, held)).toEqual([])
 })
 
 test('a frame whose thumbnail changed, or that was resized, gets a new tile', () => {
@@ -125,13 +125,20 @@ test('all the tiles together hold at most the budget, the frames filling most of
   const tiles = planSharp(frames, { x: 0, y: 0, zoom: 2 }, view, 2, none)
   expect(tiles.length).toBeGreaterThan(0)
   expect(pixels(tiles)).toBeLessThanOrEqual(view.width * view.height * 4 * SHARP_BUDGET)
-  // At 100% a desktop frame and a phone beside it: only the desktop frame's thumbnail is short.
-  const both = planSharp([desktop(), mobile('m', 1500, 0)], { x: 0, y: 0, zoom: 1 }, view, 2, none)
+  // At 100% a frame wider than a desktop's (captured at 1×) and a phone beside it: only the
+  // wide frame's thumbnail is short.
+  const both = planSharp(
+    [desktop('a', 0, 0, { width: 2000 }), mobile('m', 1000, 0)],
+    { x: 0, y: 0, zoom: 1 },
+    view,
+    2,
+    none,
+  )
   expect(both.map((t) => t.id)).toEqual(['a'])
-  // Two desktop frames filling a tall view at 100%: both fit.
+  // Two desktop frames filling a tall view at 125%: both fit.
   const big = planSharp(
     [desktop('a'), desktop('b', 0, 920)],
-    { x: 0, y: 0, zoom: 1 },
+    { x: 0, y: 0, zoom: 1.25 },
     { width: 1440, height: 1800 },
     2,
     none,

@@ -142,7 +142,7 @@ export function BoardSurface({
         el,
         {
           thumbUrl: (want) =>
-            `${latest.current.thumbs}/${want.id}${want.source === 'small' ? '.small' : ''}?v=${want.version}`,
+            `${latest.current.thumbs}/${want.id}${want.source === 'full' ? '' : `.${want.source}`}?v=${want.version}`,
           sharpTile: (tile, signal) => sharpTile(latest.current.board, tile, signal),
         },
         hooks,

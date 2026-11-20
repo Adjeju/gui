@@ -52,17 +52,20 @@ test('zoomed in past a frame’s thumbnail, the part in view is drawn sharp at t
   )
   const root = (await session.state()).project?.root
   if (!root) throw new Error('No canvas folder')
+  // Wider than a desktop frame, so its thumbnail is one device pixel a CSS pixel (a desktop
+  // frame's is two): at 200% a Retina screen shows four, a standard one two.
+  await chrome.evaluate((id) => window.gui.boardArrange([{ id, width: 2000 }]), added.id)
   writeFileSync(join(root, 'frames', `${added.id}.html`), SMALL_TEXT)
   await waitFor(async () => {
     const frame = (await session.state()).board?.frames.find((f) => f.id === added.id)
-    return frame && frame.version > added.version && !frame.rendering ? frame : null
+    return frame && frame.width === 2000 && frame.version > added.version && !frame.rendering
+      ? frame
+      : null
   }, 'its new thumbnail')
 
   const board = chrome.getByRole('application')
   await board.focus()
   await chrome.keyboard.press('Shift+Digit1')
-  // A desktop frame's thumbnail is one device pixel a CSS pixel: at 200% a Retina screen shows
-  // four, a standard one two.
   await zoomUntil(session, '=', (z) => z >= 2 - 1e-9)
   const dpr = await chrome.evaluate(() => devicePixelRatio)
   const expected = Math.min(4, Math.ceil(2 * dpr * 4) / 4)

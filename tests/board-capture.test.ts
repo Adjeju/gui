@@ -35,11 +35,11 @@ async function until(condition: () => boolean) {
   }
 }
 
-const image = (text: string): NativeImage =>
+const image = (text: string, width = 400): NativeImage =>
   ({
-    getSize: () => ({ width: 400, height: 300 }),
-    toJPEG: () => Buffer.from(text),
-    resize: () => image(text),
+    getSize: () => ({ width, height: 300 }),
+    toJPEG: () => Buffer.from(`${text}@${width}`.replace(/@400$/, '')),
+    resize: (to: { width: number }) => image(text, to.width),
   }) as unknown as NativeImage
 
 /** A renderer for thumbnails; its sharp regions are null unless a test gives them. */
@@ -107,10 +107,10 @@ test('interactive screenshots overtake queued thumbnails and active stale result
   expect(f.changed.filter((id) => id === first)).toHaveLength(1)
 })
 
-test('thumbnails made at 1× before are made again at 2×, and desktop frames stay at 1×', async () => {
+test('thumbnails made at 1× before are made again at 2×, and frames wider than a desktop’s stay at 1×', async () => {
   const f = await fixture(['a', 'b'])
-  const desktop = f.frames.get('b')
-  if (desktop) desktop.width = 1440
+  const wide = f.frames.get('b')
+  if (wide) wide.width = 2000
   const scales: string[] = []
   const renderer = (): TestRenderer => ({
     render: async (frame, _url, scale) => {
@@ -332,7 +332,7 @@ test('thumbnail versions never repeat across openings, and stale thumbnails are 
   expect(await readFile(join(f.thumbs, 'a.jpg.123.tmp')).catch(() => null)).toBeNull()
   expect(await readFile(second.path('a'), 'utf8')).toBe('a')
   // With the small copy the board shows zoomed out.
-  expect(await readFile(join(f.thumbs, 'a.small.jpg'), 'utf8')).toBe('a')
+  expect(await readFile(join(f.thumbs, 'a.small.jpg'), 'utf8')).toBe('a@360')
   // A frame that leaves the board takes its thumbnail with it.
   f.frames.delete('a')
   await second.forget('a')
@@ -342,8 +342,8 @@ test('thumbnail versions never repeat across openings, and stale thumbnails are 
 
 test('a sharp region is laid out in its thumbnail’s worker, at the zoom asked, and never saved', async () => {
   const f = await fixture(['a', 'b'])
-  const desktop = f.frames.get('b')
-  if (desktop) desktop.width = 1440
+  const broad = f.frames.get('b')
+  if (broad) broad.width = 2000
   const regions: string[] = []
   const owner = f.create({
     render: async (frame) => image(frame.id),
@@ -356,7 +356,7 @@ test('a sharp region is laid out in its thumbnail’s worker, at the zoom asked,
   await owner.open()
   await until(() => f.changed.length === 2)
   const rect = { x: 10, y: 20, width: 100, height: 50 }
-  // A 400-wide frame's worker is at 2×, a desktop frame's at 1×: 4× is twice the one, 4× the other.
+  // A 400-wide frame's worker is at 2×, a 2000-wide one's at 1×: 4× is twice the one, 4× the other.
   const narrow = owner.sharpen({ id: 'a', rect, scale: 4 })
   const wide = owner.sharpen({ id: 'b', rect, scale: 4 })
   expect((await narrow?.done)?.toString()).toBe('png a')
@@ -368,4 +368,41 @@ test('a sharp region is laid out in its thumbnail’s worker, at the zoom asked,
   expect(await owner.sharpen({ id: 'a', rect, scale: 4 })?.done).toBeNull()
   expect(regions).toHaveLength(2)
   expect((await readdir(f.thumbs)).filter((name) => !/\.(jpg|json)$/.test(name))).toEqual([])
+})
+
+test('a thumbnail wider than the middle copy has one; a frame narrowed since loses it', async () => {
+  const f = await fixture(['a'])
+  const frame = f.frames.get('a')
+  if (frame) frame.width = 1440
+  const owner = f.create({
+    // Captured at 2×, as the worker would.
+    render: async (frame, _url, scale) => image(frame.id, frame.width * scale),
+    dispose: () => undefined,
+  })
+  await owner.open()
+  await until(() => f.changed.length === 1)
+  expect(await readFile(owner.path('a'), 'utf8')).toBe('a@2880')
+  expect(await readFile(join(f.thumbs, 'a.mid.jpg'), 'utf8')).toBe('a@1440')
+  expect(await readFile(join(f.thumbs, 'a.small.jpg'), 'utf8')).toBe('a@360')
+  if (frame) frame.width = 390
+  await owner.thumbnail('a')
+  expect(await readFile(owner.path('a'), 'utf8')).toBe('a@780')
+  expect(await readFile(join(f.thumbs, 'a.mid.jpg')).catch(() => null)).toBeNull()
+  // Deleted while the canvas was closed: opened again, the frame is captured again for it.
+  if (frame) frame.width = 1440
+  await owner.thumbnail('a')
+  await owner.dispose()
+  await rm(join(f.thumbs, 'a.mid.jpg'))
+  let renders = 0
+  const again = f.create({
+    render: async (frame, _url, scale) => {
+      renders++
+      return image(frame.id, frame.width * scale)
+    },
+    dispose: () => undefined,
+  })
+  await again.open()
+  await until(() => renders === 1)
+  await again.thumbnail('a')
+  expect(await readFile(join(f.thumbs, 'a.mid.jpg'), 'utf8')).toBe('a@1440')
 })

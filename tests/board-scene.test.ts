@@ -58,16 +58,24 @@ test('a frame wants the smallest texture a little wider than it is drawn', () =>
   // 1.2 times as wide as drawn, from the small file while that holds enough.
   expect(thumbTier(1440, 260)).toEqual({ width: 360, source: 'small', sourceWidth: 360 })
   expect(thumbTier(1440, 300)).toEqual({ width: 360, source: 'small', sourceWidth: 360 })
-  expect(thumbTier(1440, 301)).toEqual({ width: 512, source: 'full', sourceWidth: 1440 })
-  expect(thumbTier(1440, 4000)).toEqual({ width: 1440, source: 'full', sourceWidth: 1440 })
+  // A desktop frame's thumbnail is 2880 wide: up to 1440, from its middle copy.
+  expect(thumbTier(1440, 301)).toEqual({ width: 512, source: 'mid', sourceWidth: 1440 })
+  expect(thumbTier(1440, 1200)).toEqual({ width: 1440, source: 'mid', sourceWidth: 1440 })
+  expect(thumbTier(1440, 1201)).toEqual({ width: 2048, source: 'full', sourceWidth: 2880 })
+  expect(thumbTier(1440, 4000)).toEqual({ width: 2880, source: 'full', sourceWidth: 2880 })
   // Far out, less than the small file holds: resized as it's decoded.
   expect(thumbTier(1440, 60)).toEqual({ width: 90, source: 'small', sourceWidth: 360 })
   expect(thumbTier(1440, 144)).toEqual({ width: 180, source: 'small', sourceWidth: 360 })
-  // A narrow frame's thumbnail is twice its width at most, for a Retina screen at 100%.
+  // A narrow frame's thumbnail is twice its width, for a Retina screen at 100%; one no wider
+  // than the middle copy has none.
   expect(thumbTier(390, 700)).toEqual({ width: 780, source: 'full', sourceWidth: 780 })
   expect(thumbTier(390, 2000)).toEqual({ width: 780, source: 'full', sourceWidth: 780 })
-  expect(thumbTier(1000, 2000)).toEqual({ width: 1440, source: 'full', sourceWidth: 1440 })
+  expect(thumbTier(820, 1000)).toEqual({ width: 1440, source: 'mid', sourceWidth: 1440 })
+  expect(thumbTier(820, 2000)).toEqual({ width: 1640, source: 'full', sourceWidth: 1640 })
   expect(thumbTier(100, 700)).toEqual({ width: 200, source: 'small', sourceWidth: 200 })
+  // Wider than a desktop frame: captured at 1×, 2880 at most.
+  expect(thumbTier(2000, 4000)).toEqual({ width: 2000, source: 'full', sourceWidth: 2000 })
+  expect(thumbTier(4000, 4000)).toEqual({ width: 2880, source: 'full', sourceWidth: 2880 })
 })
 
 test('only what reaches into the view is drawn, in paint order', () => {
@@ -80,7 +88,7 @@ test('only what reaches into the view is drawn, in paint order', () => {
   // Shadows first, then each frame over them.
   expect(drawn.map((quad) => quad.kind)).toEqual([QUAD.shadow, QUAD.shadow, QUAD.thumb, QUAD.thumb])
   expect(drawn[2].rect).toEqual([0, 0, 720, 450])
-  expect(list.thumbs[2]).toMatchObject({ id: 'a', width: 1440, source: 'full' })
+  expect(list.thumbs[2]).toMatchObject({ id: 'a', width: 2048, source: 'full' })
 
   // Panned right: frame a is out of view, and is not listed.
   buildScene(input(), { x: 1500, y: 0, zoom: 0.5 }, view, 2, list)

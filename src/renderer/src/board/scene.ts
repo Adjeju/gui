@@ -1,6 +1,7 @@
 import {
   type BoardCamera,
   type BoardSection,
+  MID_THUMB_WIDTH,
   SECTION_TOP,
   SMALL_THUMB_WIDTH,
   sectionBounds,
@@ -61,7 +62,7 @@ export const QUAD_STRIDE = 12
  * what's on screen holds at most three times the screen's own pixels (1.7 squared), however
  * many frames there are and however far in.
  */
-export const THUMB_TIERS = [90, 128, 180, 256, 360, 512, 720, 1024, 1440] as const
+export const THUMB_TIERS = [90, 128, 180, 256, 360, 512, 720, 1024, 1440, 2048, 2880] as const
 /**
  * A texture drawn at very nearly its own size is soft (two resamplings, the second a pixel
  * out of step); a little larger than drawn and it's as sharp as the DOM board's thumbnails.
@@ -73,8 +74,8 @@ export interface ThumbWant {
   version: number
   /** The texture's width, in pixels */
   width: number
-  /** Which of the frame's two files it's made from, and that file's width */
-  source: 'small' | 'full'
+  /** Which of the frame's files it's made from, and that file's width */
+  source: 'small' | 'mid' | 'full'
   sourceWidth: number
 }
 
@@ -84,9 +85,11 @@ export function thumbTier(frameWidth: number, drawn: number): Omit<ThumbWant, 'i
   const small = Math.min(SMALL_THUMB_WIDTH, full)
   const tier = THUMB_TIERS.find((width) => width >= drawn * THUMB_OVERSAMPLE) ?? THUMB_WIDTH
   const width = Math.min(tier, full)
-  return width <= small
-    ? { width, source: 'small', sourceWidth: small }
-    : { width, source: 'full', sourceWidth: full }
+  if (width <= small) return { width, source: 'small', sourceWidth: small }
+  // Only a thumbnail wider than the middle copy has one (main/board-capture.ts).
+  if (width <= MID_THUMB_WIDTH && full > MID_THUMB_WIDTH)
+    return { width, source: 'mid', sourceWidth: MID_THUMB_WIDTH }
+  return { width, source: 'full', sourceWidth: full }
 }
 
 export interface Area {

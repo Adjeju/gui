@@ -107,8 +107,8 @@ async function load(wc: WebContents, url: string, signal: AbortSignal) {
 }
 
 /**
- * Thumbnails take two scales (1× for desktop frames, 2× for narrower ones), so a board keeps
- * a worker for each rather than remaking one whenever the next frame's width differs.
+ * Thumbnails take two scales (2×, and 1× for frames wider than a desktop's: `thumbScaleOf`), so
+ * a board keeps a worker for each rather than remaking one whenever the next frame's width differs.
  */
 const MAX_WORKERS = 2
 
