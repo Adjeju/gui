@@ -15,6 +15,7 @@ export const releases: Release[] = [
     date: '2026-11-19',
     changes: [
       'Auto mode stops asking: the agent edits files, runs commands and reads anywhere without asking, including outside the project. It still asks you its own questions, and Claude Code still asks you to approve its plan.',
+      '⌘1 to ⌘8 show tabs 1 to 8 and ⌘9 the last tab, as in a browser. The preview’s device sizes move to ⌃1 to ⌃4 (Alt+1 to Alt+4 on Linux).',
     ],
   },
   {
