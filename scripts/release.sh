@@ -15,7 +15,8 @@
 #     APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID, as electron-builder.yml describes).
 #   - Wrangler signed in to the Cloudflare account with the gui-releases R2 bucket
 #     (cd www && bunx wrangler login).
-#   - gh signed in to GitHub (gh auth login), for the GitHub Release.
+#   - gh signed in to GitHub (gh auth login), for the GitHub Release and the Homebrew cask
+#     in github.com/brijr/homebrew-gui (skipped, with what to do by hand, until that exists).
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -156,4 +157,28 @@ prerelease=
 [ "$channel" = latest ] || prerelease=--prerelease
 # shellcheck disable=SC2086
 gh release create "$tag" --verify-tag --title "Gui $version" --notes "$notes" $prerelease
+
+# Homebrew (brew install --cask brijr/gui/gui) reads Casks/gui.rb in github.com/brijr/homebrew-gui.
+# The release is out by now, so a failure here only says how to finish by hand. The checksum is
+# the stapled DMG's, the file uploaded above; the feed's went stale when the ticket was stapled.
+tap=brijr/homebrew-gui
+cask=Casks/gui.rb
+dmg_sha=$(shasum -a 256 "$dmg" | cut -d ' ' -f 1)
+by_hand="Set version \"$version\" and sha256 \"$dmg_sha\" in $cask at github.com/$tap by hand."
+update_cask() {
+  gh api -H 'Accept: application/vnd.github.raw' "repos/$tap/contents/$cask" >release/gui.rb.old || return 1
+  sed -e "s/^  version \".*\"$/  version \"$version\"/" -e "s/^  sha256 \".*\"$/  sha256 \"$dmg_sha\"/" \
+    release/gui.rb.old >release/gui.rb || return 1
+  grep -qxF "  version \"$version\"" release/gui.rb && grep -qxF "  sha256 \"$dmg_sha\"" release/gui.rb || return 1
+  # Sends the blob it read, so GitHub refuses rather than overwrite a newer edit.
+  gh api -X PUT "repos/$tap/contents/$cask" -f message="gui $version" -f content="$(base64 <release/gui.rb)" \
+    -f sha="$cask_blob" --silent
+}
+if ! cask_blob=$(gh api "repos/$tap/contents/$cask" -q .sha 2>/dev/null); then
+  echo "Skipped Homebrew: github.com/$tap has no $cask, or GitHub didn't answer. Once it does: $by_hand"
+elif update_cask; then
+  echo "Updated the Homebrew cask to $version."
+else
+  echo "Gui $version is released, but its Homebrew cask isn't updated (GitHub's answer is above). $by_hand" >&2
+fi
 echo "Released Gui $version: https://usegui.com/download"
