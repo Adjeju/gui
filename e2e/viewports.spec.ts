@@ -260,12 +260,14 @@ test('each viewport lays the page out at its device size, scaled to fit the wind
   const session = await launch({ fixture: 'vite' })
   await session.waitForPreview()
 
-  // Desktop · Laptop · Tablet · Mobile on ⌘1–⌘4, in the View menu and the toolbar.
+  // Desktop · Laptop · Tablet · Mobile on ⌃1–⌃4 (Alt+1–Alt+4 off a Mac: Ctrl+1 is a tab's),
+  // in the View menu and the toolbar.
+  const device = process.platform === 'darwin' ? 'Ctrl' : 'Alt'
   expect(await session.app.evaluate(viewportItems)).toEqual([
-    { label: 'Desktop Viewport', accelerator: 'CmdOrCtrl+1' },
-    { label: 'Laptop Viewport', accelerator: 'CmdOrCtrl+2' },
-    { label: 'Tablet Viewport', accelerator: 'CmdOrCtrl+3' },
-    { label: 'Mobile Viewport', accelerator: 'CmdOrCtrl+4' },
+    { label: 'Desktop Viewport', accelerator: `${device}+1` },
+    { label: 'Laptop Viewport', accelerator: `${device}+2` },
+    { label: 'Tablet Viewport', accelerator: `${device}+3` },
+    { label: 'Mobile Viewport', accelerator: `${device}+4` },
   ])
   // One button in the toolbar: the viewport showing, which opens a menu of all four.
   const viewport = session.chrome.getByRole('button', { name: /^Viewport: / })

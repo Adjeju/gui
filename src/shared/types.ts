@@ -327,7 +327,7 @@ export interface DrawerState {
 }
 
 /**
- * The preview's viewports, in toolbar and View menu order (⌘1…⌘4). Desktop fills the canvas;
+ * The preview's viewports, in toolbar and View menu order (⌃1…⌃4). Desktop fills the canvas;
  * the others are device frames: the page lays out at exactly `size` (CSS pixels), drawn
  * smaller when the canvas can't fit it.
  */
@@ -347,7 +347,7 @@ export interface ViewportSpec {
   mobile: boolean
 }
 
-/** One of VIEWPORTS: what a project's preview can be, and ⌘1…⌘4 choose */
+/** One of VIEWPORTS: what a project's preview can be, and ⌃1…⌃4 choose */
 export type DeviceViewport = (typeof VIEWPORTS)[number]['id']
 /**
  * A canvas frame's own size, `1080x1080`, when it opens live and no device's width is its own
@@ -407,7 +407,7 @@ export function frameLabel(id: Viewport, scale: number) {
   return { name, detail }
 }
 
-/** Its key with ⌘ (the View menu's shortcut): 1 for the first viewport, and so on. */
+/** Its key with ⌃, Alt on Linux (the View menu's shortcut): 1 for the first viewport, and so on. */
 export function viewportKey(id: DeviceViewport) {
   return String(VIEWPORTS.findIndex((viewport) => viewport.id === id) + 1)
 }

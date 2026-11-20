@@ -2360,7 +2360,7 @@ export class ProjectTab implements ChatPanelOwner {
     } else this.preview.webContents.reloadIgnoringCache()
   }
 
-  /** The user's pick (toolbar, View menu, ⌘1–⌘4): theirs, and the agent's checks come back to it. */
+  /** The user's pick (toolbar, View menu, ⌃1–⌃4): theirs, and the agent's checks come back to it. */
   setViewport(viewport: Viewport) {
     if (!this.canShow(viewport)) return
     this.agentViewport.userChose()

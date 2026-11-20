@@ -68,10 +68,10 @@ Every shortcut is in the app's menus, and **Help → Keyboard Shortcuts** (⌘/)
 | Reload the preview, ignoring the cache | ⇧⌘R |
 | Go back | ⌘[ |
 | Go forward | ⌘] |
-| Desktop: fill the window | ⌘1 |
-| Laptop: 1440 × 900 | ⌘2 |
-| Tablet: 820 × 1180 | ⌘3 |
-| Mobile: 390 × 844 | ⌘4 |
+| Desktop: fill the window | ⌃1 |
+| Laptop: 1440 × 900 | ⌃2 |
+| Tablet: 820 × 1180 | ⌃3 |
+| Mobile: 390 × 844 | ⌃4 |
 | Zoom in: the page, or a device frame up to the size that fits | ⌘+ or ⌘= |
 | Zoom out | ⌘− |
 | Page at 100%, or a device frame back to fit | ⌘0 |

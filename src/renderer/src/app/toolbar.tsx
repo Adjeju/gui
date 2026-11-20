@@ -319,7 +319,7 @@ function chooseViewport(id: string) {
 
 /**
  * The preview's size: the viewport showing, as its icon, which opens a menu of the others
- * (⌘1–⌘4 pick one straight away). A native menu, as it opens over the preview. `own` is a
+ * (⌃1–⌃4 pick one straight away). A native menu, as it opens over the preview. `own` is a
  * size of its own: an open canvas frame's, or a width the agent is checking (`ownTitle` says which).
  */
 function ViewportButton({

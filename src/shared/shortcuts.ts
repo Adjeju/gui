@@ -42,12 +42,15 @@ export interface ShortcutSpec {
   description: string
 }
 
-/** A viewport's item: ⌘1 for the first, and so on, in VIEWPORTS order. */
+/**
+ * A viewport's item: ⌃1 for the first, and so on, in VIEWPORTS order; Alt+1 on Linux, where
+ * Ctrl+1 is for a tab. ⌘1 to ⌘9 are for the tabs, as in a browser.
+ */
 function viewportShortcut(id: DeviceViewport): ShortcutSpec {
   const { name, size } = viewportSpec(id)
   return {
     label: `${name} Viewport`,
-    accelerator: `CmdOrCtrl+${viewportKey(id)}`,
+    accelerator: `${IS_MAC ? 'Ctrl' : 'Alt'}+${viewportKey(id)}`,
     menu: 'view',
     group: 'preview',
     description: size ? `${name}: ${size.width} × ${size.height}` : `${name}: fill the window`,
@@ -730,18 +733,29 @@ export interface KeyPress {
  */
 export function matchesShortcut(event: KeyPress, id: ShortcutId): boolean {
   const { accelerator, alternates = [] }: ShortcutSpec = SHORTCUTS[id]
-  return [accelerator, ...alternates].some((keys) => {
-    const { modifiers, key } = parse(keys)
-    const has = (aria: string) => modifiers.some((modifier) => modifier.aria === aria)
-    const name = KEYS[key]?.aria ?? key
-    return (
-      event.key.toLowerCase() === name.toLowerCase() &&
-      event.metaKey === has('Meta') &&
-      event.ctrlKey === has('Control') &&
-      event.altKey === has('Alt') &&
-      event.shiftKey === has('Shift')
-    )
-  })
+  return [accelerator, ...alternates].some((keys) => matchesAccelerator(event, keys))
+}
+
+function matchesAccelerator(event: KeyPress, accelerator: string): boolean {
+  const { modifiers, key } = parse(accelerator)
+  const has = (aria: string) => modifiers.some((modifier) => modifier.aria === aria)
+  const name = KEYS[key]?.aria ?? key
+  return (
+    event.key.toLowerCase() === name.toLowerCase() &&
+    event.metaKey === has('Meta') &&
+    event.ctrlKey === has('Control') &&
+    event.altKey === has('Alt') &&
+    event.shiftKey === has('Shift')
+  )
+}
+
+/**
+ * A viewport's key (⌃1 to ⌃4): the app menu's even in a terminal, which would otherwise type it
+ * (on Linux, Alt+1; on a Mac, ⌃2 is NUL and ⌃4 ^\).
+ */
+export function isViewportKey(event: KeyPress): boolean {
+  const accelerators = Object.values(VIEWPORT_SHORTCUTS).map((id) => SHORTCUTS[id].accelerator)
+  return accelerators.some((accelerator) => matchesAccelerator(event, accelerator))
 }
 
 /** For `aria-keyshortcuts`: "Shift+Meta+L", its other keys after a space. */

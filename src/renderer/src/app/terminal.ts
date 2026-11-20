@@ -3,6 +3,7 @@ import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 import { TERMINAL_SCROLLBACK_BYTES } from '../../../shared/bounded'
 import type { TextMatch } from '../../../shared/find'
 import { IS_MAC } from '../../../shared/platform'
+import { isViewportKey } from '../../../shared/shortcuts'
 import { guardGhosttyWrites } from './ghostty-write'
 
 // Ghostty's terminal, compiled to WebAssembly: loaded once, with the module that draws the
@@ -167,6 +168,8 @@ export function mountTerminal(
   const ghosttyKeys = input?.keydownListener
   if (!input || !ghosttyKeys) throw new Error('ghostty-web: no key listener to wrap')
   const keys: Keys = (event) => {
+    // A viewport's key goes on to the menu too, though it isn't a ⌘ key.
+    if (isViewportKey(event)) return
     if (!IS_MAC) {
       if (!event.ctrlKey || !event.shiftKey) return ghosttyKeys(event)
       if (event.code === 'KeyC') {
