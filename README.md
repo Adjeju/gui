@@ -7,7 +7,7 @@ Gui is a Mac and Linux app for designing real interfaces with the AI coding agen
   <img alt="Gui showing a website in its preview, with the chat panel open and Claude Code as the agent" src="www/src/assets/hero-start-light.png">
 </picture>
 
-**[Download for Mac](https://usegui.com/download)** · [usegui.com](https://usegui.com) · Apple silicon, alpha
+**[Download for Mac](https://usegui.com/download)**, or `brew install --cask brijr/gui/gui` · [usegui.com](https://usegui.com) · Apple silicon, alpha
 
 ## What it does
 
