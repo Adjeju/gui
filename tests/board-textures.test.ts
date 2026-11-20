@@ -145,16 +145,18 @@ test('over budget, frames out of view give up theirs, the longest unseen first; 
   // A tiny canvas: its budget is about the 32 MB of room for what was just looked at.
   plan.resize({ width: 1, height: 1 })
   expect(thumbBudget({ width: 1, height: 1 })).toBeCloseTo(32 * 1048576 + 16, 0)
-  // Frames one view apart, each 1440 wide at zoom 1: 1440 × 900 textures, 6.9 MB with levels.
-  const frames = Array.from({ length: 6 }, (_, i) => frame(`f${i}`, i * 1440))
+  // Frames one view apart, each 1440 wide at 40% (1152 device pixels): 1440 × 900 textures,
+  // 6.9 MB with levels.
+  const apart = view.width / 0.4
+  const frames = Array.from({ length: 6 }, (_, i) => frame(`f${i}`, i * apart))
   const scene = input(frames)
   let now = 0
   const look = async (i: number) => {
     now += 1000
-    draw(plan, scene, 1, now, i * 1440)
+    draw(plan, scene, 0.4, now, i * apart)
     await settle()
     now += 1000
-    draw(plan, scene, 1, now, i * 1440)
+    draw(plan, scene, 0.4, now, i * apart)
   }
   for (let i = 0; i < frames.length; i++) await look(i)
   // Four fit; the oldest went first.
