@@ -17,7 +17,7 @@ import {
   MAX_TOOL_TITLE,
 } from '../shared/bounded'
 import { type ChatTurnUpdate, TurnPublisher } from '../shared/chat-transport'
-import { invokedCommand, parseCommands, takesContext } from '../shared/commands'
+import { invokedCommand, parseCommands, sendsContext, takesContext } from '../shared/commands'
 import { editDiffs } from '../shared/edit-diff'
 import {
   type AgentCommand,
@@ -1019,6 +1019,14 @@ export class ChatController extends EventEmitter<ChatEvents> {
       return true
     }
     return this.startTurn(text, null, images, null, recordings, followUp, textEdit)
+  }
+
+  /**
+   * Whether a message of `text` would take its images to the agent: a session command
+   * (/compact) goes alone and drops them (startTurn), now or when it leaves the queue.
+   */
+  takesImages(text: string) {
+    return sendsContext(text.trim(), this.meta.commands)
   }
 
   private followUpFor(turnId: string | null): FollowUp | null {

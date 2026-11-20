@@ -3347,7 +3347,8 @@ export class ProjectTab implements ChatPanelOwner {
   /**
    * On a canvas, each image's full-quality copy (`SentImage.asset`) is saved to its assets/
    * first, and the agent is told where; a project's folder is the user's repo, so nothing is
-   * written there and the copies are dropped.
+   * written there and the copies are dropped. So are they for a session command (/compact),
+   * which goes to the agent without its images.
    */
   async sendChatMessage(
     text: string,
@@ -3363,9 +3364,10 @@ export class ProjectTab implements ChatPanelOwner {
     const board = this.resources.board
     let images: ImageAttachment[] = []
     try {
-      images = board
-        ? await saveChatImages(board.root, sent, () => this.resources.stillCurrent(generation))
-        : sent.map(({ asset: _, ...image }) => image)
+      images =
+        board && chat.takesImages(text)
+          ? await saveChatImages(board.root, sent, () => this.resources.stillCurrent(generation))
+          : sent.map(({ asset: _, ...image }) => image)
       const clips = await recordings.attachments(ids)
       if (
         this.resources.chat === chat &&

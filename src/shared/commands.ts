@@ -105,6 +105,15 @@ const SESSION_COMMANDS = new Set([
 export const takesContext = (command: AgentCommand) =>
   !SESSION_COMMANDS.has(command.name.toLowerCase())
 
+/**
+ * Whether a message goes to the agent with its context (the picked element, images,
+ * recordings): every message does but a session command, which goes alone.
+ */
+export function sendsContext(text: string, commands: AgentCommand[]) {
+  const invoked = invokedCommand(text, commands)
+  return !invoked || takesContext(invoked)
+}
+
 /** A `/` being typed: what follows it so far, and where `/query` sits in the message. */
 export interface CommandQuery {
   query: string

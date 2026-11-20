@@ -7,6 +7,7 @@ import {
   filterCommands,
   insertCommand,
   invokedCommand,
+  sendsContext,
   takesContext,
 } from '../src/shared/commands'
 import type { AgentCommand } from '../src/shared/types'
@@ -126,6 +127,16 @@ describe('commands as the agent gets them', () => {
     expect(takesContext(command('context'))).toBe(false)
     expect(takesContext(command('emil-animations'))).toBe(true)
     expect(takesContext(command('review'))).toBe(true)
+  })
+
+  test('a message sends its images unless it is a session command', () => {
+    expect(sendsContext('/compact', commands)).toBe(false)
+    expect(sendsContext('/compact keep the frames', commands)).toBe(false)
+    expect(sendsContext('/emil-animations smoother', commands)).toBe(true)
+    expect(sendsContext('make this smoother', commands)).toBe(true)
+    expect(sendsContext('', commands)).toBe(true)
+    // A slash the agent doesn't offer is an ordinary message.
+    expect(sendsContext('/clear the hero', commands)).toBe(true)
   })
 
   test('the menu shows each as it is typed', () => {
