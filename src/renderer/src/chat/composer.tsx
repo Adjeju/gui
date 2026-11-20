@@ -45,7 +45,7 @@ import {
 import { AgentSetup, shouldShowAgentSetup } from './agent-setup'
 import { AutoToggle } from './auto-toggle'
 import { useCommandMenu } from './command-menu'
-import { ImageError, imageFiles, prepareImage } from './images'
+import { ImageError, imageFiles, prepareImage, sentAsset } from './images'
 import { ModelButton } from './model-picker'
 import { NewChatQuestion } from './new-chat-question'
 import { QueuedMessages } from './queue'
@@ -169,7 +169,8 @@ export function Composer({
     setPending(processing.current)
     for (const file of accepted) {
       try {
-        addAttachments([await prepareImage(file)])
+        // On a canvas, also a full-quality copy, saved to its assets/ when the message is sent.
+        addAttachments([await prepareImage(file, meta.canvas)])
       } catch (error) {
         setNotice(error instanceof ImageError ? error.message : `Couldn’t attach ${file.name}.`)
       } finally {
@@ -197,14 +198,15 @@ export function Composer({
     if (!canSend || sending.current) return
     const sent = attachments
     const clips = recordings.map((clip) => clip.id)
-    const images = sent.map(({ name, mimeType, data, thumbnail }) => ({
-      name,
-      mimeType,
-      data,
-      thumbnail,
-    }))
-    const about = followUp?.id ?? null
     sending.current = true
+    const images = await Promise.all(
+      sent.map(async ({ name, mimeType, data, thumbnail, asset }) => {
+        // A copy that can't be read still sends the message, without it.
+        const copy = asset ? await sentAsset(asset).catch(() => null) : null
+        return { name, mimeType, data, thumbnail, ...(copy ? { asset: copy } : {}) }
+      }),
+    )
+    const about = followUp?.id ?? null
     // Its turn (or queued message) rises out of the composer when main reports it.
     noteSend(
       text,

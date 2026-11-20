@@ -1400,6 +1400,22 @@ export interface ImageAttachment {
   data: string
   /** Small data URL shown in the transcript and kept in history */
   thumbnail: string
+  /**
+   * On a canvas, where Gui saved the full-quality copy (`assets/<file>`), for the agent to
+   * use in a frame. Set by main when the message is sent; never by the composer.
+   */
+  saved?: string
+}
+
+/** A canvas chat image's full-quality copy, re-encoded so it carries no metadata. */
+export interface ImageAsset {
+  mimeType: 'image/jpeg' | 'image/png'
+  bytes: Uint8Array
+}
+
+/** An image as the composer sends it: on a canvas, with its copy for assets/. */
+export interface SentImage extends ImageAttachment {
+  asset?: ImageAsset
 }
 
 /**

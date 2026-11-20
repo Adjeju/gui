@@ -28,6 +28,7 @@ import type {
   Rect,
   RulerGuide,
   RulersView,
+  SentImage,
   SettingsSection,
   SettingsState,
   SidebarSlide,
@@ -678,7 +679,7 @@ export interface GuiApi {
    */
   send(
     text: string,
-    images?: ImageAttachment[],
+    images?: SentImage[],
     recordings?: string[],
     followUp?: string | null,
     steer?: boolean,

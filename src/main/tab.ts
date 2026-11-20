@@ -72,6 +72,7 @@ import {
   type RecentProject,
   type Rect,
   type RegionContext,
+  type SentImage,
   type SetupConsent,
   type StartCommandInput,
   type TabStatus,
@@ -96,6 +97,7 @@ import { branchStatus } from './branch'
 import { CanvasGit, type CommitOutcome, commitMessage } from './canvas-git'
 import { mergeLayout, nextFrameName, sameLayout } from './canvas-layout'
 import { availableModels, type BoardLayout, ChatController } from './chat'
+import { discardChatImages, saveChatImages } from './chat-image-assets'
 import { listedModels, modelsUnder, offersChoice, pickerFields } from './chat-models'
 import { Checkpoints } from './checkpoints'
 import { DevServer } from './dev-server'
@@ -3342,9 +3344,14 @@ export class ProjectTab implements ChatPanelOwner {
 
   // Chat
 
+  /**
+   * On a canvas, each image's full-quality copy (`SentImage.asset`) is saved to its assets/
+   * first, and the agent is told where; a project's folder is the user's repo, so nothing is
+   * written there and the copies are dropped.
+   */
   async sendChatMessage(
     text: string,
-    images: ImageAttachment[],
+    sent: SentImage[],
     ids: string[] = [],
     followUp: string | null = null,
     steer = false,
@@ -3352,17 +3359,30 @@ export class ProjectTab implements ChatPanelOwner {
     const recordings = this.recordings
     const chat = this.resources.chat
     if (!chat || !recordings) return false
+    const generation = this.resources.generation
+    const board = this.resources.board
+    let images: ImageAttachment[] = []
     try {
+      images = board
+        ? await saveChatImages(board.root, sent, () => this.resources.stillCurrent(generation))
+        : sent.map(({ asset: _, ...image }) => image)
       const clips = await recordings.attachments(ids)
-      if (this.resources.chat !== chat) return false
-      const accepted = chat.send(text, images, clips, followUp, steer)
-      if (accepted) recordings.retain(ids)
-      // A message from outside the chat (the board's starters): the chat shows it going.
-      if (accepted && this.panel.untuck()) this.layout()
-      return accepted
+      if (
+        this.resources.chat === chat &&
+        this.resources.stillCurrent(generation) &&
+        chat.send(text, images, clips, followUp, steer)
+      ) {
+        recordings.retain(ids)
+        // A message from outside the chat (the board's starters): the chat shows it going.
+        if (this.panel.untuck()) this.layout()
+        return true
+      }
     } catch {
-      return false
+      // Not sent, as below.
     }
+    // The draft stays to be sent again, and with it its images: they'd be saved twice.
+    if (board) await discardChatImages(board.root, images).catch(() => undefined)
+    return false
   }
 
   /** The toolbar's branch, from the HEAD file: on open, focus and a turn's end. */

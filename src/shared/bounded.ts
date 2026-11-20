@@ -60,6 +60,16 @@ export const MAX_THUMBNAIL = 256 * 1024
 export const MAX_PNG_BYTES = 3 * 1024 * 1024
 
 /**
+ * A canvas chat's attached image is also saved to the canvas's assets/ for frames to use:
+ * full resolution up to this long edge, far more than the agent's copy.
+ */
+export const MAX_ASSET_EDGE = 4096
+/** A saved PNG over this (a photo, not a screenshot) is a JPEG instead. */
+export const MAX_ASSET_PNG_BYTES = 12 * 1024 * 1024
+/** A saved image's bytes as main accepts them from the composer: bigger didn't come from it. */
+export const MAX_ASSET_BYTES = 16 * 1024 * 1024
+
+/**
  * Characters of a tool step's title a chat keeps. Agents send the whole command as the title,
  * a heredoc's file and all: of 46,490 commands in real Claude Code sessions the longest was
  * 36,066 characters and one in 2,000 was over this. The chat shows one line of it. A step's

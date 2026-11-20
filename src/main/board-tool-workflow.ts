@@ -36,16 +36,19 @@ function fitForAgent(image: NativeImage) {
   return { data: encoded.data.toString('base64'), width: encoded.width, height: encoded.height }
 }
 
-/** "Stripe Home.png" → "stripe-home.jpg": a plain file name, never a path. */
-export function assetName(name: string) {
+/**
+ * "Stripe Home.png" → "stripe-home.jpg": a plain file name, never a path. `ext` is the
+ * format it's saved in, whatever the name said; `fallback` names one that says nothing.
+ */
+export function assetName(name: string, ext: 'jpg' | 'png' = 'jpg', fallback = 'screenshot') {
   const stem = name
     .trim()
-    .replace(/\.(png|jpe?g)$/i, '')
+    .replace(/\.(png|jpe?g|gif|webp|avif|heic|heif|bmp|tiff?)$/i, '')
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60)
-  return `${stem || 'screenshot'}.jpg`
+  return `${stem || fallback}.${ext}`
 }
 
 /**
@@ -78,12 +81,14 @@ export function createBoardTools(
  * taken: never over another file, nor through a link planted at the name. Its final name.
  */
 export async function saveAsset(dir: string, name: string, data: Buffer): Promise<string> {
-  const stem = name.replace(/\.jpg$/, '')
+  const dot = name.lastIndexOf('.')
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  const ext = dot > 0 ? name.slice(dot) : ''
   const temp = join(dir, `.${stem}.${randomBytes(6).toString('hex')}.tmp`)
   await writeFile(temp, data, { flag: 'wx' })
   try {
     for (let n = 1; n < 1000; n++) {
-      const file = n === 1 ? name : `${stem}-${n}.jpg`
+      const file = n === 1 ? name : `${stem}-${n}${ext}`
       try {
         // Both fail when the name is there, whatever it is: nothing is replaced.
         await link(temp, join(dir, file)).catch((error: NodeJS.ErrnoException) => {

@@ -74,6 +74,7 @@ import {
   isViewport,
   type ProjectTemplate,
   type Rect,
+  type SentImage,
   type SettingsSection,
   type StartCommandInput,
   type StorageKind,
@@ -104,6 +105,7 @@ import {
 } from './board'
 import { boardSharpen, registerBoardIpc } from './board-ipc'
 import { offersChoice } from './chat'
+import { isImageAsset } from './chat-image-assets'
 import { cloneRepo, parseRepo } from './clone'
 import { errorReport, sendCrashReport } from './crash-reports'
 import { applyDevFlags } from './dev-flags'
@@ -1170,6 +1172,14 @@ function registerIpc() {
       if (!Array.isArray(attached) || attached.length > MAX_IMAGES || !attached.every(isImage)) {
         return false
       }
+      // Only what the composer sends: main alone says where an image was saved.
+      const sent = attached.map(({ name, mimeType, data, thumbnail, asset }: SentImage) => ({
+        name,
+        mimeType,
+        data,
+        thumbnail,
+        ...(isImageAsset(asset) ? { asset } : {}),
+      }))
       const ids = recordings ?? []
       if (
         !Array.isArray(ids) ||
@@ -1179,8 +1189,7 @@ function registerIpc() {
       )
         return false
       return (
-        tabFor(event)?.sendChatMessage(text, attached, ids, followUp ?? null, steer === true) ??
-        false
+        tabFor(event)?.sendChatMessage(text, sent, ids, followUp ?? null, steer === true) ?? false
       )
     },
   )

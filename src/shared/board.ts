@@ -8,6 +8,8 @@
 export const BOARD_MANIFEST = 'canvas.json'
 /** Where a canvas's frames are, one single-file HTML page each: `frames/<id>.html`. */
 export const FRAMES_DIR = 'frames'
+/** Where main saved a chat's attached image on a canvas: a plain file in assets/. */
+export const SAVED_ASSET = /^assets\/[a-z0-9_-]+\.(jpg|png)$/
 /** The most frames a canvas holds; more would make its thumbnails slow to keep current. */
 export const MAX_FRAMES = 60
 

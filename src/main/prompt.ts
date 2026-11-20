@@ -221,13 +221,49 @@ export function buildPrompt({
   if (textEdit) blocks.push({ type: 'text', text: describeTextEdit(textEdit) })
   blocks.push(...followUp)
   if (text !== null) blocks.push({ type: 'text', text })
-  if (images && attachments.length) {
-    const count =
-      attachments.length === 1 ? 'a reference image' : `${attachments.length} reference images`
-    blocks.push({ type: 'text', text: `The user attached ${count} to this message:` })
-    for (const { mimeType, data } of attachments) blocks.push({ type: 'image', mimeType, data })
-  }
+  if (images && attachments.length) blocks.push(...describeAttachments(attachments))
   return blocks
+}
+
+/**
+ * The images attached to the user's message. On a canvas Gui saved each one's full-quality
+ * copy to assets/ (`saved`): the agent is told the file, to put the real image in a frame
+ * rather than its own small copy. One that wasn't saved is named by no path.
+ */
+export function describeAttachments(attachments: ImageAttachment[]): ContentBlock[] {
+  const image = ({ mimeType, data }: ImageAttachment): ContentBlock => ({
+    type: 'image',
+    mimeType,
+    data,
+  })
+  const use = (file: string) => `to use it in a frame, write <img src="../${file}">`
+  const [only] = attachments
+  if (attachments.length === 1 && only) {
+    const text = only.saved
+      ? `The user attached a reference image to this message, saved as ${only.saved} — ${use(only.saved)}:`
+      : 'The user attached a reference image to this message:'
+    return [{ type: 'text', text }, image(only)]
+  }
+  const count = `${attachments.length} reference images`
+  if (!attachments.some((attached) => attached.saved)) {
+    return [
+      { type: 'text', text: `The user attached ${count} to this message:` },
+      ...attachments.map(image),
+    ]
+  }
+  return [
+    {
+      type: 'text',
+      text: `The user attached ${count} to this message. Each one saved to the canvas is named with its file; to use one in a frame, write <img src="../assets/<file>">.`,
+    },
+    ...attachments.flatMap((attached, i): ContentBlock[] => [
+      {
+        type: 'text',
+        text: attached.saved ? `Image ${i + 1}, saved as ${attached.saved}:` : `Image ${i + 1}:`,
+      },
+      image(attached),
+    ]),
+  ]
 }
 
 /**

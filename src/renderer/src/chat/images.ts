@@ -1,5 +1,10 @@
-import { MAX_PNG_BYTES } from '../../../shared/bounded'
-import type { ImageAttachment } from '../../../shared/types'
+import {
+  MAX_ASSET_BYTES,
+  MAX_ASSET_EDGE,
+  MAX_ASSET_PNG_BYTES,
+  MAX_PNG_BYTES,
+} from '../../../shared/bounded'
+import type { ImageAsset, ImageAttachment } from '../../../shared/types'
 
 /** Claude's recommended long edge; bigger images only cost more and get downscaled anyway. */
 const MAX_EDGE = 1568
@@ -10,6 +15,11 @@ const MAX_FILE_BYTES = 20 * 1024 * 1024
 /** An image attached to the draft; `id` only keys it in the composer and isn't sent. */
 export interface DraftImage extends ImageAttachment {
   id: string
+  /**
+   * In a canvas's chat, the full-quality copy main saves to its assets/ when the message is
+   * sent. Kept as a blob until then: a draft image removed before sending leaves nothing.
+   */
+  asset?: Blob
 }
 
 /** A file that can't be attached; the message is shown in the composer as is. */
@@ -35,8 +45,14 @@ export function imageFiles(files: Iterable<File>) {
  * JPEGs stay JPEG (0.85): they're photos and already lossy. Everything else becomes PNG,
  * which keeps screenshots' text and edges crisp and design exports' transparency, unless
  * that PNG is photo-sized, in which case it's a JPEG on white. GIFs keep their first frame.
+ *
+ * `asset`, in a canvas's chat: also a full-quality copy for frames to use (`DraftImage.asset`),
+ * made here from the same decode. It's encoded in the renderer because OffscreenCanvas does it
+ * off the main thread, where main's encoder would hold the whole app, and the decode already
+ * applied the photo's orientation. Without it, if that copy can't be made, the image still
+ * attaches.
  */
-export async function prepareImage(file: File): Promise<DraftImage> {
+export async function prepareImage(file: File, asset = false): Promise<DraftImage> {
   const name = (file.name || 'image').slice(0, 200)
   if (!isImageFile(file)) throw new ImageError(`${name} isn’t an image.`)
   if (file.size > MAX_FILE_BYTES) throw new ImageError(`${name} is over 20 MB.`)
@@ -59,14 +75,52 @@ export async function prepareImage(file: File): Promise<DraftImage> {
     const thumbnail = await dataUrl(await encode(bitmap, THUMBNAIL_EDGE, 'image/webp'))
     const mimeType = full.type === 'image/jpeg' ? 'image/jpeg' : 'image/png'
     const data = (await dataUrl(full)).split(',')[1] ?? ''
-    return { id: crypto.randomUUID(), name, mimeType, data, thumbnail }
+    const copy = asset ? await assetCopy(bitmap, file.type).catch(() => null) : null
+    return {
+      id: crypto.randomUUID(),
+      name,
+      mimeType,
+      data,
+      thumbnail,
+      ...(copy ? { asset: copy } : {}),
+    }
   } finally {
     bitmap.close()
   }
 }
 
+/**
+ * The copy saved to a canvas's assets/: full resolution up to MAX_ASSET_EDGE, re-encoded so
+ * no metadata (location, camera) comes along. The same choices as the agent's copy: JPEGs
+ * stay JPEG, now at 0.92; screenshots and transparent images are PNG unless photo-sized.
+ * Null when it would be too big for main to take.
+ */
+async function assetCopy(bitmap: ImageBitmap, type: string): Promise<Blob | null> {
+  let copy = await encode(
+    bitmap,
+    MAX_ASSET_EDGE,
+    type === 'image/jpeg' ? 'image/jpeg' : 'image/png',
+    ASSET_QUALITY,
+  )
+  if (copy.type === 'image/png' && copy.size > MAX_ASSET_PNG_BYTES) {
+    copy = await encode(bitmap, MAX_ASSET_EDGE, 'image/jpeg', ASSET_QUALITY)
+  }
+  if (copy.type !== 'image/jpeg' && copy.type !== 'image/png') return null
+  return copy.size <= MAX_ASSET_BYTES ? copy : null
+}
+
+const ASSET_QUALITY = 0.92
+
+/** What the composer sends for a draft image's asset copy: bytes cross IPC without base64. */
+export async function sentAsset(blob: Blob): Promise<ImageAsset> {
+  return {
+    mimeType: blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png',
+    bytes: new Uint8Array(await blob.arrayBuffer()),
+  }
+}
+
 /** Off the main thread where Chromium can: OffscreenCanvas encodes asynchronously. */
-function encode(bitmap: ImageBitmap, edge: number, type: string) {
+function encode(bitmap: ImageBitmap, edge: number, type: string, quality = 0.85) {
   const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height))
   const width = Math.max(1, Math.round(bitmap.width * scale))
   const height = Math.max(1, Math.round(bitmap.height * scale))
@@ -80,7 +134,7 @@ function encode(bitmap: ImageBitmap, edge: number, type: string) {
   }
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(bitmap, 0, 0, width, height)
-  return canvas.convertToBlob({ type, quality: type === 'image/png' ? undefined : 0.85 })
+  return canvas.convertToBlob({ type, quality: type === 'image/png' ? undefined : quality })
 }
 
 /** The renderer's CSP blocks fetching data: and blob: URLs, so read the blob directly. */

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { SAVED_ASSET } from '../shared/board'
 import {
   boundedTool,
   MAX_IMAGE_BASE64,
@@ -208,6 +209,17 @@ function isImage(value: unknown): value is ImageAttachment {
   )
 }
 
+/** A queued image as it was sent, with where main saved it only if that's a canvas asset. */
+function settleImage({ name, mimeType, data, thumbnail, saved }: ImageAttachment): ImageAttachment {
+  return {
+    name,
+    mimeType,
+    data,
+    thumbnail,
+    ...(typeof saved === 'string' && SAVED_ASSET.test(saved) ? { saved } : {}),
+  }
+}
+
 function isViewport(value: unknown): value is PromptViewport {
   if (!value || typeof value !== 'object') return false
   const { name, width, height, fixed } = value as Record<string, unknown>
@@ -249,7 +261,7 @@ function settleQueue(value: unknown): SavedQueued[] | undefined {
           recordings: settleRecordings(recordings) ?? [],
           ...(isFollowUp(followUp) ? { followUp } : {}),
         },
-        images: Array.isArray(images) ? images.filter(isImage) : [],
+        images: Array.isArray(images) ? images.filter(isImage).map(settleImage) : [],
         selection: Array.isArray(selection) ? settleContext(selection) : picked,
         viewport: isViewport(viewport) ? viewport : null,
         ...(fix === 'startup' ? { fix } : {}),
