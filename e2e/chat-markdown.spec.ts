@@ -309,3 +309,23 @@ test('a long finished reply is never shown as plain text while it is drawn', asy
   const { flashes } = await stopProbe(session.chat)
   expect(flashes).toEqual([])
 })
+
+test('a long finished reply scrolled back into view is drawn in its first frame', async ({
+  launch,
+}) => {
+  const session = await launch({ fixture: 'vite', reducedMotion: 'reduce' })
+  await session.waitForPreview()
+  await session.chat.evaluate(() => window.gui.expandChat())
+  await showLongReplies(session)
+  const first = session.chat.locator('[data-turn-row="markdown-turn-0"] .markdown')
+  await expect(first).toHaveCount(0)
+  // Back to the first reply with the wheel, as the user scrolls: it mounts again.
+  await startProbe(session.chat)
+  const transcript = session.chat.locator('[data-transcript]')
+  await transcript.hover()
+  await session.chat.mouse.wheel(0, -10_000_000)
+  await expect.poll(() => transcript.evaluate((el) => el.scrollTop)).toBe(0)
+  await expect(first).toHaveAttribute('data-markdown-phase', 'complete')
+  const { flashes, blanks } = await stopProbe(session.chat)
+  expect({ flashes, blanks }).toEqual({ flashes: [], blanks: [] })
+})

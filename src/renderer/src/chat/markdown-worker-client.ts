@@ -1,3 +1,4 @@
+import { MAX_FINISHED_MARKDOWN_CHARS } from '../../../shared/bounded'
 import { MARKDOWN_NODE_BUDGET, type MarkdownBlock, type MarkdownUpdate } from './markdown-model'
 
 export interface MarkdownDisplay {
@@ -54,6 +55,30 @@ function parse(
   }
 }
 
+/** Finished replies' blocks, so one that mounts again (scrolled back to) draws at once. */
+const finished = new Map<string, MarkdownBlock[]>()
+let finishedChars = 0
+
+function keepFinished(text: string, blocks: MarkdownBlock[]) {
+  if (finished.has(text)) return
+  finished.set(text, blocks)
+  finishedChars += text.length
+  for (const old of finished.keys()) {
+    if (finishedChars <= MAX_FINISHED_MARKDOWN_CHARS) break
+    finished.delete(old)
+    finishedChars -= old.length
+  }
+}
+
+/** A finished reply's display, if it was drawn before and is still kept. */
+export function finishedMarkdown(text: string): MarkdownDisplay | null {
+  const blocks = finished.get(text)
+  if (!blocks) return null
+  finished.delete(text)
+  finished.set(text, blocks)
+  return { blocks, tail: null, raw: '', waiting: '', complete: true }
+}
+
 export function markdownCadence(size: number) {
   return size <= 16_384 ? 32 : size <= 65_536 ? 100 : 200
 }
@@ -75,12 +100,23 @@ export class MarkdownRequest {
   private dirty = false
   private disposed = false
   private lastRequest = Number.NEGATIVE_INFINITY
+  /** The finished text this display draws, which needs no parse */
+  private drawn: string | null = null
 
-  constructor(private changed: (display: MarkdownDisplay) => void) {
+  constructor(
+    private changed: (display: MarkdownDisplay) => void,
+    from?: { text: string; display: MarkdownDisplay },
+  ) {
     owners.add(this.owner)
+    if (from) {
+      this.display = from.display
+      this.drawn = from.text
+    }
   }
 
   update(text: string, live: boolean) {
+    if (!live && text === this.drawn) return
+    this.drawn = null
     this.latest = { text, live }
     this.dirty = true
     if (this.paint !== null) cancelAnimationFrame(this.paint)
@@ -165,6 +201,10 @@ export class MarkdownRequest {
         waiting: complete ? '' : source.slice(drawn.at(-1)?.end ?? 0),
         complete,
       })
+      if (complete) {
+        this.drawn = source
+        keepFinished(source, blocks)
+      }
       this.paint = complete ? null : requestAnimationFrame(step)
     }
     this.paint = requestAnimationFrame(step)

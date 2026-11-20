@@ -24,6 +24,8 @@ export const MAX_PERMISSION_DIFF_LINES = 120
 export const MAX_DIFF_LINE_CHARS = 300
 /** Past this many line pairs (removed × added) an edit's changed part isn't narrowed further. */
 export const MAX_DIFF_COMPARE = 400_000
+/** Finished chat replies kept parsed, as characters of their text, to draw again at once. */
+export const MAX_FINISHED_MARKDOWN_CHARS = 512 * 1024
 /** Output kept per terminal / dev server so the drawer can redraw after a tab switch. */
 export const MAX_OUTPUT_BYTES = 512 * 1024
 /**

@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import type { MarkdownUpdate } from '../src/renderer/src/chat/markdown-model'
 import { StreamingMarkdown } from '../src/renderer/src/chat/markdown-parser'
 import {
+  finishedMarkdown,
   type MarkdownDisplay,
   MarkdownRequest,
 } from '../src/renderer/src/chat/markdown-worker-client'
@@ -136,6 +137,43 @@ test('a final reply is superseded by replacement text, and parser failures keep 
       expect(displays.at(-1)?.blocks).toEqual([])
     } finally {
       owner.dispose()
+    }
+  })
+})
+
+test('a finished reply that mounts again draws its kept blocks without another parse', async () => {
+  await withWorker(async () => {
+    const text = '# Kept\n\nA **finished** reply.'
+    const first = new MarkdownRequest(() => undefined)
+    const displays: MarkdownDisplay[] = []
+    let second: MarkdownRequest | null = null
+    try {
+      first.update(text, false)
+      await sleep(5)
+      const worker = ControlledWorker.instance
+      if (!worker) throw new Error('Expected one shared worker')
+      worker.reply()
+      await sleep(10)
+      const kept = finishedMarkdown(text)
+      expect(kept?.complete).toBe(true)
+      expect(kept?.blocks).toHaveLength(2)
+      expect(finishedMarkdown('never drawn')).toBeNull()
+      if (!kept) return
+      second = new MarkdownRequest((display) => displays.push(display), { text, display: kept })
+      second.update(text, false)
+      await sleep(10)
+      expect(worker.queue).toHaveLength(0)
+      expect(displays).toHaveLength(0)
+      // A changed text parses again, keeping the blocks it shares.
+      second.update(`${text}\n\nMore.`, false)
+      await sleep(5)
+      worker.reply()
+      await sleep(10)
+      expect(displays.at(-1)?.blocks[0]).toBe(kept.blocks[0])
+      expect(displays.at(-1)?.blocks).toHaveLength(3)
+    } finally {
+      first.dispose()
+      second?.dispose()
     }
   })
 })

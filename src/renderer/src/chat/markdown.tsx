@@ -15,7 +15,7 @@ import { jsx, jsxs } from 'react/jsx-runtime'
 import type { Components } from 'react-markdown'
 import { ErrorBoundary } from '../lib/error-boundary'
 import { MARKDOWN_NODE_BUDGET, type MarkdownBlock } from './markdown-model'
-import { type MarkdownDisplay, MarkdownRequest } from './markdown-worker-client'
+import { finishedMarkdown, type MarkdownDisplay, MarkdownRequest } from './markdown-worker-client'
 
 export const markdownComponents: Components = {
   a: ({ href, children }) => (
@@ -137,15 +137,15 @@ function Waiting({ text }: { text: string }) {
 
 function StreamedMarkdown({ text, live }: { text: string; live: boolean }) {
   const request = useRef<MarkdownRequest | null>(null)
-  const [display, setDisplay] = useState<MarkdownDisplay>(() => ({
-    blocks: [],
-    tail: null,
-    raw: '',
-    waiting: text,
-    complete: false,
-  }))
+  // A finished reply drawn before (now mounting again, scrolled back to) needs no parse.
+  const kept = useRef<{ text: string; display: MarkdownDisplay } | undefined>(undefined)
+  const [display, setDisplay] = useState<MarkdownDisplay>(() => {
+    const display = live ? null : finishedMarkdown(text)
+    if (display) kept.current = { text, display }
+    return display ?? { blocks: [], tail: null, raw: '', waiting: text, complete: false }
+  })
   useEffect(() => {
-    const owner = new MarkdownRequest(setDisplay)
+    const owner = new MarkdownRequest(setDisplay, kept.current)
     request.current = owner
     return () => {
       request.current = null
