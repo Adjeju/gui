@@ -3,10 +3,10 @@ import { toJsxRuntime } from 'hast-util-to-jsx-runtime'
 import {
   cloneElement,
   Fragment,
-  lazy,
   memo,
   type ReactElement,
   Suspense,
+  use,
   useEffect,
   useRef,
   useState,
@@ -32,8 +32,19 @@ export const markdownComponents: Components = {
     ) : null,
 }
 
-const loadSmallMarkdown = () => import('./small-markdown')
-const SmallMarkdown = lazy(loadSmallMarkdown)
+let smallMarkdown: Promise<typeof import('./small-markdown')> | null = null
+function loadSmallMarkdown() {
+  if (smallMarkdown) return smallMarkdown
+  const loading = import('./small-markdown')
+  // Marked the way React's `use` reads it: once loaded, a reply draws in the same frame.
+  loading.then((value) => Object.assign(loading, { status: 'fulfilled', value }))
+  smallMarkdown = loading
+  return loading
+}
+function SmallMarkdown(props: { text: string; components: Components }) {
+  const { default: Render } = use(loadSmallMarkdown())
+  return <Render {...props} />
+}
 // Out of the first paint, but fetched once the window is idle: a restored chat's replies
 // shouldn't flash as plain text, or change height under the scroll position.
 if (typeof requestIdleCallback === 'function') requestIdleCallback(() => void loadSmallMarkdown())

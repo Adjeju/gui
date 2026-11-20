@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
+import type { Turn } from '../src/shared/types'
 import { electronExecutable, waitFor } from './helpers/env'
 import { type GuiSession, standInsFile } from './helpers/session'
 import { expect, test } from './helpers/test'
@@ -182,6 +183,37 @@ function stopProbe(page: Page) {
   })
 }
 
+function turn(index: number, text: string): Turn {
+  return {
+    id: `markdown-turn-${index}`,
+    index,
+    prompt: `Request ${index}`,
+    context: [],
+    status: 'done',
+    error: null,
+    startedAt: Date.now() - 2000,
+    endedAt: Date.now() - 1000,
+    reverted: false,
+    changes: [],
+    items: [{ kind: 'text', id: `markdown-text-${index}`, text }],
+  }
+}
+
+/** Replaces the chat's turns, as a restored chat or a chat switch does. */
+async function showTurns(session: GuiSession, turns: Turn[]) {
+  const snapshot = await session.chatSnapshot()
+  await session.app.evaluate(
+    ({ webContents }, value) => {
+      const chat = webContents
+        .getAllWebContents()
+        .find((contents) => contents.getURL().endsWith('/chat.html'))
+      if (!chat) throw new Error('Missing chat renderer')
+      chat.send('chat:reset', value)
+    },
+    { ...snapshot, turns },
+  )
+}
+
 /** Sends a message to the stand-in, which streams REPLY, and waits for the turn to end. */
 async function streamReply(session: GuiSession) {
   const box = session.chat.getByRole('textbox', { name: /^Message / })
@@ -205,4 +237,23 @@ test('a streamed reply keeps its elements as each block settles and as the turn 
   await streamReply(session)
   const { removed, redrawn } = await stopProbe(session.chat)
   expect({ removed, redrawn }).toEqual({ removed: 0, redrawn: [] })
+})
+
+test('a restored short reply is formatted in its first frame', async ({ launch }) => {
+  const session = await launch({ fixture: 'vite', reducedMotion: 'reduce' })
+  await session.waitForPreview()
+  const scripts: string[] = []
+  const cdp = await session.chat.context().newCDPSession(session.chat)
+  cdp.on('Debugger.scriptParsed', ({ url }) => scripts.push(url))
+  await cdp.send('Debugger.enable')
+  await session.chat.evaluate(() => window.gui.expandChat())
+  // The parser for finished replies loads once the chat is idle, before any reply needs it.
+  await waitFor(() => scripts.some((url) => url.includes('/small-markdown-')), 'the parser')
+  await cdp.detach()
+  await startProbe(session.chat)
+  await showTurns(session, [turn(0, REPLY)])
+  const reply = session.chat.locator('[data-transcript] .markdown')
+  await expect(reply.locator('strong')).toHaveText(['emphasis', '$5'])
+  const probe = await stopProbe(session.chat)
+  expect(probe.flashes).toEqual([])
 })
