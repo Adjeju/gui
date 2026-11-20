@@ -97,10 +97,19 @@ function project(name: string, files: Record<string, string> = {}) {
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim()
 
-/** Commits what's in the repository at `dir`. */
+/**
+ * Commits what's in the repository at `dir`. Without auto maintenance: after a commit, git
+ * starts `git maintenance run --auto --detach`, which outlives the commit and deletes its
+ * `objects/maintenance.lock` a moment later. When that lands after a test has taken a
+ * repository's fingerprint, `.git/objects` has a new time, and the test blames Gui.
+ */
 function commit(dir: string) {
   git(dir, 'add', '-A')
-  git(dir, '-c', 'user.name=me', '-c', 'user.email=me@example.com', 'commit', '-qm', 'mine')
+  git(
+    dir,
+    ...['-c', 'user.name=me', '-c', 'user.email=me@example.com', '-c', 'maintenance.auto=false'],
+    ...['commit', '-qm', 'mine'],
+  )
 }
 
 /** A repository of the user's own in `dir`, with what's there committed. */
