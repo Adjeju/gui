@@ -51,7 +51,13 @@ import { type PermissionRequest, parseModelSettings, QUESTION_KIND } from './age
 import { agentHealth } from './agent-status'
 import { declaresOwnPermissions, opensWebsites, type PermissionPolicy } from './agents'
 import { trackTurn } from './analytics'
-import { autoApproval, isAutoApprove, requestPaths, SENSITIVE_PATH } from './auto-approve'
+import {
+  autoApproval,
+  editApproval,
+  isAutoApprove,
+  requestPaths,
+  SENSITIVE_PATH,
+} from './auto-approve'
 import {
   availableModels,
   chosenValue,
@@ -60,7 +66,7 @@ import {
   withChoices,
 } from './chat-models'
 import { type EditScope, isFromHome, isOutside, projectEditPath } from './chat-paths'
-import { asksFirst, GUI_TOOL_LABELS, previewTool } from './chat-tools'
+import { GUI_TOOL_LABELS, previewTool } from './chat-tools'
 import type { Checkpoints } from './checkpoints'
 import { type DetailedError, describeError } from './errors'
 import {
@@ -1612,7 +1618,8 @@ export class ChatController extends EventEmitter<ChatEvents> {
     this.flushTurn(record)
     // Auto's note under the message box was there for this first message; from now on the
     // Auto control's tooltip says it.
-    if (this.autoApproves && !getPrefs().autoNoteSeen) setPrefs({ autoNoteSeen: true })
+    const noted = this.meta.autoApprove && !this.meta.ownPermissions
+    if (noted && !getPrefs().autoNoteSeen) setPrefs({ autoNoteSeen: true })
     // So is a note on Gui's tools: it was there while this message was written.
     this.toolReach.messageSent()
     this.refreshToolNotice()
@@ -2550,12 +2557,23 @@ export class ChatController extends EventEmitter<ChatEvents> {
       resolve(null)
       return
     }
-    void this.autoAnswer(record, request)
+    void this.autoAnswer(request)
       .catch(() => null)
       .then((auto) => this.askPermission(record, request, resolve, auto, from))
   }
 
-  /** `auto`: the option Gui answers with when it doesn't ask (see `autoApproval`), or null. */
+  /**
+   * What Gui answers `request` with by itself, or null when the user decides: in Auto,
+   * everything but the agent's own questions (`autoApproval`); in Ask, edits to ordinary
+   * source files inside the project, which are what Gui is for (`editApproval`).
+   */
+  private async autoAnswer(request: RequestPermissionRequest) {
+    if (this.meta.autoApprove) return autoApproval(request)
+    const scope = await this.scope()
+    return editApproval(request, this.meta.agentId, (path) => projectEditPath(path, scope))
+  }
+
+  /** `auto`: the option Gui answers with by itself (see `autoAnswer`), or null. */
   private askPermission(
     record: TurnRecord,
     request: PermissionRequest,
@@ -2568,9 +2586,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       resolve(null)
       return
     }
-    // Edits to ordinary source files inside the project are what Gui is for, so those are
-    // approved in Ask mode too; Auto mode approves everything the same rules allow.
-    if (auto !== null && (request.toolCall.kind === 'edit' || this.autoApproves)) {
+    if (auto !== null) {
       resolve(auto)
       return
     }
@@ -2619,21 +2635,6 @@ export class ChatController extends EventEmitter<ChatEvents> {
       ...(subagent ? { subagent } : {}),
     })
     this.emit('attention')
-  }
-
-  /** What Auto mode answers `request` with, whether or not it's on (see `autoApproval`). */
-  private autoAnswer(record: TurnRecord, request: RequestPermissionRequest) {
-    const { toolCallId, kind } = request.toolCall
-    const tool = record.turn.items.find((i) => i.kind === 'tool' && i.id === toolCallId)
-    // Opening a website: its address can carry data out, so the user always decides.
-    if (asksFirst(this.meta.agentId, request.toolCall, tool?.kind === 'tool' ? tool : undefined))
-      return Promise.resolve(null)
-    const toolKind = kind ?? (tool?.kind === 'tool' ? tool.toolKind : null)
-    return autoApproval(request, {
-      agentId: this.meta.agentId,
-      kind: toolKind,
-      place: async (path, write) => projectEditPath(path, await this.scope(), !write),
-    })
   }
 
   private scope() {
@@ -2802,11 +2803,6 @@ export class ChatController extends EventEmitter<ChatEvents> {
     if (ownPermissions !== null && ownPermissions !== this.meta.ownPermissions) {
       this.patchMeta({ ownPermissions })
     }
-  }
-
-  /** Gui approves what the agent asks about itself: Auto, unless the agent decides (ownPermissions). */
-  private get autoApproves() {
-    return this.meta.autoApprove && !this.meta.ownPermissions
   }
 
   private async trySnapshot(record: TurnRecord, message: string) {

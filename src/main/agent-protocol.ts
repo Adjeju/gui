@@ -217,7 +217,7 @@ export function questionRequest(
       kind: QUESTION_KIND,
     },
     ...(said && said !== title && !several ? { message: said } : {}),
-    // Skip first, so Auto mode never answers for the user (see `flaggedCaution`).
+    // Skip first, so it reads as the agent's own question; Auto never answers one (`autoApproval`).
     options: [
       { optionId: 'skip', name: 'Skip', kind: 'reject_once' },
       ...question.choices.map((choice, index) => ({

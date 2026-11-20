@@ -6,15 +6,16 @@ import { electronExecutable, sleep, waitFor } from './helpers/env'
 import type { GuiSession } from './helpers/session'
 import { expect, test } from './helpers/test'
 
-// Auto mode, on unless the user turns it off for a project: Gui answers the agent's
-// permission requests itself, except for requests that name files outside the project,
-// change sensitive files, or that the agent flags. A stand-in ACP agent (a small Node script) asks a fixed list of questions, one after
-// the other, and records how Gui answered each. No agent login or usage is needed.
+// Auto mode, on unless the user turns it off for a project: Gui answers every permission
+// request itself, allowing it once, but leaves the agent's own questions, Claude's plan
+// approval, and a request that offers only "always allow" to the user. A stand-in ACP agent
+// (a small Node script) asks a fixed list of questions, one after the other, and records how
+// Gui answered each. No agent login or usage is needed.
 
 const AGENT: AgentId = `${CUSTOM_AGENT_PREFIX}Approvals`
 /** Asks to run a command, then to edit a file outside the project. */
 const BASIC = 'SCENARIO=basic Run the tests, then edit a file outside the project'
-/** Asks the questions Auto mode must still put to the user, then some it answers itself. */
+/** Asks what Auto mode answers itself, and the two it still puts to the user. */
 const CAREFUL = 'SCENARIO=careful Look around and tidy up'
 /** Asks a question of its own (an elicitation form), as Claude's AskUserQuestion does. */
 const ASK = 'SCENARIO=question Tidy up the dev pages'
@@ -30,15 +31,18 @@ const { appendFileSync } = require('node:fs')
 const [log, outside, root] = process.argv.slice(2)
 const ALLOW = { optionId: 'allow', name: 'Allow', kind: 'allow_once' }
 const REJECT = { optionId: 'reject', name: 'Reject', kind: 'reject_once' }
+const ALWAYS = { optionId: 'always', name: 'Always allow', kind: 'allow_always' }
 const SCENARIOS = {
   basic: [
     { toolCallId: 'run-1', title: 'npm test', kind: 'execute' },
     { toolCallId: 'edit-1', title: 'Edit ' + outside, kind: 'edit', locations: [{ path: outside }] },
   ],
   careful: [
-    // The agent leads with No: its way of saying a person should decide.
-    { toolCallId: 'flagged-1', title: 'rm -rf build', kind: 'execute', options: [REJECT, ALLOW] },
+    // The user decides these: a plan approval, and a request with no way to allow it once.
     { toolCallId: 'plan-1', title: 'Ready to code?', kind: 'switch_mode' },
+    { toolCallId: 'always-1', title: 'git push', kind: 'execute', options: [ALWAYS, REJECT] },
+    // Auto mode answers the rest itself, even one the agent leads with No on.
+    { toolCallId: 'flagged-1', title: 'rm -rf build', kind: 'execute', options: [REJECT, ALLOW] },
     { toolCallId: 'read-out-1', title: 'Read ' + outside, kind: 'read', locations: [{ path: outside }] },
     {
       toolCallId: 'config-1',
@@ -46,7 +50,6 @@ const SCENARIOS = {
       kind: 'edit',
       locations: [{ path: root + '/package.json' }],
     },
-    // Auto mode answers these itself.
     {
       toolCallId: 'read-in-1',
       title: 'Read src/App.tsx',
@@ -343,7 +346,7 @@ async function openSecondProject(session: GuiSession): Promise<Page> {
   return chat
 }
 
-test('Auto mode is on per project; off, it asks; on, it still asks about outside edits', async ({
+test('Auto mode is on per project; off, it asks; on, it answers even outside edits', async ({
   launch,
 }) => {
   const session = await launch({ fixture: 'vite' })
@@ -354,7 +357,7 @@ test('Auto mode is on per project; off, it asks; on, it still asks about outside
   // A fresh profile starts in Auto.
   expect(await autoApprove(chat)).toBe(true)
   await expect(autoChip(chat)).toHaveAttribute('aria-pressed', 'true')
-  await expect(autoChip(chat)).toHaveAccessibleDescription(/outside this project/)
+  await expect(autoChip(chat)).toHaveAccessibleDescription(/reads anywhere/)
   expect(await autoModeItem(session)).toEqual({ label: 'Auto Mode', checked: true })
 
   // The chip turns it off, remembered for this project.
@@ -394,26 +397,18 @@ test('Auto mode is on per project; off, it asks; on, it still asks about outside
   expect((await cardsOf(session, 1)).map(shown)).toEqual([{ toolKind: 'execute', resolved: null }])
   expect(agent.outcomes(1)).toEqual([])
   await answer(session, waiting, 'allow')
-  const stillAsks = await openCard(session, 1, 'edit')
-  await answer(session, stillAsks, 'reject')
   const second = await session.waitForTurn(1)
   expect(cardsIn(second.turn.items).map(shown)).toEqual([
     { toolKind: 'execute', resolved: 'allow' },
-    { toolKind: 'edit', resolved: 'reject' },
   ])
+  expect(agent.outcomes(1)).toEqual([chose(1, 'run-1', 'allow'), chose(1, 'edit-1', 'allow')])
 
-  // The command is approved with no card. Only the edit outside the project asks, and the
-  // agent already has the command's answer by then, because it asks one at a time.
+  // The command and the edit outside the project are both allowed once, with no card.
   expect(await send(chat, BASIC)).toBe(true)
-  const outsideEdit = await openCard(session, 2, 'edit')
-  expect(outsideEdit.card.locations).toEqual([agent.outside])
-  expect((await cardsOf(session, 2)).map(shown)).toEqual([{ toolKind: 'edit', resolved: null }])
-  expect(agent.outcomes(2)).toEqual([chose(2, 'run-1', 'allow')])
-  await answer(session, outsideEdit, 'reject')
   const third = await session.waitForTurn(2)
   expect(third.turn.status).toBe('done')
-  expect(cardsIn(third.turn.items).map(shown)).toEqual([{ toolKind: 'edit', resolved: 'reject' }])
-  expect(agent.outcomes(2)).toEqual([chose(2, 'run-1', 'allow'), chose(2, 'edit-1', 'reject')])
+  expect(cardsIn(third.turn.items)).toEqual([])
+  expect(agent.outcomes(2)).toEqual([chose(2, 'run-1', 'allow'), chose(2, 'edit-1', 'allow')])
 
   // Auto mode belongs to the project: turning it off here leaves another project in Auto.
   const other = await openSecondProject(session)
@@ -424,7 +419,7 @@ test('Auto mode is on per project; off, it asks; on, it still asks about outside
   expect(await autoApprove(other)).toBe(true)
 })
 
-test('Auto mode still asks when the agent flags a request, about outside reads and sensitive edits', async ({
+test('Auto mode answers flagged requests, outside reads and sensitive edits, but not a plan', async ({
   launch,
 }) => {
   const session = await launch({ fixture: 'vite' })
@@ -435,33 +430,27 @@ test('Auto mode still asks when the agent flags a request, about outside reads a
   await expect(autoChip(session.chat)).toHaveAttribute('aria-pressed', 'true')
 
   expect(await send(session.chat, CAREFUL)).toBe(true)
-  // Each asks in turn, nothing answered before the user does.
-  const flagged = await openCard(session, 0, 'execute')
+  // The plan approval waits for the user, nothing answered before.
+  const plan = await openCard(session, 0, 'switch_mode')
   expect(agent.outcomes(0)).toEqual([])
-  await answer(session, flagged, 'reject')
-  await answer(session, await openCard(session, 0, 'switch_mode'), 'allow')
-  const outsideRead = await openCard(session, 0, 'read')
-  expect(outsideRead.card.locations).toEqual([agent.outside])
-  await answer(session, outsideRead, 'reject')
-  const config = await openCard(session, 0, 'edit')
-  expect(config.card.locations).toEqual(['package.json'])
-  expect(config.card.sensitive).toBe(true)
-  await answer(session, config, 'reject')
+  await answer(session, plan, 'allow')
+  // Gui never picks "always allow" for the user, so a request with only that asks.
+  await answer(session, await openCard(session, 0, 'execute'), 'reject')
 
-  // The in-project read, the search of the project and the ordinary edit need no one.
+  // The flagged command, the read outside, the edit to package.json, the in-project read,
+  // the search and the ordinary edit need no one.
   const turn = await session.waitForTurn(0)
   expect(turn.turn.status).toBe('done')
   expect(cardsIn(turn.turn.items).map(shown)).toEqual([
-    { toolKind: 'execute', resolved: 'reject' },
     { toolKind: 'switch_mode', resolved: 'allow' },
-    { toolKind: 'read', resolved: 'reject' },
-    { toolKind: 'edit', resolved: 'reject' },
+    { toolKind: 'execute', resolved: 'reject' },
   ])
   expect(agent.outcomes(0)).toEqual([
-    chose(0, 'flagged-1', 'reject'),
     chose(0, 'plan-1', 'allow'),
-    chose(0, 'read-out-1', 'reject'),
-    chose(0, 'config-1', 'reject'),
+    chose(0, 'always-1', 'reject'),
+    chose(0, 'flagged-1', 'allow'),
+    chose(0, 'read-out-1', 'allow'),
+    chose(0, 'config-1', 'allow'),
     chose(0, 'read-in-1', 'allow'),
     chose(0, 'search-1', 'allow'),
     chose(0, 'edit-in-1', 'allow'),

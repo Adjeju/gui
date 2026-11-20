@@ -9,20 +9,21 @@ import type { AgentId } from '../src/shared/types'
 // What Gui answers a permission request with on its own, and what it leaves to the user.
 // docs/architecture.md ("Agents") is the specification:
 //
-//   Gui approves edits to ordinary source files in the project. In Auto mode it also approves
-//   commands, fetches, and reads, picking only one-time approvals; it still asks when a
-//   request names a file outside the project, edits a sensitive file (build, tool and deploy
-//   config, dotfiles, dependency manifests and lockfiles, scripts, Dockerfiles, git hooks),
-//   changes the agent's mode or plan, or the agent itself flags it.
+//   In Auto mode Gui answers every request itself, picking only one-time approvals: commands,
+//   fetches, reads and edits anywhere, sensitive files, websites, and what the agent flags.
+//   It leaves the agent's own questions, Claude's plan approval (a mode switch), and a
+//   request that offers only "always allow" to the user. In Ask mode it approves edits to
+//   ordinary source files in the project and asks about everything else.
 //
-// `decide` answers as chat.ts does (`ChatController.autoAnswer`): `autoApproval`, placing
-// each path with `projectEditPath`. It returns the option picked, or null when the user is
-// asked. Whether an answer is used is chat.ts's: an edit's always, anything else's in Auto.
+// `decide` answers as chat.ts does (`ChatController.autoAnswer`): `autoApproval` in Auto,
+// `editApproval` in Ask, placing each path with `projectEditPath`. It returns the option
+// picked, or null when the user is asked.
 
 let userData = ''
 mock.module('electron', () => ({ app: { getPath: () => userData } }))
 const {
   autoApproval,
+  editApproval,
   flaggedCaution,
   isAutoApprove,
   requestPaths,
@@ -60,10 +61,16 @@ const NO: PermissionOption = { optionId: 'no', name: 'Reject', kind: 'reject_onc
 const NEVER: PermissionOption = { optionId: 'never', name: 'Never', kind: 'reject_always' }
 /** What agents usually offer, in their order. */
 const USUAL = [ONCE, ALWAYS, NO]
+/** Gui's own question cards (agent-protocol.ts `questionRequest`): Skip first, then answers. */
+const QUESTION = [
+  { optionId: 'skip', name: 'Skip', kind: 'reject_once' },
+  { optionId: '0', name: 'Blue', kind: 'answer' },
+] as PermissionOption[]
 
 interface Asked {
-  /** The tool kind; left out when neither the request nor its tool call says */
+  /** The tool kind; left out when the request doesn't say */
   kind?: string
+  title?: string
   /** The request's `locations`; `$` stands for the temp folder */
   paths?: string[]
   /** The tool's raw input, where agents without `locations` put the path */
@@ -72,54 +79,142 @@ interface Asked {
   agentId?: AgentId
 }
 
-function request({ kind, paths, input, options = USUAL }: Asked): RequestPermissionRequest {
+function request({ kind, title, paths, input, options = USUAL }: Asked): RequestPermissionRequest {
   return {
     sessionId: 'session',
     options,
     toolCall: {
       toolCallId: 'tool',
       kind: kind as RequestPermissionRequest['toolCall']['kind'],
+      ...(title ? { title } : {}),
       locations: paths?.map((path) => ({ path: path.replace(/^\$/, base) })),
       rawInput: input,
     },
   }
 }
 
-function decide(asked: Asked) {
-  return autoApproval(request(asked), {
-    agentId: asked.agentId ?? 'codex',
-    kind: asked.kind ?? null,
-    place: (path, write) => projectEditPath(path, scope, !write),
-  })
+function decide(asked: Asked, mode: 'auto' | 'ask') {
+  if (mode === 'auto') return Promise.resolve(autoApproval(request(asked)))
+  return editApproval(request(asked), asked.agentId ?? 'codex', (path) =>
+    projectEditPath(path, scope),
+  )
 }
 
 const edit = (...paths: string[]): Asked => ({ kind: 'edit', paths })
 
-describe('answered without asking, with a one-time approval', () => {
-  const cases: Array<[what: string, asked: Asked]> = [
-    ['an edit to a source file', edit('src/app.tsx')],
-    ['an edit named by its absolute path', edit('$/proj/src/app.tsx')],
-    ['a new file', edit('src/components/button.tsx')],
-    ['an edit to several source files', edit('src/app.tsx', 'src/main.tsx')],
-    ['deleting a source file', { kind: 'delete', paths: ['src/app.tsx'] }],
-    ['moving a file within the project', { kind: 'move', paths: ['src/app.tsx', 'src/home.tsx'] }],
-    ['an edit that names its file in the raw input', { kind: 'edit', input: { path: 'src/a.ts' } }],
-    ['a command', { kind: 'execute' }],
-    ['a command in the project folder', { kind: 'execute', paths: ['$/proj'] }],
-    ['a fetch', { kind: 'fetch' }],
-    ['a read', { kind: 'read', paths: ['src/app.tsx'] }],
-    ['a read of package.json: only changes to it ask', { kind: 'read', paths: ['package.json'] }],
-    ['a search of a folder', { kind: 'search', paths: ['src'] }],
-    ['a search of the whole project', { kind: 'search', paths: ['$/proj'] }],
-    ['a tool of no particular kind', { kind: 'other' }],
-    ['a tool that says no kind at all', {}],
-  ]
-  test.each(cases)('%s', async (_what, asked) => {
-    expect(await decide(asked)).toBe('once')
+/** What Ask mode approves: edits to ordinary source files inside the project. */
+const IN_PROJECT_EDITS: Array<[what: string, asked: Asked]> = [
+  ['an edit to a source file', edit('src/app.tsx')],
+  ['an edit named by its absolute path', edit('$/proj/src/app.tsx')],
+  ['a new file', edit('src/components/button.tsx')],
+  ['an edit to several source files', edit('src/app.tsx', 'src/main.tsx')],
+  ['an edit that names its file in the raw input', { kind: 'edit', input: { path: 'src/a.ts' } }],
+]
+
+/** What only Auto answers: Ask leaves each of these to the user. */
+const AUTO_ONLY: Array<[what: string, asked: Asked]> = [
+  // Not edits.
+  ['a command', { kind: 'execute' }],
+  ['a command in another folder', { kind: 'execute', paths: ['$/outside'] }],
+  ['a fetch', { kind: 'fetch' }],
+  ['a read in the project', { kind: 'read', paths: ['src/app.tsx'] }],
+  ['a search of the project', { kind: 'search', paths: ['$/proj'] }],
+  ['deleting a source file', { kind: 'delete', paths: ['src/app.tsx'] }],
+  ['moving a file within the project', { kind: 'move', paths: ['src/app.tsx', 'src/home.tsx'] }],
+  ['a tool of no particular kind', { kind: 'other' }],
+  ['a tool that says no kind at all', {}],
+  // Outside the project.
+  ['a read of a system file', { kind: 'read', paths: ['/etc/hosts'] }],
+  ['a read that climbs out with ..', { kind: 'read', paths: ['../outside/secret.txt'] }],
+  ['a read through a link to outside', { kind: 'read', paths: ['link-out/secret.txt'] }],
+  ['a read from ~', { kind: 'read', paths: ['~/.ssh/id_ed25519'] }],
+  ['a search of the folder above', { kind: 'search', paths: ['$'] }],
+  ['an edit outside', edit('$/outside/secret.txt')],
+  ["an edit in a sibling whose name starts with the project's", edit('$/proj-other/a.ts')],
+  ['an edit through a link', edit('link-out/secret.txt')],
+  ['an edit to several files, one of them outside', edit('src/app.tsx', '$/outside/a.ts')],
+  // See tests/chat-paths.test.ts: to Claude Code, `~/notes.md` is a file in the home folder.
+  ['an edit to a path from ~, the home folder', edit('~/notes.md')],
+  ["a change to Gui's own data", edit('$/gui-data/prefs.json')],
+  ['an edit whose raw input names a file outside', { kind: 'edit', input: { path: '/etc/x' } }],
+  ['a move out of the project', { kind: 'move', paths: ['src/app.tsx', '$/outside/app.tsx'] }],
+  // Sensitive files.
+  ['an edit to package.json', edit('package.json')],
+  ['an edit to .env', edit('.env')],
+  ['an edit to a config among ordinary files', edit('src/app.tsx', 'vite.config.ts')],
+  ['an edit to a git hook', edit('.githooks/pre-commit')],
+  ['one named only in the raw input', { kind: 'edit', input: { file_path: 'package.json' } }],
+  // Changes that name no file.
+  ['an edit with no locations and no input', { kind: 'edit' }],
+  ['an edit whose input has no path', { kind: 'edit', input: { command: 'sed -i' } }],
+  ['an edit that names the project folder', edit('$/proj')],
+  // The agent flags it.
+  ['a command the agent leads with "no" on', { kind: 'execute', options: [NO, ONCE, ALWAYS] }],
+  ['an edit the agent leads with "never" on', { ...edit('src/app.tsx'), options: [NEVER, ONCE] }],
+  [
+    'Claude offering no "always allow" (its ask rules and safety checks)',
+    { kind: 'execute', agentId: 'claude', options: [ONCE, NO] },
+  ],
+  [
+    'a flagged edit from Claude to a source file',
+    { ...edit('src/app.tsx'), agentId: 'claude', options: [ONCE, NO] },
+  ],
+  // Opening a website: Claude asks about it by an ask rule (session-meta.ts).
+  [
+    'opening a website, from Claude',
+    {
+      kind: 'other',
+      title: 'mcp__gui__preview_open_website',
+      agentId: 'claude',
+      options: [ONCE, NO],
+    },
+  ],
+  ['opening a website, from another agent', { kind: 'other', title: 'gui.preview_open_website' }],
+  [
+    'a screenshot of a website',
+    { kind: 'other', title: 'mcp__gui__canvas_screenshot_url', agentId: 'claude' },
+  ],
+]
+
+describe('Auto: allowed once, without asking, whatever it is for', () => {
+  test.each([...IN_PROJECT_EDITS, ...AUTO_ONLY])('%s', async (_what, asked) => {
+    expect(await decide(asked, 'auto')).toBe('once')
   })
 })
 
-describe('only one-time approvals are picked', () => {
+describe('Ask: edits to ordinary project files are allowed once', () => {
+  test.each(IN_PROJECT_EDITS)('%s', async (_what, asked) => {
+    expect(await decide(asked, 'ask')).toBe('once')
+  })
+})
+
+describe('Ask: everything else asks', () => {
+  test.each(AUTO_ONLY)('%s', async (_what, asked) => {
+    expect(await decide(asked, 'ask')).toBeNull()
+  })
+})
+
+describe('both modes: the user decides', () => {
+  const agents: AgentId[] = ['claude', 'codex', 'muse', 'antigravity', 'cursor']
+  const cases: Array<[what: string, asked: Asked]> = [
+    ...agents.map((agentId): [string, Asked] => [
+      `a question of ${agentId}'s own`,
+      { kind: 'question', options: QUESTION, agentId },
+    ]),
+    // Claude's plan approval arrives as a mode switch.
+    ...agents.map((agentId): [string, Asked] => [
+      `a mode switch from ${agentId}`,
+      { kind: 'switch_mode', agentId },
+    ]),
+    ['a mode switch that names a file', { kind: 'switch_mode', paths: ['src/app.tsx'] }],
+  ]
+  test.each(cases)('%s', async (_what, asked) => {
+    expect(await decide(asked, 'auto')).toBeNull()
+    expect(await decide(asked, 'ask')).toBeNull()
+  })
+})
+
+describe('only one-time approvals are picked: no lasting grants', () => {
   const cases: Array<[what: string, options: PermissionOption[], answer: string | null]> = [
     ['"allow once" among the usual options', [ONCE, ALWAYS, NO], 'once'],
     ['"allow once" when "always" comes first', [ALWAYS, ONCE, NO], 'once'],
@@ -128,45 +223,13 @@ describe('only one-time approvals are picked', () => {
     ['nothing on offer: asks', [], null],
   ]
   test.each(cases)('%s', async (_what, options, answer) => {
-    expect(await decide({ kind: 'execute', options })).toBe(answer)
-    expect(await decide({ ...edit('src/app.tsx'), options })).toBe(answer)
+    expect(await decide({ kind: 'execute', options }, 'auto')).toBe(answer)
+    expect(await decide({ ...edit('$/outside/a.ts'), options }, 'auto')).toBe(answer)
+    expect(await decide({ ...edit('src/app.tsx'), options }, 'ask')).toBe(answer)
   })
 })
 
-describe('asks: the request names a file outside the project', () => {
-  const cases: Array<[what: string, asked: Asked]> = [
-    ['a read of a system file', { kind: 'read', paths: ['/etc/hosts'] }],
-    ['a read that climbs out with ..', { kind: 'read', paths: ['../outside/secret.txt'] }],
-    ['a read through a link to outside', { kind: 'read', paths: ['link-out/secret.txt'] }],
-    ['a search of the folder above', { kind: 'search', paths: ['$'] }],
-    ['a command in another folder', { kind: 'execute', paths: ['$/outside'] }],
-    ['an edit outside', edit('$/outside/secret.txt')],
-    ["an edit in a sibling whose name starts with the project's", edit('$/proj-other/a.ts')],
-    ['an edit through a link', edit('link-out/secret.txt')],
-    ['an edit to several files, one of them outside', edit('src/app.tsx', '$/outside/a.ts')],
-    ['a move out of the project', { kind: 'move', paths: ['src/app.tsx', '$/outside/app.tsx'] }],
-    ["a change to Gui's own data", edit('$/gui-data/prefs.json')],
-    ['a tool of no kind that names a file outside', { paths: ['/etc/hosts'] }],
-    ['an edit whose raw input names a file outside', { kind: 'edit', input: { path: '/etc/x' } }],
-    // See tests/chat-paths.test.ts: to Claude Code, `~/notes.md` is a file in the home folder.
-    ['an edit to a path from ~, the home folder', edit('~/notes.md')],
-    ['an edit to several files, one of them from ~', edit('src/app.tsx', '~/notes.md')],
-    ['a read from ~', { kind: 'read', paths: ['~/.ssh/id_ed25519'] }],
-    ['a search of ~', { kind: 'search', paths: ['~'] }],
-    ['deleting a file from ~', { kind: 'delete', paths: ['~/notes.md'] }],
-    ['a move to ~', { kind: 'move', paths: ['src/app.tsx', '~/app.tsx'] }],
-    [
-      'an edit whose raw input names a file from ~',
-      { kind: 'edit', input: { file_path: '~/Library/LaunchAgents/run.plist' } },
-    ],
-    ['a tool of no kind that names a file from ~', { input: { path: '~/notes.md' } }],
-  ]
-  test.each(cases)('%s', async (_what, asked) => {
-    expect(await decide(asked)).toBeNull()
-  })
-})
-
-describe('asks: the change is to a sensitive file', () => {
+describe('Ask: an edit to a sensitive file asks', () => {
   // By family (`SENSITIVE_NAMES` in auto-approve.ts): the next tool's file should ask too.
   const sensitive: Array<[group: string, paths: string[]]> = [
     [
@@ -300,7 +363,7 @@ describe('asks: the change is to a sensitive file', () => {
   ]
   for (const [group, paths] of sensitive) {
     test.each(paths)(`${group}: an edit to %s`, async (path) => {
-      expect(await decide(edit(path))).toBeNull()
+      expect(await decide(edit(path), 'ask')).toBeNull()
       // The permission card marks the same files (`sensitive`).
       expect(SENSITIVE_PATH.test(path)).toBe(true)
     })
@@ -309,14 +372,12 @@ describe('asks: the change is to a sensitive file', () => {
   const changes: Array<[what: string, asked: Asked]> = [
     ['deleting one', { kind: 'delete', paths: ['package.json'] }],
     ['moving a file onto one', { kind: 'move', paths: ['src/app.tsx', 'scripts/app.tsx'] }],
-    ['one among ordinary files', edit('src/app.tsx', 'vite.config.ts')],
-    ['one named only in the raw input', { kind: 'edit', input: { file_path: 'package.json' } }],
   ]
   test.each(changes)('%s', async (_what, asked) => {
-    expect(await decide(asked)).toBeNull()
+    expect(await decide(asked, 'ask')).toBeNull()
   })
 
-  // Ordinary content stays automatic, or every edit would ask. JSON and YAML are sensitive
+  // Ordinary content stays automatic in Ask, or every edit would ask. JSON and YAML are sensitive
   // by name, never by extension, and a source file named after a tool is a source file.
   const ordinary = [
     'src/app.tsx',
@@ -365,71 +426,22 @@ describe('asks: the change is to a sensitive file', () => {
   ]
   test.each(ordinary)('an ordinary file is not one: %s', async (path) => {
     expect(SENSITIVE_PATH.test(path)).toBe(false)
-    expect(await decide(edit(path))).toBe('once')
+    expect(await decide(edit(path), 'ask')).toBe('once')
   })
 })
 
-describe('asks: a change that names no file', () => {
-  const cases: Array<[what: string, asked: Asked]> = [
-    ['an edit with no locations and no input', { kind: 'edit' }],
-    ['a delete with no locations', { kind: 'delete', paths: [] }],
-    ['an edit whose input has no path', { kind: 'edit', input: { command: 'sed -i' } }],
-    ['an edit that names the project folder', edit('$/proj')],
-  ]
-  test.each(cases)('%s', async (_what, asked) => {
-    expect(await decide(asked)).toBeNull()
-  })
-})
-
-describe("asks: a change of the agent's mode or plan", () => {
-  // Claude's plan approval arrives as a mode switch.
-  const agents: AgentId[] = ['claude', 'codex', 'muse', 'cursor']
-  test.each(agents)('a mode switch from %s', async (agentId) => {
-    expect(await decide({ kind: 'switch_mode', agentId })).toBeNull()
-  })
-})
-
-describe('asks: the agent itself flags the request', () => {
-  const question = [
-    { optionId: 'skip', name: 'Skip', kind: 'reject_once' },
-    { optionId: '0', name: 'Blue', kind: 'answer' },
-  ] as PermissionOption[]
-
+describe('flaggedCaution: the agent itself says a person should decide', () => {
   const cases: Array<[what: string, asked: Asked, flagged: boolean]> = [
-    ['"no" is its first option', { kind: 'execute', options: [NO, ONCE, ALWAYS] }, true],
-    ['"never" is its first option', { kind: 'execute', options: [NEVER, ONCE] }, true],
-    [
-      "Gui's own question cards, which put Skip first",
-      { kind: 'question', options: question },
-      true,
-    ],
-    [
-      'Claude offers no "always allow" (its ask rules and safety checks)',
-      { kind: 'execute', agentId: 'claude', options: [ONCE, NO] },
-      true,
-    ],
-    ['Claude with its usual options', { kind: 'execute', agentId: 'claude' }, false],
-    [
-      'another agent that never offers "always allow"',
-      { kind: 'execute', agentId: 'codex', options: [ONCE, NO] },
-      false,
-    ],
-    ['a mode switch', { kind: 'switch_mode' }, true],
-    ['a command with the usual options', { kind: 'execute' }, false],
+    ['"no" is its first option', { options: [NO, ONCE, ALWAYS] }, true],
+    ['"never" is its first option', { options: [NEVER, ONCE] }, true],
+    ["Gui's own question cards, which put Skip first", { options: QUESTION }, true],
+    ['Claude offers no "always allow"', { agentId: 'claude', options: [ONCE, NO] }, true],
+    ['Claude with its usual options', { agentId: 'claude' }, false],
+    ['another agent that never offers "always allow"', { options: [ONCE, NO] }, false],
+    ['the usual options', {}, false],
   ]
-  test.each(cases)('%s', async (_what, asked, flagged) => {
-    const agentId = asked.agentId ?? 'codex'
-    expect(flaggedCaution(request(asked), agentId, asked.kind ?? null)).toBe(flagged)
-    const answer = await decide(asked)
-    if (flagged) expect(answer).toBeNull()
-    else expect(answer).toBe('once')
-  })
-
-  test('a flagged edit to an ordinary source file asks too', async () => {
-    expect(await decide({ ...edit('src/app.tsx'), options: [NO, ONCE] })).toBeNull()
-    expect(
-      await decide({ ...edit('src/app.tsx'), agentId: 'claude', options: [ONCE, NO] }),
-    ).toBeNull()
+  test.each(cases)('%s', (_what, asked, flagged) => {
+    expect(flaggedCaution(request(asked), asked.agentId ?? 'codex')).toBe(flagged)
   })
 })
 

@@ -11,6 +11,13 @@ export interface Release {
 
 export const releases: Release[] = [
   {
+    version: '0.1.0-alpha.28',
+    date: '2026-11-19',
+    changes: [
+      'Auto mode stops asking: the agent edits files, runs commands and reads anywhere without asking, including outside the project. It still asks you its own questions, and Claude Code still asks you to approve its plan.',
+    ],
+  },
+  {
     version: '0.1.0-alpha.27',
     date: '2026-11-19',
     changes: [

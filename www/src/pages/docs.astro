@@ -201,17 +201,17 @@ const shortcuts = [
   <p>
     <strong>Auto</strong> and <strong>Ask</strong> set what the agent can do without you. The
     shield button in the message box, or ⇧⌘A, changes between them. Auto is on by default. In
-    Auto, Gui lets the agent edit project files and run commands. It still asks
-    you about files outside the project, sensitive files such as config files, lockfiles,{' '}
-    <code>package.json</code> and git hooks, opening a website, a dev script the agent changed, and
-    anything the agent flags. Commands do not run in
-    a sandbox. In Ask, Gui asks you about everything except edits to ordinary project files. Each
-    project keeps its own setting. When the agent waits for you, press ⌘↩ to allow or ⌘⌫ to not
-    allow.
+    Auto, the agent edits files, runs commands and reads anywhere without asking. It still asks
+    you its own questions, Claude Code asks you to approve its plan, and Gui asks before it
+    changes how your app starts. Gui allows each request once and never picks “always allow” for
+    you. Commands do not run in a sandbox. In Ask, Gui
+    asks you about everything except edits to ordinary project files. Each project keeps its own
+    setting. When the agent waits for you, press ⌘↩ to allow or ⌘⌫ to not allow.
   </p>
   <p>
-    Amp, fx, Kiro, OpenCode and Pi use their own settings to decide when to ask you. For these
-    agents, the message box says so in place of the shield button.
+    Amp, fx, Kiro, OpenCode and Pi use their own settings to decide when to ask. For these
+    agents, the message box says so in place of the shield button. When one of them does ask, Gui
+    answers in Auto and asks you in Ask.
   </p>
   <p>
     The chat floats on the page. Drag it by its header to a different corner, and drag an edge to

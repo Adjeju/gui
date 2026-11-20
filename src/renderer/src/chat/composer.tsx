@@ -447,8 +447,8 @@ export function Composer({
             tooltip says it. */}
           {firstMessage && meta.autoApprove && !meta.ownPermissions && !meta.autoNoteSeen && (
             <p className="px-2.5 pb-2 text-caption text-muted">
-              Auto is on: your agent can edit files and run commands without asking, including
-              commands outside this project. Turn Auto off to review more requests.
+              Auto is on: your agent edits files, runs commands and reads anywhere without asking.
+              It still asks you its own questions. Turn Auto off to review its requests.
             </p>
           )}
           {/* Said once per chat, until the next message: the agent can't use Gui's own tools,

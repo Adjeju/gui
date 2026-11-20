@@ -1047,18 +1047,18 @@ export interface ChatMeta {
   /** What Enter does while the agent works (Settings); ⌘↩ does the other */
   whileWorking: WhileWorking
   /**
-   * Auto mode: Gui answers the agent's permission requests itself, so the agent edits
-   * files and runs commands without asking. Commands aren't confined to the project. It
-   * still asks when a request names a file outside the project, changes a sensitive file
-   * (config, dependencies, scripts, dotfiles), or the agent flags it. On unless the user
-   * turned it off for the project, which is remembered. Ask and Auto also set the agent's
-   * own permission mode, for agents Gui knows it for (AgentDefinition.permissions).
+   * Auto mode: Gui answers every permission request itself, allowing it once, so the agent
+   * edits files, runs commands and reads anywhere without asking. The agent's own questions
+   * and Claude's plan approval still come to the user, and so does a request that offers
+   * only "always allow". On unless the user turned it off for the project, which is
+   * remembered. Ask and Auto also set the agent's own permission mode, for agents Gui knows
+   * it for (AgentDefinition.permissions).
    */
   autoApprove: boolean
   /**
    * Gui can't make this agent ask first (it offers no such mode Gui can switch to), so its
-   * own settings decide what it asks, whatever `autoApprove` says. The Ask or Auto control
-   * says so and can't be switched; whatever the agent does ask about, the user answers.
+   * own settings decide what it asks. The Ask or Auto control says so and can't be switched;
+   * whatever the agent does ask about is answered as `autoApprove` says.
    */
   ownPermissions: boolean
   /**

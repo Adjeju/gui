@@ -6,7 +6,7 @@ import { Shield, ShieldCheck } from '../lib/icons'
 import { HIT_AREA, IconButton } from '../lib/ui'
 
 const HELP =
-  'Auto: the agent edits files and runs commands without asking, even outside this project. It still asks before it touches files outside this project or sensitive files.'
+  'Auto: the agent edits files, runs commands and reads anywhere without asking. It still asks you its own questions.'
 
 /**
  * Auto mode, on or off: whether Gui approves this project's permission requests itself. An
@@ -48,7 +48,7 @@ function OwnSetting({ agentName }: { agentName: string }) {
     // Gives way before the model name does (shrink-[4]).
     <span
       className="inline-flex h-7 min-w-0 shrink-[4] items-center gap-1.5 pr-2.5 pl-2 text-small text-subtle"
-      title={`Uses ${agentName}'s own setting. Gui can't switch it to a mode that asks first, so ${agentName}'s settings decide what it asks about. When it does ask, you answer here.`}
+      title={`Uses ${agentName}'s own setting. Gui can't switch it to a mode that asks first, so ${agentName}'s settings decide what it asks about. When it does ask, Auto answers for you; Ask leaves it to you.`}
     >
       <Shield className="size-3.5 shrink-0" aria-hidden="true" />
       <span className="truncate">{agentName}'s own setting</span>

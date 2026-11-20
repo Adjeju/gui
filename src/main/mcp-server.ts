@@ -41,8 +41,8 @@ export function sessionToolNames(canvas: boolean, websites = true): GuiTool[] {
 
 /**
  * Gui's tools that reach outside Gui (loading any website): a page's address can carry data
- * out, so the user decides each call. Claude isn't allowed them up front (agent.ts), and Gui
- * never answers a request for one by itself, in Auto mode either (chat.ts).
+ * out, so the agent asks each call. Claude isn't allowed them up front (session-meta.ts), so
+ * it asks in its own Auto mode too; in Ask the user decides, in Auto Gui answers (chat.ts).
  */
 export const ASK_FIRST_TOOLS: ReadonlySet<string> = new Set<GuiTool>([
   'preview_open_website',

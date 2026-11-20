@@ -1,5 +1,6 @@
 import type { PermissionOption, RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import type { AgentId } from '../shared/types'
+import { QUESTION_KIND } from './agent-protocol'
 import { getPrefs, setPrefs } from './prefs'
 
 /**
@@ -69,8 +70,8 @@ const SENSITIVE_NAMES = [
 
 /**
  * Files that can change how code runs (build/tool config, dependencies, CI, hooks,
- * dotfiles) always need the user's approval, even when edits are otherwise automatic:
- * anything in a dotfile or dot-folder, a name in `SENSITIVE_NAMES`, and what's in
+ * dotfiles): Ask mode asks before editing one, though it approves other project edits, and
+ * the permission card marks them. Anything in a dotfile or dot-folder, a name in `SENSITIVE_NAMES`, and what's in
  * `node_modules`, `scripts` or `bin`. Letter case doesn't matter.
  */
 export const SENSITIVE_PATH = new RegExp(
@@ -78,29 +79,24 @@ export const SENSITIVE_PATH = new RegExp(
   'i',
 )
 
-/** Tool kinds that change files: they must name every file, and none may be sensitive. */
-const FILE_CHANGES = new Set(['edit', 'delete', 'move'])
-
 /** Where agents that send no `locations` put a file's path in the tool's input. */
 const PATH_FIELDS = ['path', 'file_path', 'filePath', 'notebook_path']
+
+const allowOnce = (request: RequestPermissionRequest) =>
+  request.options.find((option) => option.kind === 'allow_once')
 
 const isReject = (option: PermissionOption | undefined) =>
   option?.kind === 'reject_once' || option?.kind === 'reject_always'
 
 /**
  * The agent itself says a person should decide: it put a reject option first (its way of
- * defaulting to No), it's Claude asking with no "always allow" (forced by the user's own
- * ask rules or Claude's safety checks), or it's a mode switch (Claude's plan approval).
+ * defaulting to No), or it's Claude asking with no "always allow" (forced by the user's own
+ * ask rules or Claude's safety checks).
  */
-export function flaggedCaution(
-  request: RequestPermissionRequest,
-  agentId: AgentId,
-  kind: string | null,
-) {
+export function flaggedCaution(request: RequestPermissionRequest, agentId: AgentId) {
   const { options } = request
   if (isReject(options[0])) return true
-  if (agentId === 'claude' && !options.some((option) => option.kind === 'allow_always')) return true
-  return kind === 'switch_mode'
+  return agentId === 'claude' && !options.some((option) => option.kind === 'allow_always')
 }
 
 /** The paths a request names: its `locations`, else the path fields of its raw input. */
@@ -115,36 +111,37 @@ export function requestPaths(request: RequestPermissionRequest): string[] {
   })
 }
 
-export interface ApprovalContext {
-  agentId: AgentId
-  /** The request's tool kind, or the tool call's when the request leaves it out */
-  kind: string | null
-  /**
-   * Where `path` lands, relative to the project, when it's safely inside it (not through a
-   * symlink, not in Gui's own data); otherwise null. A `write` must land on a file; a read
-   * may name a folder.
-   */
-  place: (path: string, write: boolean) => Promise<string | null>
+/**
+ * What Auto mode answers `request` with: allow once, never "always" (no lasting grants in
+ * the agent's own settings), whatever the request is for. Null when the user decides: the
+ * agent's own questions (`QUESTION_KIND`), Claude's plan approval (`switch_mode`), and a
+ * request that offers no "allow once".
+ */
+export function autoApproval(request: RequestPermissionRequest): string | null {
+  const { kind } = request.toolCall
+  if (kind === QUESTION_KIND || kind === 'switch_mode') return null
+  return allowOnce(request)?.optionId ?? null
 }
 
 /**
- * The option Gui answers `request` with when it doesn't ask (allow once, never "always"),
- * or null when the user decides: the agent flagged the request, offers no "allow once",
- * names a path `place` can't put inside the project, or changes a sensitive file. A change
- * that names no files can't be placed, so it asks too. Commands, fetches and the like are
- * answered once those hold: Auto mode doesn't confine what they do.
+ * What Ask mode answers an edit with: allow once when it names only ordinary source files
+ * inside the project; null (the user decides) when the agent flagged it, it offers no
+ * "allow once", names no file, names one `place` can't put inside the project, or names a
+ * sensitive one.
  */
-export async function autoApproval(
+export async function editApproval(
   request: RequestPermissionRequest,
-  { agentId, kind, place }: ApprovalContext,
+  agentId: AgentId,
+  /**
+   * Where `path` lands, relative to the project, when it's safely inside it (a file, not
+   * through a symlink, not in Gui's own data); otherwise null.
+   */
+  place: (path: string) => Promise<string | null>,
 ): Promise<string | null> {
-  if (flaggedCaution(request, agentId, kind)) return null
-  const allow = request.options.find((option) => option.kind === 'allow_once')
-  if (!allow) return null
-  const write = kind !== null && FILE_CHANGES.has(kind)
+  if (request.toolCall.kind !== 'edit' || flaggedCaution(request, agentId)) return null
+  const allow = allowOnce(request)
   const paths = requestPaths(request)
-  if (write && paths.length === 0) return null
-  const placed = await Promise.all(paths.map((path) => place(path, write)))
-  const allowed = placed.every((rel) => rel !== null && !(write && SENSITIVE_PATH.test(rel)))
-  return allowed ? allow.optionId : null
+  if (!allow || paths.length === 0) return null
+  const placed = await Promise.all(paths.map(place))
+  return placed.every((rel) => rel !== null && !SENSITIVE_PATH.test(rel)) ? allow.optionId : null
 }

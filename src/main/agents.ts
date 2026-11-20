@@ -185,8 +185,8 @@ const LAUNCH: Record<string, Omit<AgentDefinition, keyof AgentInfo>> = {
       hint: 'Pick a provider and a model. When jcode opens, quit it with Ctrl+C twice and close this window.',
     },
     // Ask for approval gates each restricted call; Auto has an LLM reviewer allow the safe
-    // ones and ask about the uncertain ones. Not Full access, which never asks, so Gui's
-    // rules would never see a request.
+    // ones and ask about the uncertain ones, which Gui answers. Not Full access, which would
+    // drop the reviewer for nothing: in Auto the user is asked nothing either way.
     permissions: { mode: { ask: ['approval'], auto: ['auto'] } },
   },
   kiro: {
@@ -264,8 +264,8 @@ const LAUNCH: Record<string, Omit<AgentDefinition, keyof AgentInfo>> = {
     terminalSignIn: { command: 'muse login', hint: 'Follow the steps to sign in.' },
     // Muse's modes are its approval policies. Ask uses the one that asks about every action
     // the user's own Muse rules don't cover (onRequest where it's missing); Auto asks only
-    // about what Muse says needs approval, and Gui's Auto rules answer. Not Allow all,
-    // which never asks, so Gui's rules would never see a request.
+    // about what Muse says needs approval, and Gui answers that. Not Allow all, which would
+    // drop Muse's own sandbox for nothing: in Auto the user is asked nothing either way.
     permissions: { mode: { ask: ['promptUnmatched', 'onRequest'], auto: ['onRequest'] } },
   },
 }
@@ -280,8 +280,9 @@ export const declaresOwnPermissions = (id: AgentId) =>
   BUILT_IN.some((agent) => agent.id === id && agent.ownPermissions === true)
 
 /**
- * Whether the agent is offered preview_open_website. Opening a website asks the user first
- * (ASK_FIRST_TOOLS), which Gui can't make an agent whose own settings decide do.
+ * Whether the agent is offered preview_open_website. Opening a website asks first
+ * (ASK_FIRST_TOOLS), so Ask can leave it to the user, which Gui can't make an agent whose own
+ * settings decide do.
  */
 export const opensWebsites = (id: AgentId) => !declaresOwnPermissions(id)
 
