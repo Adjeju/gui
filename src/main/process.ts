@@ -42,8 +42,39 @@ export const isInheritedAgentMarker = (key: string) =>
   AGENT_MARKERS.has(key) || AGENT_MARKER_PREFIXES.some((prefix) => key.startsWith(prefix))
 
 /**
- * Drops leftover session markers, Electron, and Node flags from `env`. Keys in `extra` are
- * applied after, so an adapter can set CODEX_PATH / CLAUDE_CODE_EXECUTABLE.
+ * What the AppImage runtime exports for Gui itself. zsh runs every command with an exported
+ * ARGV0 as its argv[0], so tools that dispatch on it (mise, rustup proxies) see "Gui.AppImage".
+ */
+const APPIMAGE_VARS = ['APPDIR', 'APPIMAGE', 'ARGV0', 'OWD']
+/** Lists electron-builder's AppRun puts the AppImage's mount (APPDIR) in front of. */
+const APPIMAGE_PATH_LISTS = ['PATH', 'LD_LIBRARY_PATH', 'XDG_DATA_DIRS', 'GSETTINGS_SCHEMA_DIR']
+
+/**
+ * Removes, in place, what running from an AppImage added to `env`: the runtime's variables and
+ * the mount's entries in path lists. A list left with nothing is dropped.
+ */
+function scrubAppImage(env: NodeJS.ProcessEnv) {
+  const mount = env.APPDIR?.replace(/\/+$/, '')
+  for (const key of APPIMAGE_VARS) delete env[key]
+  if (!mount?.startsWith('/')) return
+  for (const key of APPIMAGE_PATH_LISTS) {
+    const value = env[key]
+    if (value === undefined) continue
+    const entries = value.split(':')
+    const kept = entries.filter((p) => {
+      const dir = p.replace(/\/+$/, '')
+      return dir !== mount && !dir.startsWith(`${mount}/`)
+    })
+    if (kept.length === entries.length) continue
+    if (kept.some(Boolean)) env[key] = kept.join(':')
+    else delete env[key]
+  }
+}
+
+/**
+ * Drops leftover session markers, Electron and Node flags, and the AppImage's runtime env from
+ * `env`. Keys in `extra` are applied after, so an adapter can set CODEX_PATH /
+ * CLAUDE_CODE_EXECUTABLE.
  */
 export function childEnv(
   base: NodeJS.ProcessEnv,
@@ -56,6 +87,7 @@ export function childEnv(
     if (AGENT_MARKERS.has(key) || key.startsWith('ELECTRON_') || key === 'NODE_OPTIONS') continue
     env[key] = value
   }
+  scrubAppImage(env)
   for (const [key, value] of Object.entries(extra)) {
     if (value === undefined) delete env[key]
     else env[key] = value
@@ -64,10 +96,14 @@ export function childEnv(
   return env
 }
 
-/** Inherited process.env before the login shell runs: parent-agent session vars don't leak in. */
+/**
+ * Inherited process.env before the login shell runs: parent-agent session vars and the
+ * AppImage's runtime env don't leak in, nor into what the shell env falls back to.
+ */
 export function scrubInheritedEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next = { ...env }
   for (const key of Object.keys(next)) if (isInheritedAgentMarker(key)) delete next[key]
+  scrubAppImage(next)
   return next
 }
 

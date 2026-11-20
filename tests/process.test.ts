@@ -40,6 +40,45 @@ describe('child process env', () => {
     expect(env.BROWSER).toBe('none')
   })
 
+  test('AppImage runtime env and mount paths reach neither children nor the login shell', () => {
+    const mount = '/tmp/.mount_GuiAbc123'
+    const appImage = {
+      APPDIR: mount,
+      APPIMAGE: '/home/me/Apps/Gui.AppImage',
+      ARGV0: 'Gui.AppImage',
+      OWD: '/home/me',
+      PATH: `${mount}:${mount}/usr/sbin:/home/me/.local/share/mise/shims:/usr/bin`,
+      LD_LIBRARY_PATH: `${mount}/usr/lib`,
+      XDG_DATA_DIRS: `${mount}/usr/share/:/usr/share/gnome:/usr/local/share/:/usr/share/`,
+      GSETTINGS_SCHEMA_DIR: `${mount}/usr/share/glib-2.0/schemas:/opt/schemas`,
+      HOME: '/home/me',
+    }
+    for (const env of [childEnv(appImage), scrubInheritedEnv(appImage)]) {
+      expect(env.APPDIR).toBeUndefined()
+      expect(env.APPIMAGE).toBeUndefined()
+      expect(env.ARGV0).toBeUndefined()
+      expect(env.OWD).toBeUndefined()
+      expect(env.PATH).toBe('/home/me/.local/share/mise/shims:/usr/bin')
+      expect(env.LD_LIBRARY_PATH).toBeUndefined()
+      expect(env.XDG_DATA_DIRS).toBe('/usr/share/gnome:/usr/local/share/:/usr/share/')
+      expect(env.GSETTINGS_SCHEMA_DIR).toBe('/opt/schemas')
+      expect(env.HOME).toBe('/home/me')
+    }
+    // Gui's own env keeps them: updates and the CLI read APPIMAGE.
+    expect(appImage.APPIMAGE).toBe('/home/me/Apps/Gui.AppImage')
+  })
+
+  test('without an AppImage mount, path lists are left alone', () => {
+    const env = childEnv({
+      PATH: '/tmp/.mount_x:/usr/bin',
+      LD_LIBRARY_PATH: '/opt/lib',
+      ARGV0: 'x',
+    })
+    expect(env.PATH).toBe('/tmp/.mount_x:/usr/bin')
+    expect(env.LD_LIBRARY_PATH).toBe('/opt/lib')
+    expect(env.ARGV0).toBeUndefined()
+  })
+
   test('sign-in spawn does not block the browser', () => {
     const env = childEnv({ PATH: '/usr/bin' }, {}, { browser: false })
     expect(env.BROWSER).toBeUndefined()
