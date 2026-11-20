@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises'
 import { join, posix } from 'node:path'
+import { THIS_COMPUTER } from '../shared/platform'
 import type { StartCommand, StartCommandInput } from '../shared/types'
 import { isLoopback } from './loopback'
 import { type DetectedProject, detectProject, realRelative } from './project'
@@ -77,7 +78,7 @@ export async function validateStartCommand(
   if (address) {
     const withScheme = /^[a-z][\w+.-]*:\/\//i.test(address) ? address : `http://${address}`
     if (!isLoopback(withScheme)) {
-      throw new Error('The address must be on this Mac, like http://localhost:3000.')
+      throw new Error(`The address must be on ${THIS_COMPUTER}, like http://localhost:3000.`)
     }
     url = new URL(withScheme).toString()
   }

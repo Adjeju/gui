@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, type MenuItemConstructorOptions, shell } from 'electron'
+import { THIS_COMPUTER } from '../shared/platform'
 import {
   AGENTS,
   type AgentChoice,
@@ -587,7 +588,9 @@ export function agentMenuItems(
       label: 'Not Installed',
       submenu: missing.map((agent) => ({
         label: agent.name,
-        sublabel: agent.command ? `Can't find the ${agent.command} command on this Mac` : undefined,
+        sublabel: agent.command
+          ? `Can't find the ${agent.command} command on ${THIS_COMPUTER}`
+          : undefined,
         enabled: false,
       })),
     })

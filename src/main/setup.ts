@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { lstat, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, posix } from 'node:path'
+import { THIS_COMPUTER } from '../shared/platform'
 import type { PackageManager, ProjectInfo, ProjectSetup, WorkspaceApp } from '../shared/types'
 import { findExecutable } from './executables'
 import { installedStamps, recordInstall } from './install-state'
@@ -22,10 +23,10 @@ const ENV_LOCALS = ['.env', '.env.local', '.env.development.local']
 const ENV_TARGET = '.env.local'
 
 const MISSING_TOOL: Record<PackageManager, string> = {
-  bun: "bun isn't installed on this Mac. Install it from bun.sh, then try again.",
-  pnpm: "pnpm isn't installed on this Mac. Install it from pnpm.io (or run `corepack enable pnpm`), then try again.",
-  yarn: "Yarn isn't installed on this Mac. Install it from yarnpkg.com (or run `corepack enable yarn`), then try again.",
-  npm: "Node.js isn't set up on this Mac yet. Set it up from the card above, then try again.",
+  bun: `bun isn't installed on ${THIS_COMPUTER}. Install it from bun.sh, then try again.`,
+  pnpm: `pnpm isn't installed on ${THIS_COMPUTER}. Install it from pnpm.io (or run \`corepack enable pnpm\`), then try again.`,
+  yarn: `Yarn isn't installed on ${THIS_COMPUTER}. Install it from yarnpkg.com (or run \`corepack enable yarn\`), then try again.`,
+  npm: `Node.js isn't set up on ${THIS_COMPUTER} yet. Set it up from the card above, then try again.`,
 }
 
 export const installCommand = (pm: PackageManager) => `${pm} install`

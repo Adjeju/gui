@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AccountProfile } from '../../../shared/account'
+import { SYSTEM_NAME } from '../../../shared/platform'
 import type { SettingsState } from '../../../shared/types'
 import { gui } from '../lib/api'
 import { readableError } from '../lib/errors'
@@ -53,7 +54,7 @@ function Privacy({ crashReports, shareUsage }: { crashReports: boolean; shareUsa
       <List>
         <ListItem
           heading={<label htmlFor="crash-reports">Send crash reports</label>}
-          detail="When Gui has an error, it sends the error and the Gui and macOS versions to the Gui team. Never your code, files, or chats."
+          detail={`When Gui has an error, it sends the error and the Gui and ${SYSTEM_NAME} versions to the Gui team. Never your code, files, or chats.`}
           trailing={
             <Switch
               checked={crashReports}

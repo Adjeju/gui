@@ -1,5 +1,6 @@
 import { type Event, type Input, WebContentsView } from 'electron'
 import { bounded } from '../shared/bounded'
+import { THIS_COMPUTER } from '../shared/platform'
 import type { ElementContext } from '../shared/types'
 import { Inspector } from './inspector'
 import { Picker } from './picker'
@@ -44,8 +45,7 @@ const SETTLE_MS = 400
 const BLOCKED_AGAIN_MS = 4000
 /** Chromium's error for a request the session cancelled (net::ERR_BLOCKED_BY_CLIENT) */
 const BLOCKED = -20
-const BLOCKED_NOTICE =
-  "Gui stopped that page from loading (and went back where it could): a website can't send a form from the preview, nor open an address on this Mac or the local network. Nothing was sent."
+const BLOCKED_NOTICE = `Gui stopped that page from loading (and went back where it could): a website can't send a form from the preview, nor open an address on ${THIS_COMPUTER} or the local network. Nothing was sent.`
 const BLOCKED_AGAIN_NOTICE =
   "Gui stopped that page from sending a form again, by itself this time (as sign-in hand-offs do), and left it on the blocked page rather than go back once more. Nothing was sent. Don't go on with this flow; tell the user it needs a sign-in Gui doesn't do."
 

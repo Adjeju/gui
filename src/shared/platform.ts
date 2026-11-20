@@ -10,3 +10,12 @@ function detectMac(): boolean {
 }
 
 export const IS_MAC = detectMac()
+
+/** The computer Gui runs on, in prose: "isn't installed on this Mac" / "on this computer". */
+export const THIS_COMPUTER = IS_MAC ? 'this Mac' : 'this computer'
+/** "runs commands on your Mac" / "on your computer". */
+export const YOUR_COMPUTER = IS_MAC ? 'your Mac' : 'your computer'
+/** The system's name, as crash reports carry its version. */
+export const SYSTEM_NAME = IS_MAC ? 'macOS' : 'Linux'
+/** The menu item that shows a file in the system's file manager. */
+export const REVEAL_IN_FILES = IS_MAC ? 'Reveal in Finder' : 'Show in Folder'

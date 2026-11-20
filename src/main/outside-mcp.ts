@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { IS_MAC } from '../shared/platform'
 import { registerBoardTools } from './mcp-board-tools'
 import { registerPreviewTools } from './mcp-preview-tools'
 import { failure, type ToolServer, text, untrusted } from './mcp-results'
@@ -206,7 +207,7 @@ export function describeTarget(target: OutsideTarget) {
   return lines.join('\n')
 }
 
-export const OUTSIDE_INSTRUCTIONS = `Gui is a Mac app for designing real interfaces. These tools act on what is open in the focused Gui window: a canvas or a project. Call gui_status first to see which, and again when the user switches. With nothing open, gui_list lists Gui's projects and canvases and gui_open opens one.
+export const OUTSIDE_INSTRUCTIONS = `Gui is a ${IS_MAC ? 'Mac' : 'desktop'} app for designing real interfaces. These tools act on what is open in the focused Gui window: a canvas or a project. Call gui_status first to see which, and again when the user switches. With nothing open, gui_list lists Gui's projects and canvases and gui_open opens one.
 A canvas is a board of frames; each frame is one HTML page (frames/<id>.html in the canvas folder). Place, size and remove frames with the canvas_ tools, and write their pages yourself.
 In a project, the preview shows the user's app from its dev server.
 The user watches the preview as you act. Screenshot (canvas_screenshot, preview_screenshot) to check your work.`

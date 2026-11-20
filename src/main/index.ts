@@ -50,7 +50,7 @@ import {
   type LegacyResult,
 } from '../shared/ipc-requests'
 import { OUTSIDE_CLIENTS } from '../shared/outside-setup'
-import { IS_MAC } from '../shared/platform'
+import { IS_MAC, REVEAL_IN_FILES } from '../shared/platform'
 import { PreviewGuides } from '../shared/preview-guides'
 import { MAX_PREVIEW_TEXT, PreviewText } from '../shared/preview-text'
 import {
@@ -600,7 +600,7 @@ async function promoteFrame(win: ProjectWindow, tab: ProjectTab, id: string) {
 async function showRecentBoardMenu(win: ProjectWindow, id: string) {
   const root = await canvasRoot(id)
   if (!root) return
-  const reveal = { label: 'Reveal in Finder', click: () => shell.showItemInFolder(root) }
+  const reveal = { label: REVEAL_IN_FILES, click: () => shell.showItemInFolder(root) }
   if (!boardIdOf(root)) {
     Menu.buildFromTemplate([
       { label: 'Open', click: () => void openBoardIn(win, id) },
@@ -618,7 +618,7 @@ async function showRecentBoardMenu(win: ProjectWindow, id: string) {
   }
   Menu.buildFromTemplate([
     { label: 'Open', click: () => void openBoardIn(win, id) },
-    { label: 'Reveal in Finder', click: () => shell.showItemInFolder(join(root, 'canvas.json')) },
+    { label: REVEAL_IN_FILES, click: () => shell.showItemInFolder(join(root, 'canvas.json')) },
     { type: 'separator' },
     {
       label: 'Delete Canvas…',

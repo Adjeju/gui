@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { StartForm } from '../../../shared/ipc'
 import { FRAME_LABEL_HEIGHT } from '../../../shared/layout'
-import { IS_MAC } from '../../../shared/platform'
+import { IS_MAC, YOUR_COMPUTER } from '../../../shared/platform'
 import {
   frameLabel,
   PROJECT_TEMPLATES,
@@ -438,7 +438,7 @@ function ConsentCard({
       <SetupCard
         icon={KeyRound}
         heading={`Let your agent work in ${name}`}
-        detail="Your agent loads the project’s own settings, which can run commands on your Mac. Only continue with projects you trust."
+        detail={`Your agent loads the project’s own settings, which can run commands on ${YOUR_COMPUTER}. Only continue with projects you trust.`}
         actions={
           <Button variant="primary" onClick={agree}>
             Continue
@@ -1008,7 +1008,7 @@ function OpenActions({ connect }: { connect: boolean }) {
           <Button
             icon={GitHubMark}
             className={cell}
-            title="Copy a GitHub repository to your Mac"
+            title={`Copy a GitHub repository to ${YOUR_COMPUTER}`}
             onClick={() => setForm('cloneRepo')}
           >
             Clone…

@@ -7,6 +7,7 @@ import {
   useRef,
 } from 'react'
 import type { BoardCamera } from '../../../shared/board'
+import { THIS_COMPUTER } from '../../../shared/platform'
 import { Card } from '../lib/surface'
 import type { BoardBackend, BoardBackendHooks } from './backend'
 import { BoardRenderer } from './gl/renderer'
@@ -240,8 +241,8 @@ export function BoardUnavailable() {
       <Card padding="canvas" role="alert" className="flex w-full max-w-md flex-col gap-1">
         <h2 className="font-semibold">This canvas can’t be shown</h2>
         <p className="text-pretty text-muted">
-          Gui draws canvases with WebGL 2, which isn’t available on this Mac right now. Quitting and
-          opening Gui again may bring it back.
+          Gui draws canvases with WebGL 2, which isn’t available on {THIS_COMPUTER} right now.
+          Quitting and opening Gui again may bring it back.
         </p>
       </Card>
     </div>

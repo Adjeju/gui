@@ -40,6 +40,7 @@ import {
   type GuidePointerPhase,
 } from '../shared/ipc'
 import { RULER_SIZE } from '../shared/layout'
+import { REVEAL_IN_FILES, YOUR_COMPUTER } from '../shared/platform'
 import { PreviewText } from '../shared/preview-text'
 import { SHORTCUTS } from '../shared/shortcuts'
 import { replyRunning } from '../shared/stop-question'
@@ -265,8 +266,7 @@ const CHROME_ESC_FREE = `(() => {
 /** What the setup card shows to agree to, before main gives it an id */
 type ShownConsent = Omit<SetupConsent, 'id'>
 /** One agreement covers the agent too: the card says so under what runs. */
-const AGENT_TOO =
-  "Your agent will work in this folder too. It loads the project's own agent settings (like .claude/settings.json), which can run commands on your Mac. Only start projects you trust."
+const AGENT_TOO = `Your agent will work in this folder too. It loads the project's own agent settings (like .claude/settings.json), which can run commands on ${YOUR_COMPUTER}. Only start projects you trust.`
 /** A project trusted to run a start command set in Gui, and nothing of its own yet */
 const NOTHING_AGREED: TrustedScripts = { starts: {}, installs: null }
 /** The package.json a script is in, as the trust prompt names it: the app's folder's or the root's. */
@@ -1929,7 +1929,7 @@ export class ProjectTab implements ChatPanelOwner {
         project.root,
         {
           message: `${name}'s scripts changed`,
-          detail: `Your agent is restarting your app. ${consent.details}\n\nIt runs code on your Mac. Only start projects you trust.`,
+          detail: `Your agent is restarting your app. ${consent.details}\n\nIt runs code on ${YOUR_COMPUTER}. Only start projects you trust.`,
           buttons: [
             consent.action === 'install' ? 'Install and Start' : 'Start Dev Server',
             'Not Now',
@@ -3796,7 +3796,7 @@ export class ProjectTab implements ChatPanelOwner {
       project.root,
       {
         message: `Start ${promptName(project.name)} a different way?`,
-        detail: `Your agent wants Gui to start this app${where}${address} with:\n\n${promptText(start.command, MAX_START_COMMAND)}\n\nGui will run it now and whenever you open this project. You can go back to the detected command in Settings. It runs code on your Mac. Only use commands you trust.`,
+        detail: `Your agent wants Gui to start this app${where}${address} with:\n\n${promptText(start.command, MAX_START_COMMAND)}\n\nGui will run it now and whenever you open this project. You can go back to the detected command in Settings. It runs code on ${YOUR_COMPUTER}. Only use commands you trust.`,
         buttons: ['Use This Command', 'Cancel'],
         // The agent asked, not the user: Return mustn't be what agrees.
         defaultId: 1,
@@ -4640,7 +4640,7 @@ export class ProjectTab implements ChatPanelOwner {
       one('Save as HTML…', () => this.exportFrame(id, 'html')),
       { type: 'separator' },
       one('Turn into Project…', () => promote(id)),
-      one('Reveal in Finder', () => shell.showItemInFolder(board.framePath(id))),
+      one(REVEAL_IN_FILES, () => shell.showItemInFolder(board.framePath(id))),
     ]
     Menu.buildFromTemplate(template).popup({
       window: this.host.win,
@@ -4783,7 +4783,7 @@ export class ProjectTab implements ChatPanelOwner {
       },
       { type: 'separator' },
       {
-        label: 'Reveal in Finder',
+        label: REVEAL_IN_FILES,
         click: () => shell.showItemInFolder(join(board.root, 'canvas.json')),
       },
       // In a git repo: its changes, the user's own included, committed from the chat's line.
@@ -4836,7 +4836,7 @@ export class ProjectTab implements ChatPanelOwner {
           ]
         : []),
       {
-        label: 'Reveal in Finder',
+        label: REVEAL_IN_FILES,
         enabled: this.hasProject,
         click: () => this.state.project && shell.showItemInFolder(this.state.project.root),
       },

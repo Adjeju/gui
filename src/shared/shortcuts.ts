@@ -1,4 +1,4 @@
-import { IS_MAC } from './platform'
+import { IS_MAC, YOUR_COMPUTER } from './platform'
 import { type DeviceViewport, viewportKey, viewportSpec } from './types'
 
 /**
@@ -105,7 +105,7 @@ export const SHORTCUTS = {
     accelerator: 'Shift+CmdOrCtrl+O',
     menu: 'file',
     group: 'app',
-    description: 'Copy a GitHub repository to your Mac and open it',
+    description: `Copy a GitHub repository to ${YOUR_COMPUTER} and open it`,
   },
   closeWindow: {
     label: 'Close Window',
@@ -409,8 +409,7 @@ export const SHORTCUTS = {
     accelerator: 'Z',
     menu: null,
     group: 'canvas',
-    description:
-      'Zoom tool while held: click to zoom in, ⌥-click to zoom out, drag to zoom to an area',
+    description: `Zoom tool while held: click to zoom in, ${IS_MAC ? '⌥' : 'Alt'}-click to zoom out, drag to zoom to an area`,
   },
   canvasZoomIn: {
     label: 'Zoom In on Canvas',

@@ -1,4 +1,5 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
+import { THIS_COMPUTER } from '../../../shared/platform'
 import type { AgentBinarySource, AgentHealth } from '../../../shared/types'
 import { gui } from '../lib/api'
 import { TechnicalDetails } from '../lib/disclosure'
@@ -124,7 +125,9 @@ function AgentNextStepContent({ name, health, onSetUp }: AgentNextStepProps) {
         <Step
           text={`${name} isn’t installed yet. Install it, then come back. Gui picks it up on its own.`}
           details={
-            health.command ? `Gui can’t find the ${health.command} command on this Mac.` : undefined
+            health.command
+              ? `Gui can’t find the ${health.command} command on ${THIS_COMPUTER}.`
+              : undefined
           }
           error={error}
         >

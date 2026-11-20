@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { app } from 'electron'
 import type { AgentBinaries, AgentBinary } from '../../scripts/agent-binaries'
+import { THIS_COMPUTER } from '../shared/platform'
 import { type AgentBinarySource, type AgentId, agentName } from '../shared/types'
 import { type DownloadProgress, download } from './download'
 import { DetailedError } from './errors'
@@ -60,7 +61,7 @@ async function pinned(id: PinnedAgentId): Promise<AgentBinary> {
   const override = !app.isPackaged ? process.env.GUI_AGENT_MANIFEST : undefined
   if (override) binaries = JSON.parse(await readFile(override, 'utf8')) as AgentBinaries
   const spec = binaries[id][`${process.platform}-${process.arch}`]
-  if (!spec) throw new Error(`${agentName(id)} isn't available for this Mac.`)
+  if (!spec) throw new Error(`${agentName(id)} isn't available for ${THIS_COMPUTER}.`)
   return spec
 }
 

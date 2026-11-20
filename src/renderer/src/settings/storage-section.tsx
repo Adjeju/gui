@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { THIS_COMPUTER } from '../../../shared/platform'
 import type { SettingsState, StorageKind } from '../../../shared/types'
 import { gui } from '../lib/api'
 import { InlineError } from '../lib/field'
@@ -49,7 +50,7 @@ function formatBytes(bytes: number | null) {
 export function StorageSection({ settings }: { settings: SettingsState }) {
   const { storage, openProjects } = settings
   return (
-    <SettingsGroup heading="Stored on this Mac">
+    <SettingsGroup heading={`Stored on ${THIS_COMPUTER}`}>
       <List>
         {ROWS.map((row) => (
           <StorageRow key={row.kind} row={row} bytes={storage[row.kind]} />

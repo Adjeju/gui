@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { THIS_COMPUTER } from '../../../shared/platform'
+import { shortcutText } from '../../../shared/shortcuts'
 import {
   type AgentHealth,
   type AgentId,
@@ -116,7 +118,7 @@ export function AgentsSection({ settings }: { settings: SettingsState }) {
           <ListItem heading="Chat position" trailing={<ChatPosition settings={settings} />} />
           <ListItem
             heading="Sending while the agent works"
-            detail="Queue holds your message until the agent finishes. Steer adds it to the reply under way. ⌘↩ does the other for one message."
+            detail={`Queue holds your message until the agent finishes. Steer adds it to the reply under way. ${shortcutText('sendOther')} does the other for one message.`}
             trailing={<WhileWorking settings={settings} />}
           />
         </List>
@@ -188,7 +190,7 @@ function NotInstalledRow({ agent, onInstall }: { agent: AgentHealth; onInstall: 
       agent.message
     ) : (
       <>
-        Gui can’t find the <Code>{command}</Code> command on this Mac.
+        Gui can’t find the <Code>{command}</Code> command on {THIS_COMPUTER}.
       </>
     )
 

@@ -1,4 +1,5 @@
 import { app, type Session, session, type WebContents } from 'electron'
+import { THIS_COMPUTER } from '../shared/platform'
 import {
   defaultResolve,
   isLocalName,
@@ -36,8 +37,7 @@ const standIn = standInWebsite(process.env.GUI_E2E_WEBSITE, app.isPackaged)
  */
 const STAND_IN_SLOW_MS = 3000
 
-export const LOCAL_ADDRESS =
-  'Gui only opens public websites, not addresses on this Mac or the local network.'
+export const LOCAL_ADDRESS = `Gui only opens public websites, not addresses on ${THIS_COMPUTER} or the local network.`
 
 const CLOSE_TIMEOUT_MS = 3000
 

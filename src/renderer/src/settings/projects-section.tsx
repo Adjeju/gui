@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { THIS_COMPUTER } from '../../../shared/platform'
 import type { SettingsState, StartCommand } from '../../../shared/types'
 import { gui } from '../lib/api'
 import { InlineError } from '../lib/field'
@@ -89,7 +90,7 @@ function RecentRow({ count }: { count: number }) {
     >
       {confirming && count > 0 && (
         <p className="text-pretty text-small text-muted">
-          Clear the list of recent projects? The projects stay on this Mac.
+          Clear the list of recent projects? The projects stay on {THIS_COMPUTER}.
         </p>
       )}
       {clear.error && <InlineError>{clear.error}</InlineError>}

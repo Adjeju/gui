@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
+
 import { ipcRenderer } from 'electron'
+import { IS_MAC } from '../shared/platform'
 import { PreviewGuides } from '../shared/preview-guides'
 import { MAX_PREVIEW_TEXT, PreviewText } from '../shared/preview-text'
 import { ACCENT } from '../shared/theme'
@@ -99,7 +101,7 @@ function makeHint(): HTMLElement {
   `
   const line = document.createElement('div')
   for (const [key, what] of [
-    ['Return', 'to keep'],
+    [IS_MAC ? 'Return' : 'Enter', 'to keep'],
     ['Esc', 'to cancel'],
   ]) {
     const kbd = document.createElement('kbd')

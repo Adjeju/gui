@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { access, constants, mkdir, readdir, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { THIS_COMPUTER } from '../shared/platform'
 import type { NodeSetup, PackageManager } from '../shared/types'
 import { download } from './download'
 import { describeError } from './errors'
@@ -68,7 +69,11 @@ class NodeRuntime extends EventEmitter<{ change: [setup: NodeSetup] }> {
     const platform = `${process.platform}-${process.arch}`
     const sha256 = NODE.sha256[platform]
     if (!sha256) {
-      this.set({ status: 'failed', progress: null, error: "Gui can't set up Node.js on this Mac." })
+      this.set({
+        status: 'failed',
+        progress: null,
+        error: `Gui can't set up Node.js on ${THIS_COMPUTER}.`,
+      })
       return
     }
     const root = nodeRoot()

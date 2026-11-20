@@ -1,3 +1,4 @@
+import { IS_MAC } from '../shared/platform'
 import type { PreviewError } from '../shared/types'
 
 /** `localhost:5173` for a web address; the whole address otherwise. */
@@ -34,7 +35,7 @@ export function loadFailure(code: string, url: string): PreviewError {
     case 'ERR_NAME_RESOLUTION_FAILED':
       return say(`Couldn't find ${host}. Check the address.`)
     case 'ERR_INTERNET_DISCONNECTED':
-      return say('This Mac is offline.')
+      return say(`${IS_MAC ? 'This Mac' : 'This computer'} is offline.`)
     case 'ERR_TOO_MANY_REDIRECTS':
       return say(`${host} keeps sending the preview somewhere else.`)
     case 'ERR_INVALID_URL':
