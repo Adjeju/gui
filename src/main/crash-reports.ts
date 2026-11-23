@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { app, net } from 'electron'
+import { app, autoUpdater, net, powerMonitor } from 'electron'
 import { officialBuild } from './official-build'
 import { getPrefs } from './prefs'
 
@@ -26,6 +26,27 @@ export interface CrashReport {
 
 const sent = new Set<string>()
 
+let ending = false
+
+/** Gui is quitting, or the system is ending it (logging out, restarting, installing an update). */
+export function appEnding() {
+  return ending
+}
+
+/**
+ * Once the app is ready. While Gui ends, its pages go away and late requests find no window:
+ * that isn't a renderer or a window failing, so neither is reported from then on.
+ */
+export function watchAppEnding() {
+  const end = () => {
+    ending = true
+  }
+  app.on('before-quit', end)
+  app.on('will-quit', end)
+  powerMonitor.on('shutdown', end)
+  autoUpdater.on('before-quit-for-update', end)
+}
+
 /** Paths name the user (/Users/name/…); the folder is replaced by ~. */
 function scrub(text: string, max: number) {
   const home = homedir()
@@ -43,6 +64,7 @@ export function errorReport(kind: CrashKind, error: unknown): CrashReport {
 
 export function sendCrashReport(report: CrashReport) {
   if (!officialBuild || !getPrefs().crashReports) return
+  if (ending && (report.kind === 'renderer' || report.kind === 'window')) return
   const message = scrub(report.message || 'No message', MAX_MESSAGE)
   const stack = report.stack ? scrub(report.stack, MAX_STACK) : null
   // The same failure once per session: the first line of its stack says where.

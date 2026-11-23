@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 import { app, type WebContents } from 'electron'
-import { sendCrashReport } from './crash-reports'
+import { appEnding, sendCrashReport } from './crash-reports'
 import { openExternal } from './desktop-open'
+import { RendererExits } from './renderer-exits'
 
 export type RendererPage = 'index' | 'chat' | 'settings' | 'pick' | 'guides'
 
@@ -55,6 +56,12 @@ export function guardAppContents(wc: WebContents) {
 /** A crashed app page reloaded more often than this in a minute is left as it is. */
 const MAX_CRASH_RELOADS = 3
 
+/** One for every app page: renderers that went away together are told apart from a crash. */
+const exits = new RendererExits(
+  (message) => sendCrashReport({ kind: 'renderer', message }),
+  appEnding,
+)
+
 /**
  * Gui's own pages hold no state main doesn't have, so one whose renderer crashed loads again
  * and is sent it, instead of staying blank. A page that keeps crashing stops being reloaded.
@@ -63,17 +70,16 @@ function reloadAfterCrash(wc: WebContents) {
   let reloads: number[] = []
   wc.on('render-process-gone', (_event, details) => {
     if (details.reason === 'clean-exit' || wc.isDestroyed()) return
-    const now = Date.now()
-    reloads = reloads.filter((at) => now - at < 60_000)
     console.error(`[gui] ${wc.getURL()} renderer gone (${details.reason})`)
     // Which page, not its full address: a file URL names the user's folders.
     const page = wc.getURL().split('/').pop()?.split(/[?#]/)[0] ?? 'unknown'
-    sendCrashReport({
-      kind: 'renderer',
-      message: `${page} renderer gone (${details.reason}, exit code ${details.exitCode})`,
+    exits.gone(page, details, () => {
+      if (wc.isDestroyed()) return
+      const now = Date.now()
+      reloads = reloads.filter((at) => now - at < 60_000)
+      if (reloads.length >= MAX_CRASH_RELOADS) return
+      reloads.push(now)
+      wc.reload()
     })
-    if (reloads.length >= MAX_CRASH_RELOADS) return
-    reloads.push(now)
-    wc.reload()
   })
 }

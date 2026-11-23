@@ -108,7 +108,7 @@ import { boardSharpen, registerBoardIpc } from './board-ipc'
 import { offersChoice } from './chat'
 import { isImageAsset } from './chat-image-assets'
 import { cloneRepo, parseRepo } from './clone'
-import { errorReport, sendCrashReport } from './crash-reports'
+import { errorReport, sendCrashReport, watchAppEnding } from './crash-reports'
 import { openExternal } from './desktop-open'
 import { applyDevFlags } from './dev-flags'
 import { developerTools } from './developer-tools'
@@ -2286,6 +2286,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(() => {
+    watchAppEnding()
     lockDownSessions()
     registerRecordingProtocol()
     registerThumbProtocol()
