@@ -12,7 +12,7 @@ export interface Release {
 export const releases: Release[] = [
   {
     version: '0.1.0-alpha.29',
-    date: '2026-11-20',
+    date: '2026-11-23',
     changes: [
       'Frames on the canvas look sharp on a Retina screen, as soon as you zoom in and up to 100%.',
       'On Linux, Gui says “this computer”, Show in Folder and Ctrl where it said Mac, Finder and ⌘. Browsers and editors Gui opens no longer pick up the AppImage’s settings.',
