@@ -1450,23 +1450,13 @@ export type StorageUsage = Record<StorageKind, number | null>
 
 export type SettingsSection = 'agents' | 'projects' | 'github' | 'storage' | 'account'
 
-export type KeepAwakeMode = 'off' | 'working' | 'always'
+const KEEP_AWAKE_MODES = ['off', 'working', 'always'] as const
 
-export interface KeepAwakeOption {
-  value: KeepAwakeMode
-  label: string
-  menuLabel: string
-  title?: string
-}
-
-export const KEEP_AWAKE_MODES: readonly KeepAwakeOption[] = [
-  { value: 'off', label: 'Off', menuLabel: 'Off' },
-  { value: 'working', label: 'While agents work', menuLabel: 'While Agents Work' },
-  { value: 'always', label: 'Always', menuLabel: 'Always', title: 'While Gui is open' },
-]
+/** When Gui keeps the computer from sleeping on its own (Settings → Agents → Keep awake). */
+export type KeepAwakeMode = (typeof KEEP_AWAKE_MODES)[number]
 
 export function isKeepAwakeMode(value: unknown): value is KeepAwakeMode {
-  return KEEP_AWAKE_MODES.some((mode) => mode.value === value)
+  return KEEP_AWAKE_MODES.includes(value as KeepAwakeMode)
 }
 
 export interface SettingsState {

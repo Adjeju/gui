@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { THIS_COMPUTER } from '../../../shared/platform'
+import { IS_MAC, THIS_COMPUTER } from '../../../shared/platform'
 import { shortcutText } from '../../../shared/shortcuts'
 import {
   type AgentHealth,
   type AgentId,
   CUSTOM_AGENT_PREFIX,
   type CustomAgentEntry,
-  KEEP_AWAKE_MODES,
+  type KeepAwakeMode,
   type SettingsState,
 } from '../../../shared/types'
 import { InstallProgress } from '../agents/agent-card'
@@ -129,12 +129,12 @@ export function AgentsSection({ settings }: { settings: SettingsState }) {
         <List>
           <ListItem
             heading="Keep awake"
-            detail="Prevent idle sleep without keeping the display on."
+            detail={KEEP_AWAKE_DETAIL}
             trailing={
               <SegmentedControl
                 label="Keep awake"
                 value={settings.keepAwakeMode}
-                segments={KEEP_AWAKE_MODES}
+                segments={KEEP_AWAKE_SEGMENTS}
                 onChange={(mode) => gui.setKeepAwakeMode(mode)}
               />
             }
@@ -146,6 +146,14 @@ export function AgentsSection({ settings }: { settings: SettingsState }) {
     </>
   )
 }
+
+const KEEP_AWAKE_SEGMENTS: readonly { value: KeepAwakeMode; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'working', label: 'While agents work' },
+  { value: 'always', label: 'Always' },
+]
+
+const KEEP_AWAKE_DETAIL = `${IS_MAC ? 'Your Mac' : 'Your computer'} stays on while agents work, or the whole time Gui is open. The screen still turns off, and closing the lid still sleeps it.`
 
 /** What Enter does while the agent works: queue the message, or steer its reply. */
 function WhileWorking({ settings }: { settings: SettingsState }) {

@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import type { SettingsState } from '../src/shared/types'
 import { holdsIdleSleep, waitFor } from './helpers/env'
-import { chooseFromChatMenu } from './helpers/menus'
 import { type GuiSession, standInsFile } from './helpers/session'
 import { expect, test } from './helpers/test'
 
@@ -69,7 +68,7 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: test.info().outputPath(`${name}.png`) })
 }
 
-test('keep-awake mode is set from Settings and the chat menu', async ({ launch }) => {
+test('keep-awake mode is set from Settings', async ({ launch }) => {
   const session = await launch({ fixture: 'vite' })
   await session.chrome.evaluate(() => window.gui.openSettings('agents'))
   const page = await settingsPage(session)
@@ -92,21 +91,6 @@ test('keep-awake mode is set from Settings and the chat menu', async ({ launch }
       await expect.poll(() => holdsIdleSleep(session.app.process().pid)).toBe(mode === 'always')
     }
   }
-  const offered = await chooseFromChatMenu(session.app, session.chat, 'While Agents Work')
-  expect(offered).toContain('Keep Awake')
-  await expect(
-    group.getByRole('button', { name: 'While agents work', exact: true }),
-  ).toHaveAttribute('aria-pressed', 'true')
-  await chooseFromChatMenu(session.app, session.chat, 'Always')
-  await expect(group.getByRole('button', { name: 'Always', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
-  if (process.platform === 'darwin') {
-    await expect.poll(() => holdsIdleSleep(session.app.process().pid)).toBe(true)
-  }
-  await chooseFromChatMenu(session.app, session.chat, 'Off')
-  await expect(off).toHaveAttribute('aria-pressed', 'true')
   await shot(page, 'keep-awake-light')
   if (process.env.GUI_E2E_SHOTS === '1') {
     await page.emulateMedia({ colorScheme: 'dark' })
