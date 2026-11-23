@@ -11,6 +11,13 @@ export interface Release {
 
 export const releases: Release[] = [
   {
+    version: '0.1.0-alpha.30',
+    date: '2026-11-23',
+    changes: [
+      'Settings → Agents → Keep awake keeps your computer from going to sleep on its own while agents work, or the whole time Gui is open. The screen still turns off, and closing the lid still sleeps it.',
+    ],
+  },
+  {
     version: '0.1.0-alpha.29',
     date: '2026-11-23',
     changes: [
