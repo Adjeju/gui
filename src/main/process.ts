@@ -185,6 +185,17 @@ export const execFileSync: typeof nodeExecFileSync = ((
   return nodeExecFileSync(file, withEnv((argsOrOptions as ExecFileSyncOptions | undefined) ?? {}))
 }) as typeof nodeExecFileSync
 
+/**
+ * Writes a child's whole stdin and closes it. A child that exits without reading it (git
+ * failing on its arguments, a missing repo) closes the pipe, and the write's EPIPE would be
+ * an uncaught error in main; the child's own exit already says it failed.
+ */
+export function endInput(child: ChildProcess, input = '') {
+  if (!child.stdin) return
+  child.stdin.on('error', () => undefined)
+  child.stdin.end(input)
+}
+
 function withEnv<T extends { env?: NodeJS.ProcessEnv }>(options: T): T {
   return { ...options, env: childEnv(options.env ?? process.env) }
 }

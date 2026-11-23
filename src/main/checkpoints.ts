@@ -4,7 +4,7 @@ import { lstat, mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/prom
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 import { MAX_CHECKPOINT_FILE_BYTES } from '../shared/bounded'
 import { developerTools } from './developer-tools'
-import { execFile } from './process'
+import { endInput, execFile } from './process'
 import { mayHoldSecrets } from './secret-files'
 
 export interface FileChange {
@@ -565,7 +565,7 @@ export class Checkpoints {
           fail(new Error(`git ${args[0] ?? ''} failed: ${detail}`, { cause: error }))
         },
       )
-      child.stdin?.end(input ?? '')
+      endInput(child, input)
     })
   }
 }

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { childEnv, isInheritedAgentMarker, scrubInheritedEnv } from '../src/main/process'
+import {
+  childEnv,
+  endInput,
+  execFile,
+  isInheritedAgentMarker,
+  scrubInheritedEnv,
+} from '../src/main/process'
 
 describe('child process env', () => {
   test('inherited agent session vars are stripped before a login shell', () => {
@@ -82,5 +88,25 @@ describe('child process env', () => {
   test('sign-in spawn does not block the browser', () => {
     const env = childEnv({ PATH: '/usr/bin' }, {}, { browser: false })
     expect(env.BROWSER).toBeUndefined()
+  })
+})
+
+describe('endInput', () => {
+  test('a child that exits without reading its stdin is not an uncaught EPIPE', async () => {
+    const uncaught: unknown[] = []
+    const onUncaught = (error: unknown) => uncaught.push(error)
+    process.on('uncaughtException', onUncaught)
+    try {
+      const exited = new Promise<void>((resolve) => {
+        const child = execFile('true', [], () => resolve())
+        // Far more than a pipe buffer holds, so the write is still going when `true` exits.
+        endInput(child, 'x'.repeat(8 * 1024 * 1024))
+      })
+      await exited
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(uncaught).toEqual([])
+    } finally {
+      process.off('uncaughtException', onUncaught)
+    }
   })
 })
