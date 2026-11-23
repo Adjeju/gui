@@ -150,6 +150,10 @@ export function transition(update: () => void, moves: Move[], rows: string[] = [
     if (current === transition) current = null
   }
   transition.finished.then(settled, settled)
+  // `ready` rejects when the transition is skipped (a hidden page, the deadline below,
+  // another transition): the update still applies, only without the animation. An update
+  // that throws rejects `updateCallbackDone` too, which stays unhandled and is reported.
+  transition.ready.catch(() => undefined)
   setTimeout(() => {
     if (deferred && current === transition) transition.skipTransition()
   }, UPDATE_DEADLINE_MS)

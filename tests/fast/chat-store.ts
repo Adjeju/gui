@@ -139,7 +139,15 @@ Object.assign(document, {
   querySelector: () => ({}),
   startViewTransition: (apply: () => void) => {
     applyTransition = apply
-    return { finished: Promise.resolve(), skipTransition: () => {} }
+    // Skipped, as Chromium skips one (a hidden page, another transition): not a failure.
+    const skipped = new Error('Transition was skipped')
+    skipped.name = 'AbortError'
+    return {
+      ready: Promise.reject(skipped),
+      updateCallbackDone: Promise.resolve(),
+      finished: Promise.resolve(),
+      skipTransition: () => {},
+    }
   },
 })
 transition(() => {}, [{ name: 'test', from: () => null, to: () => null, enters: true }])
