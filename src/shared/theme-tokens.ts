@@ -156,9 +156,24 @@ export function safeName(name: string): boolean {
   return /^--[A-Za-z0-9_-]{1,100}$/.test(name)
 }
 
-/** Page values are untrusted; refuse anything that could end a declaration, a style tag or a comment. */
+/** Every quote in `value` opens or closes a string. */
+function quotesBalanced(value: string) {
+  let open: string | null = null
+  for (const ch of value) {
+    if (open === null && (ch === '"' || ch === "'")) open = ch
+    else if (ch === open) open = null
+  }
+  return open === null
+}
+
+/**
+ * Page values are untrusted; refuse anything that could end a declaration, a style tag or a
+ * comment, or run on past its own end (an open string, a backslash escaping what follows).
+ */
 export function safeValue(value: string): boolean {
   return (
+    quotesBalanced(value) &&
+    !value.includes('\\') &&
     value.length <= MAX_VALUE &&
     !/[;{}]/.test(value) &&
     ![...value].some((ch) => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127) &&

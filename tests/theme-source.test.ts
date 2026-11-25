@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { listCssFiles, locate, writeThemeEdits } from '../src/main/theme-source'
+import { MAX_THEME_CSS_BYTES } from '../src/shared/bounded'
 import { modeOf, type ThemeMode } from '../src/shared/theme-tokens'
 
 // Keep writes the user's own CSS, so a declaration is rewritten only when it is found exactly
@@ -130,7 +131,7 @@ test('nested blocks, other at-rules and awkward values are locked', () => {
   const at = (text: string) => locate([{ path: 'a.css', text }], '--brand', DEFAULT).ok
   expect(at('.x { :root { --brand: red; } }')).toBe(false)
   expect(at('@supports (color: red) { :root { --brand: red; } }')).toBe(false)
-  expect(at('@layer base { :root { --brand: red; } }')).toBe(false)
+  expect(at('@layer base { @media print { :root { --brand: red; } } }')).toBe(false)
   expect(at('@custom-variant dark { --brand: red; }')).toBe(false)
   expect(at(':root { .x { --brand: red; } }')).toBe(false)
   expect(at(':root { --brand: red !important; }')).toBe(false)
@@ -206,4 +207,86 @@ test('an unsafe value, name or unknown mode writes nothing', async () => {
     })
   }
   expect(await read('a.css')).toBe(text)
+})
+
+test('one level of @layer is a wrapper, like shadcn puts :root and .dark in @layer base', () => {
+  const files = [
+    { path: 'a.css', text: '@layer base { :root { --brand: #111 } .dark { --brand: #eee } }' },
+  ]
+  expect(locate(files, '--brand', DEFAULT)).toMatchObject({ ok: true, value: '#111' })
+  expect(locate(files, '--brand', DARK)).toMatchObject({ ok: true, value: '#eee' })
+})
+
+test('a value that would unbalance the file is refused after the splice', async () => {
+  const text = ':root { --brand: red; --ink: #111; }'
+  const root = await project({ 'a.css': text })
+  const result = await writeThemeEdits(
+    root,
+    [{ name: '--brand', mode: 'default', value: 'rgb(1, 2, 3' }],
+    MODES,
+  )
+  expect(result).toMatchObject({ ok: false, blocked: '--brand' })
+  expect(await read('a.css')).toBe(text)
+})
+
+test('a missing dark override is added as the last declaration of the one .dark block', async () => {
+  const root = await project({
+    'a.css': ':root {\n  --brand: #2563eb;\n  --ink: #111;\n}\n\n.dark {\n  --ink: #eee;\n}\n',
+    'b.css': '[data-theme="ocean"] { --ink: navy; }\n',
+    'c.css': '[data-theme="sand"] { --ink: tan }\n',
+  })
+  const ocean = modeOf('[data-theme="ocean"]', null) as ThemeMode
+  const sand = modeOf('[data-theme="sand"]', null) as ThemeMode
+  const result = await writeThemeEdits(
+    root,
+    [
+      { name: '--brand', mode: 'dark', value: '#60a5fa' },
+      { name: '--brand', mode: ocean.id, value: 'teal' },
+      { name: '--brand', mode: sand.id, value: 'peru' },
+    ],
+    [...MODES, ocean, sand],
+  )
+  expect(result).toEqual({ ok: true, files: ['a.css', 'b.css', 'c.css'] })
+  expect(await read('a.css')).toBe(
+    ':root {\n  --brand: #2563eb;\n  --ink: #111;\n}\n\n.dark {\n  --ink: #eee;\n  --brand: #60a5fa;\n}\n',
+  )
+  expect(await read('b.css')).toBe('[data-theme="ocean"] { --ink: navy; --brand: teal; }\n')
+  expect(await read('c.css')).toBe('[data-theme="sand"] { --ink: tan; --brand: peru }\n')
+})
+
+test('an override is not added without exactly one mode block and one default declaration', () => {
+  const at = (...texts: string[]) =>
+    locate(
+      texts.map((text, i) => ({ path: `${i}.css`, text })),
+      '--brand',
+      DARK,
+    )
+  expect(at(':root { --brand: red; }')).toMatchObject({
+    ok: false,
+    reason: 'No Dark block to add it to',
+  })
+  expect(at(':root { --brand: red; }', '.dark { --a: 1; }', '.dark { --b: 1; }')).toMatchObject({
+    ok: false,
+    reason: 'Dark is set in more than one place',
+  })
+  expect(at('.dark { --a: 1; }').ok).toBe(false)
+  expect(at(':root { --brand: red; }', ':root { --brand: blue; }', '.dark { --a: 1; }').ok).toBe(
+    false,
+  )
+  expect(locate([{ path: 'a.css', text: ':root { --a: 1; }' }], '--brand', DEFAULT).ok).toBe(false)
+})
+
+test('a .css file too big to read blocks every write', async () => {
+  const root = await project({
+    'a.css': ':root { --brand: red; }',
+    'big.css': `/* ${'x'.repeat(MAX_THEME_CSS_BYTES)} */`,
+  })
+  expect(await listCssFiles(root)).toEqual(['a.css'])
+  const result = await writeThemeEdits(
+    root,
+    [{ name: '--brand', mode: 'default', value: 'blue' }],
+    MODES,
+  )
+  expect(result).toMatchObject({ ok: false, blocked: '--brand' })
+  expect(await read('a.css')).toBe(':root { --brand: red; }')
 })

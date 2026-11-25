@@ -6,7 +6,8 @@ import { writeTemp } from './atomic-file'
 
 // Keep rewrites the user's own CSS, so it is strict: a value is rewritten only where its
 // declaration is found exactly once, directly inside a mode's block, in a plain .css file.
-// Anything else (nested rules, @layer, @supports, preprocessors, dependencies) is locked.
+// A missing mode override is added only to the one block that mode already has. Anything
+// else (nested rules, @supports, preprocessors, dependencies) is locked.
 
 /** A project CSS file; `path` is relative to the project root. */
 export interface CssFile {
@@ -14,15 +15,26 @@ export interface CssFile {
   text: string
 }
 
-/** `start`/`end` bound the value text alone, trimmed. */
+/**
+ * `start`/`end` bound the value text alone, trimmed. With `insert`, the mode has no
+ * declaration yet: `start === end` is where one goes, written `before + value + after`.
+ */
 export type Located =
-  | { ok: true; file: string; start: number; end: number; value: string }
+  | {
+      ok: true
+      file: string
+      start: number
+      end: number
+      value: string
+      insert?: { before: string; after: string }
+    }
   | { ok: false; reason: string }
 
 const SKIPPED_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'out'])
 
-async function cssFiles(root: string, limit: number): Promise<string[]> {
+async function cssFiles(root: string, limit: number) {
   const found: string[] = []
+  let skipped = false
   const walk = async (dir: string) => {
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
     for (const entry of entries) {
@@ -37,15 +49,17 @@ async function cssFiles(root: string, limit: number): Promise<string[]> {
           () => Infinity,
         )
         if (size <= MAX_THEME_CSS_BYTES) found.push(relative(root, path).split(sep).join('/'))
+        else skipped = true
       }
     }
   }
   await walk(root)
-  return found.sort()
+  return { paths: found.sort(), skipped }
 }
 
 /** Plain .css files under `root`, relative to it, outside dependency and build folders. */
-export const listCssFiles = (root: string) => cssFiles(root, MAX_THEME_CSS_FILES)
+export const listCssFiles = async (root: string) =>
+  (await cssFiles(root, MAX_THEME_CSS_FILES)).paths
 
 /** `text` with every comment blanked to spaces, so offsets stay the same. */
 function blankComments(text: string) {
@@ -87,41 +101,69 @@ function blockMode(preludes: string[]): string | null {
     if (/^@theme(?:\s[\w\s-]*)?$/.test(outer)) return 'default'
     return outer.startsWith('@') ? null : (modeOf(outer, null)?.id ?? null)
   }
-  if (preludes.length === 2 && /^@media\s/i.test(outer) && !inner.startsWith('@')) {
-    return modeOf(inner, outer.slice(6).trim())?.id ?? null
-  }
+  if (preludes.length !== 2 || inner.startsWith('@')) return null
+  if (/^@media\s/i.test(outer)) return modeOf(inner, outer.slice(6).trim())?.id ?? null
+  if (/^@layer\s+[\w.-]+$/.test(outer)) return modeOf(inner, null)?.id ?? null
   return null
 }
 
-interface Hit {
+interface Declaration {
+  name: string
+  mode: string | null
   file: string
   start: number
   end: number
   awkward: boolean
 }
 
-function declarations(file: CssFile, name: string, mode: string): Hit[] {
+/** A block's last statement: `end` is past its trimmed text, `semicolon` past its `;`. */
+interface Last {
+  start: number
+  end: number
+  semicolon: number | null
+}
+
+interface Block {
+  mode: string | null
+  file: string
+  open: number
+  nested: boolean
+  last: Last | null
+}
+
+/** Every custom property declaration in `file`, and every block, with the mode each is in. */
+function scan(file: CssFile) {
   const { text } = file
   const clean = blankComments(text)
-  const hits: Hit[] = []
-  const stack: { prelude: string; mode: string | null }[] = []
+  const found: Declaration[] = []
+  const blocks: Block[] = []
+  const stack: (Block & { prelude: string })[] = []
   let statement = 0
   let parens = 0
-  const declaration = (end: number) => {
-    if (stack.at(-1)?.mode !== mode) return
-    const match = /^\s*(--[A-Za-z0-9_-]+)\s*:/.exec(clean.slice(statement, end))
-    if (match?.[1] !== name) return
+  const endStatement = (end: number, semicolon: boolean) => {
+    const block = stack.at(-1)
+    const body = clean.slice(statement, end)
+    if (!block || !body.trim()) return
+    const first = statement + body.search(/\S/)
+    block.last = {
+      start: first,
+      end: first + body.trim().length,
+      semicolon: semicolon ? end + 1 : null,
+    }
+    const match = /^\s*(--[A-Za-z0-9_-]+)\s*:/.exec(body)
+    if (!match) return
     let start = statement + match[0].length
     const commented = text.slice(start, end) !== clean.slice(start, end)
     let stop = end
     while (start < stop && /\s/.test(clean[start])) start++
     while (stop > start && /\s/.test(clean[stop - 1])) stop--
-    const raw = text.slice(start, stop)
-    hits.push({
+    found.push({
+      name: match[1],
+      mode: block.mode,
       file: file.path,
       start,
       end: stop,
-      awkward: commented || /!\s*important/i.test(raw),
+      awkward: commented || /!\s*important/i.test(text.slice(start, stop)),
     })
   }
   for (let i = 0; i < clean.length; i++) {
@@ -132,24 +174,76 @@ function declarations(file: CssFile, name: string, mode: string): Hit[] {
     else if (parens > 0) continue
     else if (ch === '{') {
       const preludes = [...stack.map((b) => b.prelude), clean.slice(statement, i).trim()]
+      const parent = stack.at(-1)
+      if (parent) parent.nested = true
       stack.push({
         prelude: preludes.at(-1) as string,
         mode: blockMode(preludes),
+        file: file.path,
+        open: i,
+        nested: false,
+        last: null,
       })
       statement = i + 1
     } else if (ch === ';' || ch === '}') {
-      declaration(i)
-      if (ch === '}') stack.pop()
+      endStatement(i, ch === ';')
+      if (ch === '}') {
+        const block = stack.pop()
+        if (block) blocks.push(block)
+      }
       statement = i + 1
     }
   }
-  return hits
+  return { found, blocks }
 }
 
-/** The one declaration of `name` in `mode`'s block across `files`, or why there isn't one. */
+/** Where a new `name` goes as the last declaration of `block`, in the block's own layout. */
+function insertion(text: string, block: Block, name: string): Located {
+  const last = block.last as Last
+  const lineStart = text.lastIndexOf('\n', last.start - 1) + 1
+  const indent = text.slice(lineStart, last.start)
+  const gap = lineStart > block.open && /^[ \t]*$/.test(indent) ? `\n${indent}` : ' '
+  const at = last.semicolon ?? last.end
+  return {
+    ok: true,
+    file: block.file,
+    start: at,
+    end: at,
+    value: '',
+    insert:
+      last.semicolon === null
+        ? { before: `;${gap}${name}: `, after: '' }
+        : { before: `${gap}${name}: `, after: ';' },
+  }
+}
+
+/**
+ * The one declaration of `name` in `mode`'s block across `files`, or why there isn't one.
+ * A mode with no declaration of a variable the default declares once gets one added to its
+ * only block.
+ */
 export function locate(files: CssFile[], name: string, mode: ThemeMode): Located {
-  const hits = files.flatMap((file) => declarations(file, name, mode.id))
-  if (hits.length === 0) return { ok: false, reason: 'Not in a plain .css file' }
+  const scans = files.map(scan)
+  const named = scans.flatMap((s) => s.found.filter((d) => d.name === name))
+  const hits = named.filter((d) => d.mode === mode.id)
+  if (hits.length === 0) {
+    const declared = named.filter((d) => d.mode === 'default').length === 1
+    if (mode.id === 'default' || !declared) return { ok: false, reason: 'Not in a plain .css file' }
+    const blocks = scans.flatMap((s) => s.blocks.filter((b) => b.mode === mode.id))
+    if (blocks.length !== 1) {
+      return {
+        ok: false,
+        reason: blocks.length
+          ? `${mode.label} is set in more than one place`
+          : `No ${mode.label} block to add it to`,
+      }
+    }
+    const [block] = blocks
+    if (block.nested || !block.last) {
+      return { ok: false, reason: `Can't add to the ${mode.label} block` }
+    }
+    return insertion(files.find((f) => f.path === block.file)?.text ?? '', block, name)
+  }
   if (hits.length > 1) {
     const where = [...new Set(hits.map((hit) => hit.file))]
     return {
@@ -194,48 +288,65 @@ export async function writeThemeEdits(
       return { ok: false, blocked: edit.name, reason: 'Unknown theme mode' }
     }
   }
-  // One past the cap: a project with more files than Gui reads can't prove a declaration is the only one.
-  const paths = await cssFiles(root, MAX_THEME_CSS_FILES + 1)
-  if (paths.length > MAX_THEME_CSS_FILES) {
-    return {
-      ok: false,
-      blocked: edits[0]?.name ?? '',
-      reason: 'The project has too many .css files',
-    }
-  }
+  const modeOfEdit = (edit: ThemeEdit) => modes.find((mode) => mode.id === edit.mode) as ThemeMode
+  const blocked = (edit: ThemeEdit | undefined, reason: string) =>
+    ({ ok: false, blocked: edit?.name ?? '', reason }) as const
+  const keys = edits.map((edit) => `${edit.mode} ${edit.name}`)
+  const twice = edits.find((_, i) => keys.indexOf(keys[i]) !== i)
+  if (twice) return blocked(twice, 'Edited twice')
+  // A file Gui doesn't read could hold a second declaration, so "exactly once" can't be proven.
+  const { paths, skipped } = await cssFiles(root, MAX_THEME_CSS_FILES + 1)
+  if (paths.length > MAX_THEME_CSS_FILES)
+    return blocked(edits[0], 'The project has too many .css files')
+  if (skipped) return blocked(edits[0], 'The project has a .css file too big to read')
   const files = await Promise.all(
     paths.map(async (path) => ({
       path,
       text: await readFile(join(root, path), 'utf8'),
     })),
   )
-  const splices = new Map<string, { start: number; end: number; value: string }[]>()
+  const splices = new Map<string, { start: number; end: number; text: string }[]>()
   for (const edit of edits) {
-    const found = locate(files, edit.name, modes.find((mode) => mode.id === edit.mode) as ThemeMode)
-    if (!found.ok) return { ok: false, blocked: edit.name, reason: found.reason }
-    const list = splices.get(found.file) ?? []
-    if (list.some((s) => s.start === found.start)) {
-      return { ok: false, blocked: edit.name, reason: 'Edited twice' }
+    const found = locate(files, edit.name, modeOfEdit(edit))
+    if (!found.ok) return blocked(edit, found.reason)
+    const text = found.insert ? found.insert.before + edit.value + found.insert.after : edit.value
+    splices.set(found.file, [
+      ...(splices.get(found.file) ?? []),
+      { start: found.start, end: found.end, text },
+    ])
+  }
+  const written = files.map((file) => {
+    let text = file.text
+    for (const s of [...(splices.get(file.path) ?? [])].sort((a, b) => b.start - a.start)) {
+      text = text.slice(0, s.start) + s.text + text.slice(s.end)
     }
-    splices.set(found.file, [...list, { start: found.start, end: found.end, value: edit.value }])
+    return { path: file.path, text }
+  })
+  // A value that passes safeValue could still unbalance the file (an open paren); read it back.
+  for (const edit of edits) {
+    const after = locate(written, edit.name, modeOfEdit(edit))
+    if (!after.ok || after.insert || after.value !== edit.value) {
+      return blocked(edit, 'The new value would change the CSS around it')
+    }
   }
   const temps: { tmp: string; file: string }[] = []
   try {
-    for (const [path, list] of splices) {
-      let text = (files.find((file) => file.path === path) as CssFile).text
-      for (const s of [...list].sort((a, b) => b.start - a.start)) {
-        text = text.slice(0, s.start) + s.value + text.slice(s.end)
-      }
+    for (const { path, text } of written) {
+      if (!splices.has(path)) continue
       const file = join(root, path)
       const tmp = await writeTemp(file, text)
       temps.push({ tmp, file })
       await chmod(tmp, (await stat(file)).mode & 0o7777)
     }
+    // shortcut: a rename failing midway leaves earlier files written; Keep's checkpoint can undo it.
+    while (temps.length) {
+      const { tmp, file } = temps[0]
+      await rename(tmp, file)
+      temps.shift()
+    }
   } catch (error) {
     await Promise.all(temps.map(({ tmp }) => rm(tmp, { force: true }).catch(() => undefined)))
     throw error
   }
-  // shortcut: a rename failing midway leaves earlier files written; Keep's checkpoint can undo it.
-  for (const { tmp, file } of temps) await rename(tmp, file)
   return { ok: true, files: [...splices.keys()] }
 }
