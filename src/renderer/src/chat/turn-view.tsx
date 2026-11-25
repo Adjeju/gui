@@ -392,8 +392,11 @@ function DirectEdit({
 
 type ThemeEdits = NonNullable<Turn['themeEdits']>
 
-const themeEditLabel = ({ name, mode, before, after }: ThemeEdits[number]) =>
-  `${name}${mode === 'default' ? '' : ` (${mode})`}: ${before} → ${after}`
+const themeEditName = ({ name, mode }: ThemeEdits[number]) =>
+  `${name}${mode === 'default' ? '' : ` (${mode})`}`
+
+const themeEditLabel = (edit: ThemeEdits[number]) =>
+  `${themeEditName(edit)}: ${edit.before} → ${edit.after}`
 
 /** Theme values Keep wrote into the project's CSS: one line, the details for more than one. */
 function ThemeEditLine({
@@ -433,7 +436,7 @@ function ThemeEditLine({
       {edits.length === 1 ? (
         <>
           <span className="min-w-8 shrink-[1000] truncate">
-            {one.name}: {one.before}
+            {themeEditName(one)}: {one.before}
           </span>
           <ArrowRight className="size-3 shrink-0 text-subtle" aria-label="changed to" />
           <span className="min-w-0 truncate text-fg">{one.after}</span>

@@ -293,3 +293,30 @@ test("Keep refused by the project's CSS says which variable and why", async () =
   expect(await css()).toBe(twice)
   expect(tokens.pending()).toHaveLength(2)
 })
+
+test('Keep writes nothing and records no turn once the opening has closed', async () => {
+  // Closed while Keep reads the project's CSS.
+  {
+    const { tokens, state, css } = await keepable()
+    const kept = chat()
+    const keeping = tokens.keep(kept)
+    state.live = false
+    expect(await keeping).toEqual({ ok: false, blocked: '', reason: 'The project was closed.' })
+    expect(kept.turns).toEqual([])
+    expect(await css()).toBe(KEPT_CSS)
+  }
+  // Closed while the chat waits to take its turn.
+  {
+    const { tokens, state, css } = await keepable()
+    const kept = chat(false, async () => {
+      state.live = false
+    })
+    expect(await tokens.keep(kept)).toEqual({
+      ok: false,
+      blocked: '',
+      reason: 'The project was closed.',
+    })
+    expect(kept.turns).toEqual([])
+    expect(await css()).toBe(KEPT_CSS)
+  }
+})

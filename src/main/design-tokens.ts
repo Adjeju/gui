@@ -26,6 +26,8 @@ interface KeepChat {
 
 type Kept = { ok: true } | { ok: false; blocked: string; reason: string }
 
+const CLOSED: Kept = { ok: false, blocked: '', reason: 'The project was closed.' }
+
 /** How long the app has to put its own mode back after Gui shows one. */
 const MODE_CHECK_MS = 300
 
@@ -140,6 +142,7 @@ export class DesignTokens {
     const edits = this.pending()
     if (!snapshot || !edits.length || !this.live()) return { ok: true }
     const { files } = await readCssFiles(this.deps.root)
+    if (!this.live()) return CLOSED
     const kept: KeptEdits = []
     for (const edit of edits) {
       const mode = snapshot.modes.find((m) => m.id === edit.mode)
@@ -154,12 +157,18 @@ export class DesignTokens {
     }
     let refused: Kept | null = null
     const write = async () => {
+      // The chat outlives the opening: a closed one's edits are never written.
+      if (!this.live()) return false
       const result = await writeThemeEdits(this.deps.root, edits, snapshot.modes)
       if (!result.ok) refused = result
       return result.ok
     }
-    const wrote = await chat.writeThemeEdits(kept, write).catch(() => null)
+    const wrote = await chat.writeThemeEdits(kept, write).catch((error: unknown) => {
+      console.error('[gui] failed to keep theme changes', error)
+      return null
+    })
     if (refused) return refused
+    if (!wrote && !this.live()) return CLOSED
     if (wrote === null) {
       return { ok: false, blocked: '', reason: "Gui couldn't write the project's CSS" }
     }
