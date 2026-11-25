@@ -30,6 +30,7 @@ export interface AllIpcRequests {
   [Invoke.newProject]: Contract<'newProject'>
   [Invoke.send]: Contract<'send'>
   [Invoke.restoreTurn]: Contract<'restoreTurn'>
+  [Invoke.arrangeSelection]: Contract<'arrangeSelection'>
   [Invoke.redo]: Contract<'redo'>
   [Invoke.fixProblems]: Contract<'fixProblems'>
   [Invoke.fixStartup]: Contract<'fixStartup'>

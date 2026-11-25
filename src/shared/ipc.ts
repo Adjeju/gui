@@ -69,6 +69,7 @@ export const Invoke = {
   newProject: 'project:new',
   send: 'chat:send',
   restoreTurn: 'chat:restore',
+  arrangeSelection: 'chat:arrange-selection',
   redo: 'chat:redo',
   fixProblems: 'chat:fix-problems',
   fixStartup: 'chat:fix-startup',
@@ -169,7 +170,6 @@ export const Send = {
   stopSubagent: 'chat:stop-subagent',
   newSession: 'chat:new',
   clearSelection: 'chat:clear-selection',
-  removeSelection: 'chat:remove-selection',
   hoverSelection: 'chat:hover-selection',
   expandChat: 'chat:expand',
   togglePopOut: 'chat:pop-out',
@@ -549,12 +549,12 @@ export interface GuiApi {
    */
   pickHover(at: Point | null): void
   /**
-   * A click at `at` picks the element there: on its own, in place of what was picked, which
-   * ends picking; with `add` (⇧), along with it, or out of it if it was already picked.
+   * A click at `at` picks the element there, after what's picked, or drops it if it's picked
+   * already. Picking goes on.
    */
-  pickElement(at: Point, add: boolean): void
-  /** A drag picks the area `rect` as a screenshot; `add` as for `pickElement` */
-  pickArea(rect: Rect, add: boolean): void
+  pickElement(at: Point): void
+  /** A drag picks the area `rect` as a screenshot, after what's picked */
+  pickArea(rect: Rect): void
   /** A double-click at `at` edits the text there in place, in the page; it ends picking */
   editPreviewText(at: Point): void
   /** The wheel over the overlay scrolls the page under it */
@@ -769,9 +769,13 @@ export interface GuiApi {
   /** Deletes an archived chat for good */
   deleteChat(id: string): Promise<void>
   clearSelection(): void
-  /** Drops one picked element or area from the selection */
-  removeSelection(id: string): void
-  /** The pointer is over a picked element's chip (null: it left), so the page outlines it */
+  /**
+   * The message box's markers changed: the picks take their order in the text (`order`, by
+   * id); those whose marker was deleted (`dropped`) go, and a marker brought back brings its
+   * pick back if main still has it. Resolves once main has done it.
+   */
+  arrangeSelection(order: string[], dropped: string[]): Promise<void>
+  /** The pointer is over a pick's marker (null: it left), so the page outlines it */
   hoverSelection(id: string | null): void
   /** Shows the conversation: the floating panel grows from its message box */
   expandChat(): void

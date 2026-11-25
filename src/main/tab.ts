@@ -219,6 +219,8 @@ export interface OpeningOptions {
 const REHIGHLIGHT_DELAY_MS = 900
 /** The id a pick goes by in the overlay while it's read, before it has its own */
 const PENDING_PICK = 'pending'
+/** Dropped picks kept to come back with their markers (`droppedPicks`) */
+const MAX_DROPPED_PICKS = 50
 /** How long dev_server_restart waits for the app; agents give up on a tool call after about a minute. */
 const AGENT_START_WAIT_MS = 45_000
 /** The walkthrough's last step stays this long after the agent's turn ends */
@@ -481,6 +483,13 @@ export class ProjectTab implements ChatPanelOwner {
   private readonly variations: Variations
   /** Each picked element's node (by pick id), to outline it; an area has none. */
   private readonly pickedNodes = new Map<string, number>()
+  /**
+   * Picks dropped lately, with their nodes, so a marker brought back into the message (⌘Z, or
+   * pasted after a cut) brings its pick back (`arrangeSelection`). The newest are kept.
+   */
+  private readonly droppedPicks = new Map<string, { picked: Picked; node: number | undefined }>()
+  /** The selection as `onSelection` last saw it */
+  private shownSelection: Picked[] = []
   /** What's being read for a pick in progress, outlined meanwhile */
   private pendingPick: Outlined | null = null
   /** Picks are read one at a time, in the order the user made them. */
@@ -497,9 +506,9 @@ export class ProjectTab implements ChatPanelOwner {
    */
   private textEditAsked: { at: Point; until: number } | null = null
   /**
-   * The pick a plain click in Design mode just made, while a second click could still make it
-   * a double-click (`Picker.lingering`): that edits the text instead, and the pick is dropped,
-   * the selection back to what it was (`before`).
+   * The pick a click in Design mode just made, while a second click could still make it a
+   * double-click: that edits the text instead, and the pick is dropped, the selection back to
+   * what it was (`before`).
    */
   private clickPick: { before: Picked[]; dropped: boolean } | null = null
   /** The screenshot menu is open or its capture is running. */
@@ -2727,26 +2736,22 @@ export class ProjectTab implements ChatPanelOwner {
   }
 
   /**
-   * A click in the overlay at `at` (its coordinates): picks the element there. On its own
-   * it replaces what was picked and ends picking, as a single pick always has; with `add`
-   * (⇧) it joins what's picked, or leaves it if it was picked already, and picking goes on.
+   * A click in the overlay at `at` (its coordinates): picks the element there, after what's
+   * picked, or drops it if it's picked already. Picking goes on, and the message box gets a
+   * marker for it (the chat's draft follows the selection).
    */
-  pickElement(at: Point, add: boolean) {
+  pickElement(at: Point) {
     if (!this.picker.picking) return
-    // A plain click picks at once; the overlay stays a moment, unseen, in case it's the first
-    // of a double-click (`editTextAt`), which drops this pick.
-    const click = add ? null : { before: this.resources.chat?.meta.selection ?? [], dropped: false }
+    // The overlay makes a second click here soon after a double-click (`editTextAt`), which
+    // drops this pick.
+    const click = { before: this.resources.chat?.meta.selection ?? [], dropped: false }
     this.clickPick = click
-    if (!add) {
-      this.picker.lingerOnStop(at)
-      void this.setSelecting(false)
-    }
     this.queuePick(async () => {
-      if (click?.dropped) return
+      if (click.dropped) return
       const node = await this.picker.nodeAt(at)
-      if (node === null) return
+      if (node === null || click.dropped) return
       const already = [...this.pickedNodes].find(([, picked]) => picked === node)?.[0]
-      if (add && already) {
+      if (already) {
         this.resources.chat?.removeFromSelection(already)
         return
       }
@@ -2756,17 +2761,16 @@ export class ProjectTab implements ChatPanelOwner {
         return { ...element, kind: 'element' }
       }
       const pending: Outlined = { id: PENDING_PICK, kind: 'element', node }
-      await this.readPick(add, pending, read, () => click?.dropped === true)
+      await this.readPick(pending, read, () => click.dropped)
     })
   }
 
   /** A drag in the overlay over `rect` (its coordinates): picks that area as a screenshot. */
-  pickArea(rect: Rect, add: boolean) {
+  pickArea(rect: Rect) {
     if (!this.picker.picking) return
-    if (!add) void this.setSelecting(false)
     const area = this.picker.toPageRect(rect)
     this.queuePick(() =>
-      this.readPick(add, { id: PENDING_PICK, kind: 'region', area, fixed: true }, (project) =>
+      this.readPick({ id: PENDING_PICK, kind: 'region', area, fixed: true }, (project) =>
         this.inspectArea(area, project),
       ),
     )
@@ -2789,11 +2793,10 @@ export class ProjectTab implements ChatPanelOwner {
    * edit, so a double-click that selects a word in the app stays just that.
    */
   editTextAt(at: Point) {
-    if (!(this.picker.picking || this.picker.lingering) || this.textEdit) return
+    if (!this.picker.picking || this.textEdit) return
     const page = this.picker.toPagePoint(at)
-    this.picker.endLinger()
     void this.setSelecting(false)
-    // The double-click's first click picked: that pick goes, and no chip is left behind.
+    // The double-click's first click picked: that pick goes, and its marker with it.
     const click = this.clickPick
     this.clickPick = null
     if (click && !click.dropped) {
@@ -2863,18 +2866,11 @@ export class ProjectTab implements ChatPanelOwner {
         return
       }
       if (chat !== this.resources.chat) return
-      // The user's own picks stay for their next message.
-      const picked = chat.meta.selection
-      const nodes = [...this.pickedNodes]
-      if (node !== null && element) {
-        this.pickedNodes.set(element.id, node)
-        chat.setSelection([{ ...element, kind: 'element' }])
-      }
+      // It goes with the edited element; the user's own picks stay for their next message.
       // Both texts came from the page: they go as page data, never as the message's words.
-      chat.sendTextEdit({ before, after: collapseText(after) })
+      const edited: Picked[] = node !== null && element ? [{ ...element, kind: 'element' }] : []
+      chat.sendTextEdit({ before, after: collapseText(after) }, edited)
       if (this.panel.untuck()) this.layout()
-      for (const [pick, pickNode] of nodes) this.pickedNodes.set(pick, pickNode)
-      chat.setSelection(picked)
     })
   }
 
@@ -3136,11 +3132,39 @@ export class ProjectTab implements ChatPanelOwner {
     this.guideEndTimer = null
   }
 
-  removeSelection(id: string) {
-    this.resources.chat?.removeFromSelection(id)
+  /**
+   * The message box's markers changed: the picks follow their order in the text (`order`,
+   * by id), so the page's numbers match the markers'. Picks whose marker was deleted
+   * (`dropped`) go; a marker brought back (⌘Z, or pasted after a cut) brings its pick back, if
+   * it was dropped lately. Picks the message doesn't name yet (one just made, its marker on
+   * its way) stay, after the rest.
+   */
+  arrangeSelection(order: string[], dropped: string[]) {
+    const chat = this.resources.chat
+    if (!chat) return
+    const current = chat.meta.selection.filter((picked) => !dropped.includes(picked.id))
+    for (const id of order) {
+      const back = this.droppedPicks.get(id)
+      if (!back || current.some((picked) => picked.id === id)) continue
+      this.droppedPicks.delete(id)
+      if (back.node !== undefined) this.pickedNodes.set(id, back.node)
+      current.push(back.picked)
+    }
+    const rank = (picked: Picked) => {
+      const at = order.indexOf(picked.id)
+      return at === -1 ? order.length : at
+    }
+    const next = current
+      .map((picked, i) => ({ picked, i }))
+      .sort((a, b) => rank(a.picked) - rank(b.picked) || a.i - b.i)
+      .map(({ picked }) => picked)
+    const same =
+      next.length === chat.meta.selection.length &&
+      next.every((picked, i) => picked.id === chat.meta.selection[i]?.id)
+    if (!same) chat.arrangeSelection(next)
   }
 
-  /** The pointer is over a pick's chip in the composer: the page shows which one it is. */
+  /** The pointer is over a pick's marker in the message box: the page shows which one it is. */
   hoverSelection(id: string | null) {
     this.hoveredPick = id
     this.syncHighlight()
@@ -3152,11 +3176,11 @@ export class ProjectTab implements ChatPanelOwner {
   }
 
   /**
-   * Reads a pick and puts it in the selection: in place of what's there, or after it with
-   * `add`. `pending` is outlined meanwhile. A pick that failed says why in the composer.
+   * Reads a pick and puts it in the selection, after what's there; the keyboard goes to the
+   * message box, where its marker is. `pending` is outlined meanwhile. A pick that failed says
+   * why in the composer.
    */
   private async readPick(
-    add: boolean,
     pending: Outlined,
     read: (project: ProjectInfo) => Promise<Picked>,
     /** The pick was dropped while it was read (a double-click's first click) */
@@ -3173,18 +3197,14 @@ export class ProjectTab implements ChatPanelOwner {
       if (chat !== this.resources.chat || dropped()) return
       // The pick's highlight replaces any post-turn one and belongs to the selection.
       this.cancelRehighlight()
-      if (add) chat.addToSelection(picked)
-      else chat.setSelection([picked])
-      if (!add) {
-        this.panel.focusChat()
-        this.panel.dodge(picked.rect, this.placement, this.emulation.scale)
-      }
+      chat.addToSelection(picked)
+      this.panel.focusAfterPick()
+      this.panel.dodge(picked.rect, this.placement, this.emulation.scale)
     } catch (error) {
       if (chat !== this.resources.chat || dropped()) return
       const message = error instanceof Error ? error.message : String(error)
       const what = pending.kind === 'region' ? 'area' : 'element'
       chat.setSelectionError(`Couldn't read that ${what}: ${message}`)
-      if (!add) this.panel.focusChat()
     } finally {
       this.pendingPick = null
       this.picker.setBusy(false)
@@ -3236,6 +3256,15 @@ export class ProjectTab implements ChatPanelOwner {
   /** The selection changed: its outlines, and the page's highlight, follow it. */
   private onSelection(selection: Picked[]) {
     const ids = new Set(selection.map((picked) => picked.id))
+    // What's dropped can come back with its marker (`arrangeSelection`).
+    for (const picked of this.shownSelection) {
+      if (ids.has(picked.id)) continue
+      this.droppedPicks.delete(picked.id)
+      this.droppedPicks.set(picked.id, { picked, node: this.pickedNodes.get(picked.id) })
+      const [oldest] = this.droppedPicks.keys()
+      if (this.droppedPicks.size > MAX_DROPPED_PICKS) this.droppedPicks.delete(oldest)
+    }
+    this.shownSelection = selection
     for (const id of this.pickedNodes.keys()) if (!ids.has(id)) this.pickedNodes.delete(id)
     if (this.hoveredPick && !ids.has(this.hoveredPick)) this.hoveredPick = null
     this.syncOutlined()

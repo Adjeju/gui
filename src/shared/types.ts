@@ -868,10 +868,10 @@ export interface PickOverlayState {
   /** The versions of an element to flip through (preview_variations); never while picking */
   variations?: VariationsBar | null
   /**
-   * Picking just ended on a click: the overlay stays a moment, drawing nothing, for a second
-   * click there, which makes it a double-click (an edit of the text) rather than a pick.
+   * While picking: how soon a second click on the spot of the last makes it a double-click,
+   * which edits the text there rather than picking (the system's own interval)
    */
-  linger?: boolean
+  doubleClickMs?: number
 }
 
 /** One version in a variation set (docs/variations.md); `original` is the code as it was. */

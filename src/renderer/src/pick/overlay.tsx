@@ -23,8 +23,8 @@ import { Button, Counter, IconButton, Kbd } from '../lib/ui'
 const DRAG_THRESHOLD = 4
 /** Smaller than this either way, a drag is taken as a click after all. */
 const MIN_AREA = 8
-/** The longest main lingers for a double-click's second click (picker.ts `doubleClickMs`) */
-const SECOND_CLICK_MS = 800
+/** A double-click's second click, until main says the system's interval (picker.ts) */
+const SECOND_CLICK_MS = 400
 /** The label's height (h-5) */
 const LABEL_HEIGHT = 20
 /** Between the label and the outline, so the label doesn't sit on what's above the element */
@@ -36,20 +36,20 @@ const IDLE: PickOverlayState = { hover: null, picked: [], busy: false, scale: 1,
 
 /**
  * Picking, drawn over the preview (main/picker.ts lays this view over the page): the element
- * under the pointer with its name and size, what's been picked (numbered when there are
- * several), and an area being dragged out. A click picks the element; a drag picks the area as
- * a screenshot; with ⇧ either adds to what's picked and picking goes on. A double-click on text
- * edits it in place, in the page. The wheel scrolls the page underneath; Esc ends picking.
+ * under the pointer with its name and size, what's been picked (numbered as the message box
+ * numbers its markers), and an area being dragged out. A click picks the element, or drops it
+ * when it's picked already; a drag picks the area as a screenshot; picking goes on after
+ * either. A double-click on text edits it in place, in the page. The wheel scrolls the page
+ * underneath; Esc ends picking.
  */
 export function PickOverlay() {
   const [state, setState] = useState<PickOverlayState>(IDLE)
   const [drag, setDrag] = useState<{ start: Point; end: Point } | null>(null)
-  const [adding, setAdding] = useState(false)
   const [hintRun, setHintRun] = useState(0)
   const press = useRef<{ start: Point; dragging: boolean; second: boolean } | null>(null)
   /**
-   * Where a plain click last picked, and when: a second click there before main stops
-   * lingering makes it a double-click, which edits the text there.
+   * Where a click last picked, and when: a second click there within the double-click
+   * interval makes it a double-click, which edits the text there.
    */
   const clicked = useRef<{ at: Point; time: number } | null>(null)
   /** A press at `at` is a double-click's second: the click before it was there, just now. */
@@ -58,7 +58,7 @@ export function PickOverlay() {
     clicked.current = null
     return (
       !!first &&
-      performance.now() - first.time < SECOND_CLICK_MS &&
+      performance.now() - first.time < (state.doubleClickMs ?? SECOND_CLICK_MS) &&
       Math.hypot(at.x - first.at.x, at.y - first.at.y) < DRAG_THRESHOLD
     )
   }
@@ -73,22 +73,6 @@ export function PickOverlay() {
     if (state.run === 0) return
     setHintRun(state.run)
   }, [state.run])
-
-  // ⇧ can go down before the pointer moves, or while the window is elsewhere.
-  useEffect(() => {
-    const sync = (event: KeyboardEvent | PointerEvent) => setAdding(event.shiftKey)
-    const reset = () => setAdding(false)
-    window.addEventListener('keydown', sync)
-    window.addEventListener('keyup', sync)
-    window.addEventListener('pointermove', sync)
-    window.addEventListener('blur', reset)
-    return () => {
-      window.removeEventListener('keydown', sync)
-      window.removeEventListener('keyup', sync)
-      window.removeEventListener('pointermove', sync)
-      window.removeEventListener('blur', reset)
-    }
-  }, [])
 
   /** One hover a frame, the latest: main measures what's under it. */
   const hover = (at: Point | null) => {
@@ -110,7 +94,6 @@ export function PickOverlay() {
     if (event.button !== 0) return
     event.currentTarget.setPointerCapture(event.pointerId)
     const start = pointAt(event)
-    // Before main's linger has reached this page, a quick second click lands here.
     press.current = { start, dragging: false, second: secondClick(start) }
     setHintRun(0)
   }
@@ -137,14 +120,13 @@ export function PickOverlay() {
     const at = pointAt(event)
     const area = rectBetween(pressed.start, at)
     if (pressed.dragging && area.width >= MIN_AREA && area.height >= MIN_AREA) {
-      gui.pickArea(area, event.shiftKey)
+      gui.pickArea(area)
     } else if (pressed.second) {
       gui.editPreviewText(pressed.start)
     } else {
-      // Picks at once. A plain click ends picking, but main keeps this overlay a moment
-      // (`linger`) for a second click, which would make it a double-click.
-      clicked.current = event.shiftKey ? null : { at: pressed.start, time: performance.now() }
-      gui.pickElement(pressed.start, event.shiftKey)
+      // Picks at once; a second click here soon after makes it a double-click.
+      clicked.current = { at: pressed.start, time: performance.now() }
+      gui.pickElement(pressed.start)
     }
     hover(at)
   }
@@ -178,25 +160,7 @@ export function PickOverlay() {
     )
   // The bar on its own: this overlay is only as big as it is (main/picker.ts).
   if (variations) return variations
-  // Picking just ended on a click: nothing drawn, and main has this overlay over only the spot
-  // it was on, so a second click there makes it a double-click, which edits the text (main
-  // drops the pick the first one made). A click anywhere else reaches the page.
-  if (state.linger)
-    return (
-      <div
-        aria-hidden="true"
-        className="fixed inset-0"
-        onPointerDown={(event) => {
-          const first = clicked.current
-          clicked.current = null
-          if (event.button !== 0 || !first) return
-          if (performance.now() - first.time < SECOND_CLICK_MS) gui.editPreviewText(first.at)
-        }}
-      />
-    )
-
   const area = drag ? rectBetween(drag.start, drag.end) : null
-  const several = state.picked.length > 1
 
   return (
     <div
@@ -223,22 +187,22 @@ export function PickOverlay() {
       onContextMenu={(event) => event.preventDefault()}
       className={cn(
         'fixed inset-0 overflow-hidden outline-none',
-        state.busy ? 'cursor-progress' : adding ? 'cursor-copy' : 'cursor-crosshair',
+        state.busy ? 'cursor-progress' : 'cursor-crosshair',
       )}
     >
       {state.picked.map((picked, i) => (
         <Outline key={picked.id} rect={picked.rect} kind="picked">
-          {several && (
-            <Counter
-              className={cn(
-                'absolute shadow-raised',
-                // Inside the corner when the element is at the view's edge, where it'd be cut off.
-                picked.rect.x < 8 || picked.rect.y < 8 ? 'top-0.5 left-0.5' : '-top-2 -left-2',
-              )}
-            >
-              {i + 1}
-            </Counter>
-          )}
+          {/* The number its marker in the message box shows */}
+          <Counter
+            data-pick-badge={i + 1}
+            className={cn(
+              'absolute shadow-raised',
+              // Inside the corner when the element is at the view's edge, where it'd be cut off.
+              picked.rect.x < 8 || picked.rect.y < 8 ? 'top-0.5 left-0.5' : '-top-2 -left-2',
+            )}
+          >
+            {i + 1}
+          </Counter>
         </Outline>
       ))}
       {state.hover && !area && (
@@ -672,9 +636,6 @@ function Hint({ shown }: { shown: boolean }) {
       </span>
       <span>
         <span className="font-medium text-fg">Double-click</span> text to edit it
-      </span>
-      <span className="flex items-center gap-1">
-        <Kbd>⇧</Kbd> to select more
       </span>
       <span className="flex items-center gap-1">
         <Kbd>Esc</Kbd> when done

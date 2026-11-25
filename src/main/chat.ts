@@ -693,6 +693,11 @@ export class ChatController extends EventEmitter<ChatEvents> {
     this.setSelection([...this.meta.selection, picked])
   }
 
+  /** The same picks in a new order, or fewer of them (the message box's markers say). */
+  arrangeSelection(selection: Picked[]) {
+    this.patchMeta({ selection })
+  }
+
   removeFromSelection(id: string) {
     const selection = this.meta.selection.filter((picked) => picked.id !== id)
     if (selection.length !== this.meta.selection.length) this.setSelection(selection)
@@ -919,8 +924,28 @@ export class ChatController extends EventEmitter<ChatEvents> {
    * it starts a turn or waits its turn, with the element picked. The message is Gui's fixed
    * words; the old and new text were read from the page, so they ride along as page data.
    */
-  sendTextEdit(edit: TextEdit): boolean {
-    return this.submit(TEXT_EDIT_PROMPT, [], [], null, edit)
+  sendTextEdit(edit: TextEdit, selection: Picked[]): boolean {
+    this.ownSelection = selection
+    try {
+      return this.submit(TEXT_EDIT_PROMPT, [], [], null, edit)
+    } finally {
+      this.ownSelection = null
+    }
+  }
+
+  /**
+   * What a message being sent now goes with: what's picked, or what a text edit picked for
+   * itself (`sendTextEdit`), which leaves the user's picks and their markers alone.
+   */
+  private ownSelection: Picked[] | null = null
+
+  private get outgoingSelection() {
+    return this.ownSelection ?? this.meta.selection
+  }
+
+  /** What's picked went with the message, as its markers went with the draft. */
+  private clearSentSelection() {
+    if (!this.ownSelection && this.meta.selection.length) this.patchMeta({ selection: [] })
   }
 
   /**
@@ -1008,7 +1033,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       const entry = this.queueEntry(text, images, recordings, followUp, textEdit)
       if (!entry) return false
       if (steer && this.steerable(entry)) {
-        this.patchMeta({ selection: [] })
+        this.clearSentSelection()
         void this.steer(entry, false)
       } else this.enqueueEntry(entry)
       return true
@@ -1237,7 +1262,8 @@ export class ChatController extends EventEmitter<ChatEvents> {
       for (let attempt = 0; attempt < STEER_ATTEMPTS && stillPrompting(); attempt++) {
         if (attempt > 0) {
           if (!queued) {
-            this.enqueueEntry(entry)
+            // Its picks left with it when it was sent; what's picked now is the next message's.
+            this.enqueueEntry(entry, false)
             this.steering.add(item.id)
             queued = true
           }
@@ -1254,7 +1280,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
     // A reset since: the chat it was for is gone, and its queue with it.
     if (!this.live(epoch)) return
     if (!injected) {
-      if (!queued) this.enqueueEntry(entry)
+      if (!queued) this.enqueueEntry(entry, false)
       // The turn may have ended while it was on its way (the queue held back for it).
       this.drainQueue()
       return
@@ -1567,7 +1593,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       followUp = null
       textEdit = null
     }
-    const picked = queued ? queued.selection : fix ? [] : this.meta.selection
+    const picked = queued ? queued.selection : fix ? [] : this.outgoingSelection
     const selection = command === 'alone' ? [] : picked
     const shown = primaryPick(selection)
     const viewport = queued?.viewport ?? this.options.viewport()
@@ -1626,7 +1652,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
     if (this.meta.retryTurnId) this.patchMeta({ retryTurnId: null })
     this.transcriptAgent ??= this.meta.agentId
     if (this.meta.archived) this.patchMeta({ archived: null })
-    if (!fix && !queued && command !== 'alone') this.patchMeta({ selection: [] })
+    if (!fix && !queued && command !== 'alone') this.clearSentSelection()
     this.flushTurn(record)
     // Auto's note under the message box was there for this first message; from now on the
     // Auto control's tooltip says it.
@@ -1668,7 +1694,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
         ? 'Inspect the attached preview recording, especially its animations.'
         : '')
     if (!prompt) return null
-    const selection = this.meta.selection
+    const selection = this.outgoingSelection
     const item: QueuedMessage = {
       id: randomUUID(),
       prompt,
@@ -1689,10 +1715,11 @@ export class ChatController extends EventEmitter<ChatEvents> {
     return { item, payload }
   }
 
-  /** Puts `entry` last in the queue. */
-  private enqueueEntry({ item, payload }: QueueEntry) {
+  /** Puts `entry` last in the queue; with `sent`, what's picked went with it. */
+  private enqueueEntry({ item, payload }: QueueEntry, sent = true) {
     this.queued.set(item.id, payload)
-    this.patchMeta({ queue: [...this.meta.queue, item], selection: [] })
+    const picked = sent && !this.ownSelection
+    this.patchMeta({ queue: [...this.meta.queue, item], ...(picked ? { selection: [] } : {}) })
   }
 
   /** Starts the next queued message, unless something holds the lock or the queue is paused. */

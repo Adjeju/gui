@@ -195,8 +195,13 @@ export class ChatPanel {
     return this.tab.resources.chat?.meta.docked ?? getPrefs().chatSidebar
   }
 
+  /**
+   * Floating, the chat is its bubble while the user picks, until there's a pick: then its
+   * message box shows, to write about it, as picking goes on.
+   */
   private get bubbled() {
-    return (this.tab.state.preview.selecting || this.tucked) && this.chatShown && !this.docked
+    const picking = this.tab.state.preview.selecting && !this.tab.resources.chat?.meta.selection.length
+    return (picking || this.tucked) && this.chatShown && !this.docked
   }
 
   /** The chat is on screen in some form, popped out included, so its turns can be seen. */
@@ -755,6 +760,25 @@ export class ChatPanel {
     }
     this.showPanel()
     if (!this.tab.host.isActive(this.tab)) return
+    this.tab.chatView.webContents.focus()
+    this.tab.sendChat(Events.chatFocus, null)
+  }
+
+  /**
+   * A pick landed: the keyboard goes to the message box, where its marker is, wherever the chat
+   * is on screen (docked, floating, popped out), and picking goes on. A chat that's hidden
+   * stays hidden; the marker is in its draft for when it's back.
+   */
+  focusAfterPick() {
+    if (!this.tab.host.isActive(this.tab)) return
+    if (this.popout) {
+      focusWindow(this.popout)
+    } else {
+      if (!this.chatShown) return
+      this.cancelCollapse()
+      this.untuck()
+      this.tab.layout()
+    }
     this.tab.chatView.webContents.focus()
     this.tab.sendChat(Events.chatFocus, null)
   }

@@ -903,6 +903,8 @@ function isRect(value: unknown): value is Rect {
 
 /** What the composer sends: it re-encodes every image, so never a GIF. */
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+/** More picks than a message could have markers for is no message box's */
+const MAX_PICK_IDS = 500
 /** The whole thumbnail, as history accepts it on load (`THUMBNAIL` in history.ts). */
 const THUMBNAIL = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/
 
@@ -1231,6 +1233,12 @@ function registerIpc() {
     return requireTab(event).restoreTurn(turnId)
   })
   handleLegacy(Invoke.redo, (event) => requireTab(event).redo())
+  handleLegacy(Invoke.arrangeSelection, (event, order: unknown, dropped: unknown) => {
+    const ids = (value: unknown) =>
+      Array.isArray(value) && value.length <= MAX_PICK_IDS && value.every(isString)
+    if (!ids(order) || !ids(dropped)) return
+    tabFor(event)?.arrangeSelection(order as string[], dropped as string[])
+  }
   handleLegacy(Invoke.fixProblems, (event) => tabFor(event)?.fixProblems() ?? false)
   handleLegacy(Invoke.fixStartup, (event) => tabFor(event)?.fixStartup() ?? false)
   handleLegacy(Invoke.setStartCommand, (event, start: unknown) =>
@@ -1480,8 +1488,8 @@ function registerIpc() {
   on(Send.toggleSelect, (tab) => void tab.toggleSelect())
   on(Send.stopSelecting, (tab) => void tab.setSelecting(false))
   on(Send.pickHover, (tab, at) => (at === null || isPoint(at)) && tab.pickHover(at))
-  on(Send.pickElement, (tab, at, add) => isPoint(at) && tab.pickElement(at, add === true))
-  on(Send.pickArea, (tab, rect, add) => isRect(rect) && tab.pickArea(rect, add === true))
+  on(Send.pickElement, (tab, at) => isPoint(at) && tab.pickElement(at))
+  on(Send.pickArea, (tab, rect) => isRect(rect) && tab.pickArea(rect))
   on(Send.editPreviewText, (tab, at) => isPoint(at) && tab.editTextAt(at))
   on(Send.pickWheel, (tab, at, dx, dy) => {
     if (isPoint(at) && isNumber(dx) && isNumber(dy)) tab.pickWheel(at, dx, dy)
@@ -1586,7 +1594,6 @@ function registerIpc() {
     void tab.pickModel(agentId, model, provider, stop === true)
   })
   on(Send.clearSelection, (tab) => tab.clearSelection())
-  on(Send.removeSelection, (tab, id) => isString(id) && tab.removeSelection(id))
   on(Send.hoverSelection, (tab, id) => (id === null || isString(id)) && tab.hoverSelection(id))
   on(Send.expandChat, (tab) => tab.expandChat())
   on(Send.togglePopOut, (tab) => tab.togglePopOut())
