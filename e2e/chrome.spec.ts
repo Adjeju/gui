@@ -51,6 +51,50 @@ function answerDevServerMenu({ Menu }: ElectronModule, label: string) {
   }
 }
 
+/** What the window drew, one entry each time it changed (`recordFrames`). */
+interface Frame {
+  /** The bar under a page still on screen (drawer.tsx `StoppedBar`) */
+  bar: boolean
+  /** The "Your app stopped" card on the canvas */
+  card: boolean
+  /** The dimmed picture of the page */
+  still: boolean
+  /** The canvas's height, which the bar takes from */
+  height: number
+}
+
+type Recorded = { guiFrames: Frame[]; guiBarInserted: boolean }
+
+/**
+ * In the window: notes what each frame shows, from now on, into `guiFrames` (a frame like the
+ * one before isn't noted again), and in `guiBarInserted` whether the bar was put in the page
+ * at all, drawn or not.
+ */
+function recordFrames() {
+  const store = window as unknown as Recorded
+  store.guiFrames = []
+  store.guiBarInserted = false
+  const barShown = () => document.body.textContent?.includes('Your app stopped with an error.')
+  new MutationObserver(() => {
+    if (barShown()) store.guiBarInserted = true
+  }).observe(document.body, { childList: true, subtree: true, characterData: true })
+  let last = ''
+  const note = () => {
+    const main = document.querySelector('main')
+    const frame: Frame = {
+      bar: !!barShown(),
+      card: !!main?.textContent?.includes('Your app stopped'),
+      still: !!document.querySelector('[data-preview-still]'),
+      height: Math.round(main?.getBoundingClientRect().height ?? 0),
+    }
+    const key = JSON.stringify(frame)
+    if (key !== last) store.guiFrames.push(frame)
+    last = key
+    requestAnimationFrame(note)
+  }
+  requestAnimationFrame(note)
+}
+
 /** Clicks a visible item of the app menu by label, as the user would in the menu bar. */
 function clickMenu(session: GuiSession, label: string) {
   return session.app.evaluate(({ Menu }, name) => {
@@ -222,6 +266,9 @@ test('logs open in the drawer from the status menu and ⌘J; a crash dims the pa
 
   // The dev server crashes: its last page stays, dimmed so it doesn't pass for live, the
   // status turns red, and instead of raw output a card over it says why, with the logs.
+  // Every frame the window draws on the way is recorded: none shows the bar that goes under a
+  // page still on screen, and the canvas keeps its size (no shift before the card).
+  await session.chrome.evaluate(recordFrames)
   killAll(devServerPids(root))
   const crashed = await waitFor(async () => {
     const state = await session.state()
@@ -235,6 +282,15 @@ test('logs open in the drawer from the status menu and ⌘J; a crash dims the pa
   const canvas = session.chrome.getByRole('main')
   await expect(canvas.getByText('Your app stopped', { exact: true })).toBeVisible()
   await expect(canvas).toContainText('terminated by signal SIGKILL')
+  const { frames, barInserted } = await session.chrome.evaluate(() => {
+    const { guiFrames, guiBarInserted } = window as unknown as Recorded
+    return { frames: guiFrames, barInserted: guiBarInserted }
+  })
+  expect(barInserted).toBe(false)
+  expect(frames.filter((frame) => frame.bar)).toEqual([])
+  expect(new Set(frames.map((frame) => frame.height)).size).toBe(1)
+  // The card comes with the picture, in the same frame.
+  expect(frames.filter((frame) => frame.card !== frame.still)).toEqual([])
   // The bar under a page that's still on screen isn't shown over the card too.
   await expect(session.chrome.getByRole('alert')).toHaveCount(0)
   await session.shot('crash-card')
