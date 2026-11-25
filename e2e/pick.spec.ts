@@ -1,6 +1,6 @@
 import { copyFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { type AgentId, CUSTOM_AGENT_PREFIX, isRegion } from '../src/shared/types'
+import { type AgentId, CUSTOM_AGENT_PREFIX, isRegion, type Picked } from '../src/shared/types'
 import { electronExecutable, waitFor } from './helpers/env'
 import type { GuiSession } from './helpers/session'
 import { expect, test } from './helpers/test'
@@ -11,7 +11,10 @@ import { expect, test } from './helpers/test'
 
 const AGENT: AgentId = `${CUSTOM_AGENT_PREFIX}Picks`
 
-/** A stand-in ACP agent that echoes the prompt's text and counts its images. No login, no usage. */
+/**
+ * A stand-in ACP agent that echoes the prompt's text and counts its images. No login, no usage.
+ * A prompt with HOLD runs until `release(session)`.
+ */
 const AGENT_SCRIPT = String.raw`
 const write = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n')
 const handle = ({ id, method, params }) => {
@@ -26,7 +29,16 @@ const handle = ({ id, method, params }) => {
     const images = params.prompt.filter((block) => block.type === 'image').length
     const content = { type: 'text', text: 'IMAGES ' + images + '\n' + text }
     write({ method: 'session/update', params: { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content } } })
-    return write({ id, result: { stopReason: 'end_turn' } })
+    const done = () => write({ id, result: { stopReason: 'end_turn' } })
+    if (!text.includes('HOLD')) return done()
+    // A held turn goes on until the test writes the release file beside this script.
+    const release = require('node:path').join(__dirname, 'release')
+    const wait = setInterval(() => {
+      if (!require('node:fs').existsSync(release)) return
+      clearInterval(wait)
+      done()
+    }, 100)
+    return
   }
   write({ id, error: { code: -32601, message: 'Method not found' } })
 }
@@ -449,3 +461,107 @@ test('a click picks at once, and its marker comes without a wait', async ({ laun
   const [only] = await selection(session)
   expect(only && !isRegion(only) ? only.tag : null).toBe('button')
 })
+
+/** Lets the stand-in's held turn (a prompt with HOLD) finish. */
+const release = (session: GuiSession) => writeFileSync(join(session.fixture.base, 'release'), 'go')
+
+/** Picks `selector` with a click on the page, then types `text` as the user would. */
+async function pickAndType(session: GuiSession, selector: string, count: number, text: string) {
+  await session.overlayGesture(centerOf(await session.viewBox(selector)))
+  await expect(markers(session)).toHaveCount(count)
+  await keyboardInChat(session)
+  await typeToFocused(session, text)
+}
+
+/** Enter in the message box, which has the keyboard after a pick. */
+async function pressEnter(session: GuiSession) {
+  await keyboardInChat(session)
+  await session.chat.locator('[data-composer]').press('Enter')
+}
+
+const tagsOf = (picks: Picked[]) => picks.map((picked) => (isRegion(picked) ? 'area' : picked.tag))
+
+for (const layout of ['docked', 'floating', 'popped-out'] as const) {
+  test(`design mode stays on through picks, sending and queueing until it's turned off (${layout} chat)`, async ({
+    launch,
+  }) => {
+    const session = await launch({
+      fixture: 'vite',
+      ...(layout === 'docked' ? { prefs: { chatSidebar: true } } : {}),
+    })
+    await useStandIn(session)
+    await session.waitForPreview()
+    const overlay = await session.pickPage()
+    if (layout === 'popped-out') {
+      await session.chat.evaluate(() => window.gui.togglePopOut())
+      await waitFor(async () => (await session.windowCount()) === 2, 'the chat in its own window')
+    }
+
+    // ⌘D (the toolbar's Design mode), a click, words, another click, more words.
+    await session.startPicking()
+    await pickAndType(session, 'h1', 1, 'make this shorter ')
+    expect(await selecting(session)).toBe(true)
+    await pickAndType(session, 'button.counter', 2, 'make it blue')
+    expect(await written(session)).toBe('1Heading make this shorter 2Button make it blue')
+    await expect(overlay.locator('[data-pick-badge]')).toHaveText(['1', '2'])
+
+    // Enter sends as always. The picks go with it, out of the message box and off the page,
+    // and design mode stays on, through the turn and after it.
+    const first = (await session.chatSnapshot()).turns.length
+    await pressEnter(session)
+    await expect(markers(session)).toHaveCount(0)
+    await expect(overlay.locator('[data-pick-badge]')).toHaveCount(0)
+    expect(await selecting(session)).toBe(true)
+    const sent = await session.waitForTurn(first)
+    expect(sent.turn.status, sent.turn.error ?? '').toBe('done')
+    expect(sent.turn.prompt).toBe('[Selection 1] make this shorter [Selection 2] make it blue')
+    expect(tagsOf(sent.turn.context)).toEqual(['h1', 'button'])
+    expect(sent.meta.selection).toEqual([])
+    expect(await selecting(session)).toBe(true)
+
+    // The page reloads (as after the agent's edit): design mode is still on, and still picks.
+    await (await session.previewPage()).reload()
+    expect(await selecting(session)).toBe(true)
+
+    // The next click starts the next message's picks at 1. A message sent with HOLD keeps
+    // the agent working.
+    await pickAndType(session, 'button.counter', 1, 'HOLD this one')
+    await expect(markers(session)).toHaveText(['1Button'])
+    const held = (await session.chatSnapshot()).turns.length
+    await pressEnter(session)
+    await waitFor(
+      async () => (await session.chatSnapshot()).turns[held]?.status === 'running',
+      'the held turn to run',
+    )
+    await expect(markers(session)).toHaveCount(0)
+    expect(await selecting(session)).toBe(true)
+
+    // While it works, Enter queues the next message, with its picks; they leave the message
+    // box and the page, and design mode stays on.
+    await pickAndType(session, 'h1', 1, 'and this one')
+    await expect(markers(session)).toHaveText(['1Heading'])
+    await pressEnter(session)
+    await waitFor(
+      async () => (await session.chatSnapshot()).meta.queue.length === 1,
+      'the message to be queued',
+    )
+    const [queued] = (await session.chatSnapshot()).meta.queue
+    expect(queued?.prompt).toBe('[Selection 1] and this one')
+    expect(tagsOf(queued?.context ?? [])).toEqual(['h1'])
+    await expect(markers(session)).toHaveCount(0)
+    await expect(overlay.locator('[data-pick-badge]')).toHaveCount(0)
+    expect(await selecting(session)).toBe(true)
+
+    // The held turn ends and the queued one runs with its pick; design mode is still on.
+    release(session)
+    await session.waitForTurn(held)
+    const ran = await session.waitForTurn(held + 1)
+    expect(ran.turn.prompt).toBe('[Selection 1] and this one')
+    expect(tagsOf(ran.turn.context)).toEqual(['h1'])
+    expect(await selecting(session)).toBe(true)
+
+    // ⌘D again turns it off.
+    await session.chrome.evaluate(() => window.gui.toggleSelect())
+    await waitFor(async () => !(await selecting(session)), 'design mode off')
+  })
+}
