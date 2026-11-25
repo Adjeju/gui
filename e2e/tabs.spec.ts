@@ -574,6 +574,7 @@ test('a card waiting in a background tab notifies once per wait, unless switched
   const toggle = settings.getByRole('switch', { name: 'Notify me when an agent is waiting for me' })
   await expect(toggle).toBeChecked()
   if (process.env.GUI_E2E_SHOTS === '1') {
+    await toggle.scrollIntoViewIfNeeded()
     await settings.screenshot({ path: test.info().outputPath('notify-setting.png') })
   }
   await toggle.click()
