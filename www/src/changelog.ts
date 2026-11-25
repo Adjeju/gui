@@ -14,6 +14,8 @@ export const releases: Release[] = [
     version: '0.1.0-alpha.31',
     date: '2026-11-25',
     changes: [
+      'Gui notifies you when an agent is waiting for your OK, or has a question, and you’re not looking at its chat. Click the notification to go to it. Settings → Agents turns it off.',
+      'Agents you run outside Gui, in your terminal or editor, can see what you picked in design mode, so “make this bigger” works from there too.',
       'When your app stops, the card that says so appears without a flash of the old bar, and a screen reader announces it.',
       'When the agent points things out on your page, its pointer glides to each one more slowly, so it’s easier to follow.',
     ],
