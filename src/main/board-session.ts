@@ -40,7 +40,6 @@ import {
 } from '../shared/board-clipboard'
 import { MAX_UNDO_BYTES } from '../shared/bounded'
 import {
-  isStyleKitId,
   kitBrand,
   kitCss,
   kitFrameHtml,
@@ -431,17 +430,20 @@ export class BoardSession extends EventEmitter<BoardSessionEvents> {
   }
 
   /** Starts an empty canvas from a kit (or clears the shipped kit files for null); never touches a file a person wrote. */
-  useKit(id: StyleKitId | null): Promise<BoardFrameLayout | null> {
+  async applyKit(id: StyleKitId | null): Promise<BoardFrameLayout | null> {
     const kit = STYLE_KITS.find((k) => k.id === id)
-    if (id !== null && (!isStyleKitId(id) || !kit)) throw new Error('Unknown style kit.')
+    if (id !== null && !kit) throw new Error('Unknown style kit.')
     return this.mutations.run(async () => {
       if (this.manifest.frames.length) throw new Error('Kits start an empty canvas.')
       const dir = join(this.root, 'assets')
       const shipped = new Set(STYLE_KITS.flatMap((k) => [kitCss(k), kitBrand(k)]))
       const found: string[] = []
-      const names = (await readdir(dir).catch(() => [] as string[])).filter(
-        (n) => n === 'brand.md' || /^kit-.*\.css$/.test(n),
-      )
+      const names = (
+        await readdir(dir).catch((error) => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [] as string[]
+          throw error
+        })
+      ).filter((n) => n === 'brand.md' || /^kit-.*\.css$/.test(n))
       for (const name of names) {
         const text = await readFile(join(dir, name), 'utf8').catch(() => null)
         if (text === null) continue
@@ -451,9 +453,8 @@ export class BoardSession extends EventEmitter<BoardSessionEvents> {
       }
       for (const name of found) await rm(join(dir, name), { force: true })
       if (!kit) return null
-      await mkdir(dir, { recursive: true })
-      await writeFile(join(dir, kitStylesheetName(kit)), kitCss(kit))
-      await writeFile(join(dir, 'brand.md'), kitBrand(kit))
+      await writeFileAtomic(join(dir, kitStylesheetName(kit)), kitCss(kit))
+      await writeFileAtomic(join(dir, 'brand.md'), kitBrand(kit))
       const frame = await this.createFrame(
         { name: `${kit.name} kit`, html: kitFrameHtml(kit), width: 1280, height: 960 },
         true,
