@@ -1,6 +1,6 @@
 import { Fragment, type Node, Slice } from 'prosemirror-model'
 import type { EditorState } from 'prosemirror-state'
-import { EditorView, type NodeView } from 'prosemirror-view'
+import { Decoration, DecorationSet, EditorView, type NodeView } from 'prosemirror-view'
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
 import { gui } from '../lib/api'
 import { cn } from '../lib/cn'
@@ -19,6 +19,18 @@ function pickNumber(id: string) {
   return numbered.ids.indexOf(id) + 1
 }
 
+/**
+ * A piece as a small tag in the sentence, here and in a sent message (turn-view.tsx): a 1px
+ * ring (it takes no room) around a box a line-height shorter than the text's, on its baseline.
+ */
+export const PIECE =
+  'inline-flex max-w-56 items-baseline gap-1 rounded-sm px-1 leading-4 text-muted select-none'
+/** A pick's ring is the page's blue: it is on the page. An image's is the neutral line. */
+export const PICK_PIECE = 'inset-ring inset-ring-accent'
+export const IMAGE_PIECE = 'inset-ring inset-ring-line-strong'
+/** A pick's number: plain digits in the blue, the name's size and weight. */
+export const PICK_NUMBER = 'shrink-0 text-accent-text tabular-nums'
+
 /** Each kind of piece as the message box draws it, redrawn when what it stands for changes. */
 const PIECE_VIEWS: Record<
   PieceKind,
@@ -36,7 +48,7 @@ const PIECE_VIEWS: Record<
       const thumbnail = document.createElement('img')
       thumbnail.src = image.thumbnail
       thumbnail.alt = ''
-      thumbnail.className = 'size-4 shrink-0 rounded-sm object-cover'
+      thumbnail.className = 'size-3 shrink-0 self-center rounded-sm object-cover'
       const name = document.createElement('span')
       name.className = 'truncate'
       name.textContent = shortName(image.name)
@@ -64,10 +76,9 @@ const PIECE_VIEWS: Record<
       const { name, detail, where } = pickLabel(picked)
       dom.title = [[name, detail].filter(Boolean).join(' '), where].filter(Boolean).join('\n')
       dom.dataset.pickNumber = number
-      // The page's badge (Counter), at the size of an image piece's thumbnail.
+      // The page's badge's number, as plain blue digits.
       const badge = document.createElement('span')
-      badge.className =
-        'flex size-4 shrink-0 items-center justify-center rounded-full bg-accent text-caption font-medium text-accent-fg tabular-nums'
+      badge.className = PICK_NUMBER
       badge.textContent = number
       const label = document.createElement('span')
       label.className = 'truncate'
@@ -88,8 +99,13 @@ function pieceView(node: Node): NodeView {
   const dom = document.createElement('span')
   dom.contentEditable = 'false'
   dom.dataset.piece = kind
-  dom.className =
-    'mx-0.5 inline-flex max-w-56 items-center gap-1 rounded-md border border-line bg-fill py-px pr-1.5 pl-0.5 align-bottom text-small leading-snug text-fg select-none'
+  // Part of the sentence: a quiet outlined tag holding the number or thumbnail and the name.
+  // Shorter than the line and drawn with a ring, so a piece never moves it; tinted while selected.
+  dom.className = cn(
+    PIECE,
+    kind === 'pick' ? PICK_PIECE : IMAGE_PIECE,
+    'data-selected:bg-(--selection)',
+  )
   const draw = () => PIECE_VIEWS[kind].draw(dom, node.attrs.id)
   draw()
   redraws.add(draw)
@@ -113,6 +129,17 @@ function pieceView(node: Node): NodeView {
       if (hovered) gui.hoverSelection(null)
     },
   }
+}
+
+/** Pieces inside a selection, marked so they show it (they take no text highlight). */
+function selectedPieces(state: EditorState) {
+  const { from, to, empty } = state.selection
+  if (empty) return null
+  const selected: Decoration[] = []
+  state.doc.nodesBetween(from, to, (node, pos) => {
+    if (isPiece(node)) selected.push(Decoration.node(pos, pos + 1, { 'data-selected': '' }))
+  })
+  return DecorationSet.create(state.doc, selected)
 }
 
 const pieceText = (node: Node) =>
@@ -250,6 +277,7 @@ export function PromptEditor({
       state: useChat.getState().draft,
       attributes: (state) => attributesRef.current(state),
       nodeViews: { piece: (node) => pieceView(node) },
+      decorations: selectedPieces,
       handleKeyDown: (_view, event) => latest.current.onKeyDown(event),
       handlePaste: (editorView, event) => {
         if (latest.current.onPaste(event)) return true

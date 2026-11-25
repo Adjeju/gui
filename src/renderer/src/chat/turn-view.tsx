@@ -48,10 +48,11 @@ import { PathText } from '../lib/path-text'
 import { Badge } from '../lib/status'
 import { Card, GroupLabel, Thumbnail } from '../lib/surface'
 import { duration } from '../lib/time'
-import { Button, Counter, IconButton, PRESS, Spinner, Toggle, withCode } from '../lib/ui'
+import { Button, IconButton, PRESS, Spinner, Toggle, withCode } from '../lib/ui'
 import { shortName } from './images'
 import { Markdown } from './markdown'
 import { pickLabel, pickName } from './picks'
+import { IMAGE_PIECE, PICK_NUMBER, PICK_PIECE, PIECE } from './prompt-editor'
 import { RecordingClip } from './recording-clip'
 import { focusComposer, setFollowUp, useChat, waitingCard } from './store'
 import { isNewRow, markSeen } from './transitions'
@@ -240,10 +241,6 @@ function UserMessage({ turn }: { turn: Turn }) {
 
 type SteerItem = Extract<TurnItem, { kind: 'steer' }>
 
-/** How a label for an image or a pick shows in a sent message: as the message box drew it. */
-const REF_CHIP =
-  'mx-0.5 inline-flex max-w-56 items-center gap-1 rounded-md border border-line bg-raised py-px pr-1.5 pl-0.5 align-bottom text-small leading-snug'
-
 /**
  * A sent (or queued) message, each label in it shown as what it names: an image as that
  * image, a pick as its marker (its number, as the page showed it, and its name).
@@ -271,8 +268,17 @@ export function PromptText({
     const picked = part.kind === 'pick' ? picks?.[part.n - 1] : undefined
     if (image)
       nodes.push(
-        <span key={at} title={image.name} data-image-ref={part.n} className={REF_CHIP}>
-          <img src={image.thumbnail} alt="" className="size-4 shrink-0 rounded-sm object-cover" />
+        <span
+          key={at}
+          title={image.name}
+          data-image-ref={part.n}
+          className={cn(PIECE, IMAGE_PIECE)}
+        >
+          <img
+            src={image.thumbnail}
+            alt=""
+            className="size-3 shrink-0 self-center rounded-sm object-cover"
+          />
           <span className="truncate">{shortName(image.name)}</span>
         </span>,
       )
@@ -283,9 +289,9 @@ export function PromptText({
           key={at}
           title={[[name, detail].filter(Boolean).join(' '), where].filter(Boolean).join('\n')}
           data-pick-ref={part.n}
-          className={REF_CHIP}
+          className={cn(PIECE, PICK_PIECE)}
         >
-          <Counter>{part.n}</Counter>
+          <span className={PICK_NUMBER}>{part.n}</span>
           <span className="truncate">{pickName(picked)}</span>
         </span>,
       )
