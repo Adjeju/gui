@@ -30,7 +30,20 @@ export type Located =
     }
   | { ok: false; reason: string }
 
-const SKIPPED_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'out'])
+const SKIPPED_DIRS = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.next',
+  'out',
+  '.svelte-kit',
+  '.nuxt',
+  '.output',
+  '.vercel',
+  '.turbo',
+  'coverage',
+])
 
 async function cssFiles(root: string, limit: number) {
   const found: string[] = []
@@ -360,7 +373,8 @@ export async function writeThemeEdits(
       temps.push({ tmp, file })
       await chmod(tmp, (await stat(file)).mode & 0o7777)
     }
-    // shortcut: a rename failing midway leaves earlier files written; Keep's checkpoint can undo it.
+    // shortcut: a rename failing midway leaves earlier files written with no turn recorded, so
+    // no Undo, upgrade to putting the originals back if Keep often writes several files.
     while (temps.length) {
       const { tmp, file } = temps[0]
       await rename(tmp, file)
