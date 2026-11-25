@@ -186,6 +186,18 @@ export function panelRows(
   })
 }
 
+/** Arrow keys nudge a size's number by this (Shift: ten times), in its own unit. */
+const NUDGE: Record<string, number> = { rem: 0.125, em: 0.125 }
+const NUMBER_UNIT = /^(-?\d*\.?\d+)([a-z%]*)$/
+
+/** A size `text` nudged one step up (1) or down (-1), ten with `big`; null when it isn't a size. */
+export function nudgeSize(text: string, direction: 1 | -1, big: boolean): string | null {
+  const size = NUMBER_UNIT.exec(text.trim())
+  if (!size) return null
+  const step = (NUDGE[size[2]] ?? 1) * (big ? 10 : 1)
+  return `${Number((Number(size[1]) + direction * step).toFixed(3))}${size[2]}`
+}
+
 const MAX_VALUE = 500
 
 export function safeName(name: string): boolean {

@@ -1,13 +1,12 @@
+import { useEffect, useRef, useState } from 'react'
 import { formatColor, parseColor, toHex } from '../../../shared/theme-color'
+import { nudgeSize } from '../../../shared/theme-tokens'
 import { Input } from '../lib/field'
-
-/** Arrow keys nudge a size's number by this (Shift: ten times), in its own unit. */
-const NUDGE: Record<string, number> = { rem: 0.125, em: 0.125 }
-const SIZE = /^(-?\d*\.?\d+)([a-z%]*)$/
 
 /**
  * A value as text, sent on Enter or when the field is left. Sizes nudge with the arrow keys.
- * Uncontrolled, keyed by its value: a new value from main starts it over.
+ * It stays mounted, so the keyboard stays in it, and takes a new value from main only while
+ * it isn't being typed in.
  */
 export function TextField({
   value,
@@ -18,27 +17,36 @@ export function TextField({
   label: string
   onChange: (value: string) => void
 }) {
+  const [draft, setDraft] = useState(value)
+  const focused = useRef(false)
+  useEffect(() => {
+    if (!focused.current) setDraft(value)
+  }, [value])
   const commit = (text: string) => {
-    if (text.trim() && text !== value) onChange(text.trim())
+    if (text.trim() && text.trim() !== value) onChange(text.trim())
   }
   return (
     <Input
-      key={value}
       mono
       aria-label={label}
       spellCheck={false}
-      defaultValue={value}
-      onBlur={(event) => commit(event.currentTarget.value)}
+      value={draft}
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onFocus={() => {
+        focused.current = true
+      }}
+      onBlur={() => {
+        focused.current = false
+        commit(draft)
+      }}
       onKeyDown={(event) => {
-        const input = event.currentTarget
-        if (event.key === 'Enter') return commit(input.value)
+        if (event.key === 'Enter') return commit(draft)
         if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
-        const size = SIZE.exec(input.value.trim())
-        if (!size) return
+        const nudged = nudgeSize(draft, event.key === 'ArrowUp' ? 1 : -1, event.shiftKey)
+        if (nudged === null) return
         event.preventDefault()
-        const step = (NUDGE[size[2]] ?? 1) * (event.shiftKey ? 10 : 1)
-        const next = Number(size[1]) + (event.key === 'ArrowUp' ? step : -step)
-        onChange(`${Number(next.toFixed(3))}${size[2]}`)
+        setDraft(nudged)
+        onChange(nudged)
       }}
     />
   )

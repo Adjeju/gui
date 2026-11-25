@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { panelRows, type ThemeSnapshot, type ThemeVariable } from '../src/shared/theme-tokens'
+import {
+  nudgeSize,
+  panelRows,
+  type ThemeSnapshot,
+  type ThemeVariable,
+} from '../src/shared/theme-tokens'
 
 const v = (
   name: string,
@@ -59,4 +64,14 @@ test('a search keeps only the rows and scales that match, in any case', () => {
 test('a locked variable keeps its reason', () => {
   const row = panelRows(SNAPSHOT, 'brand')[0].rows[0]
   expect(row.kind === 'var' && row.variable.locked).toBe('Defined in node_modules')
+})
+
+test('arrow keys nudge a size in its own unit, and leave anything else alone', () => {
+  expect(nudgeSize('4px', 1, false)).toBe('5px')
+  expect(nudgeSize('4px', -1, true)).toBe('-6px')
+  expect(nudgeSize('1rem', 1, false)).toBe('1.125rem')
+  expect(nudgeSize(' 0.5em ', -1, false)).toBe('0.375em')
+  expect(nudgeSize('0', 1, false)).toBe('1')
+  expect(nudgeSize('calc(1px + 2px)', 1, false)).toBeNull()
+  expect(nudgeSize('Inter, sans-serif', 1, false)).toBeNull()
 })
