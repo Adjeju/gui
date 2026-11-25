@@ -272,7 +272,7 @@ test('a press in the page hides a floating chat not in use to its bubble', async
 const AGENT: AgentId = `${CUSTOM_AGENT_PREFIX}Bubble`
 /** Works until it's stopped. */
 const WORK = 'SCENARIO=work Keep working'
-/** Asks a question Auto mode leaves to the user, then ends. */
+/** Asks to run a command, which Ask mode leaves to the user, then ends. */
 const ASK = 'SCENARIO=ask Clean the build folder'
 
 const AGENT_SCRIPT = String.raw`
@@ -294,7 +294,6 @@ const prompt = async ({ sessionId, prompt }) => {
   if (/SCENARIO=ask/.test(text)) {
     const toolCall = { toolCallId: 'clean-1', title: 'rm -rf build', kind: 'execute', status: 'pending' }
     write({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'tool_call', ...toolCall } } })
-    // Leading with No flags it, so Gui asks the user even in Auto mode.
     const options = [
       { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
       { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
@@ -348,7 +347,7 @@ process.stdin.on('data', (chunk) => {
 })
 `
 
-/** Adds the stand-in to agents.json, waits for Gui to list it, and selects it. */
+/** Adds the stand-in to agents.json, waits for Gui to list it, selects it, and turns on Ask mode. */
 async function useStandIn(session: GuiSession) {
   const script = join(session.fixture.base, 'bubble-agent.cjs')
   writeFileSync(script, AGENT_SCRIPT)
@@ -363,6 +362,10 @@ async function useStandIn(session: GuiSession) {
   await session.chrome.evaluate((id) => window.gui.setAgent(id), AGENT)
   const selected = async () => (await session.chatSnapshot()).meta.agentId === AGENT
   await waitFor(selected, 'the stand-in agent to be selected')
+  // Auto mode allows every permission request, so Ask mode brings the question to the user.
+  await session.chat.evaluate(() => window.gui.setAutoApprove(false))
+  const asks = async () => !(await session.chatSnapshot()).meta.autoApprove
+  await waitFor(asks, 'Ask mode')
 }
 
 const send = (chat: Page, text: string) =>
