@@ -135,6 +135,8 @@ interface ChatEvents {
   turnEnd: [turn: Turn]
   /** A turn that asked the agent to get the app running has ended (after `turnEnd`) */
   startupFixEnd: [turn: Turn]
+  /** The project's files were changed here: an agent turn, a write of the user's own, an undo or a redo */
+  filesChanged: []
 }
 
 export interface ChatOptions {
@@ -1027,6 +1029,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       this.redoPoint = null
       this.patchMeta({ redoTurnIds: [] })
       this.flushTurn(record)
+      this.emit('filesChanged')
       return true
     } finally {
       slot.release()
@@ -1464,6 +1467,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       this.noteLeftAlone(record, 'Undo', alone)
       // The layout the turns left (their last checkpoint), back to how it was before them.
       await this.restoreLayout(baseline?.sha ?? latest, before)
+      if (this.live(epoch)) this.emit('filesChanged')
     } finally {
       if (this.lock === token) this.lock = null
       // Messages sent while it ran waited for the files to settle.
@@ -1544,6 +1548,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       this.redoPoint = null
       this.patchMeta({ redoTurnIds: [] })
       this.schedulePersist()
+      this.emit('filesChanged')
     } finally {
       if (this.lock === token) this.lock = null
       this.drainQueue()
@@ -2034,6 +2039,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       if (live()) {
         if (this.meta.status === 'working') this.patchMeta({ status: 'ready' })
         this.emit('turnEnd', record.turn)
+        if (status === 'done' && record.turn.changes?.length) this.emit('filesChanged')
         if (record.fix === 'startup') this.emit('startupFixEnd', record.turn)
         // Settled (lock released, after snapshot taken), so the next message can start. Stop,
         // an error, a declined trust prompt, or a turn the agent refused or cut short holds

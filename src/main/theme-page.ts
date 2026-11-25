@@ -44,6 +44,8 @@ export const READ_THEME = `(() => {
     for (const m of text.matchAll(/hsla?\\(\\s*var\\(\\s*(--[A-Za-z0-9_-]+)/g)) hsl.add(m[1])
   }
   for (const sheet of document.styleSheets) {
+    // Gui's own preview style isn't the project's theme.
+    if (sheet.ownerNode?.id === '${STYLE_ID}') continue
     let list
     try { list = sheet.cssRules } catch { continue }
     const href = typeof sheet.href === 'string' ? sheet.href : null
@@ -251,7 +253,12 @@ export function snapshotFrom(
       kind: variableKind(resolvedIn.default, hslUsed.has(name), name),
       values,
       resolved: resolvedIn,
-      refersTo: referenceOf(own.default ?? Object.values(own)[0]),
+      refersTo: Object.fromEntries(
+        modes.map((m) => {
+          const value = own[m.id] ?? own.default
+          return [m.id, value === undefined ? null : referenceOf(value)]
+        }),
+      ),
       uses: uses[name] ?? 0,
       locked: locks.get(name) ?? null,
     }

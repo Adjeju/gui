@@ -17,7 +17,7 @@ const v = (
     kind,
     values: { default: value },
     resolved: { default: value },
-    refersTo: null,
+    refersTo: {},
     uses: 1,
     locked,
   }) satisfies ThemeVariable

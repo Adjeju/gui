@@ -240,9 +240,12 @@ function VariableRow({
   editing: Editing | null
   onEdit: (editing: Editing | null) => void
 }) {
-  // Editing a reference edits what it refers to, so the chain of tokens stays.
-  const target =
-    (variable.refersTo && snapshot.variables.find((v) => v.name === variable.refersTo)) || variable
+  // Editing a reference edits what it refers to in that mode, so the chain of tokens stays.
+  const targetIn = (mode: string) => {
+    const name = variable.refersTo[mode]
+    return (name && snapshot.variables.find((v) => v.name === name)) || variable
+  }
+  const target = editing ? targetIn(editing.mode) : variable
   const shown = (v: ThemeVariable, mode: string) => pendingOf(v.name, mode) ?? v.values[mode]
   const modes = snapshot.modes
   return (
@@ -267,7 +270,7 @@ function VariableRow({
               onEdit(
                 editing?.mode === mode.id
                   ? null
-                  : { row: variable.name, name: target.name, mode: mode.id },
+                  : { row: variable.name, name: targetIn(mode.id).name, mode: mode.id },
               )
             }
           />
@@ -311,8 +314,9 @@ function ValueCell({
   onClick: () => void
 }) {
   const inherited = value === null
-  const text = variable.refersTo ? `→ ${variable.refersTo}` : (value ?? variable.resolved[mode.id])
-  const font = variable.kind === 'font' && !variable.refersTo
+  const reference = variable.refersTo[mode.id]
+  const text = reference ? `→ ${reference}` : (value ?? variable.resolved[mode.id])
+  const font = variable.kind === 'font' && !reference
   return (
     <button
       type="button"
@@ -441,7 +445,7 @@ function swatchOf(
   for (let hop = 0; current && hop < MAX_HOPS; hop++) {
     const edited = pendingOf(current.name, mode)
     if (edited !== null) return cssColor(edited)
-    const next: string | null = current.refersTo
+    const next: string | null = current.refersTo[mode]
     current = next ? snapshot.variables.find((v) => v.name === next) : undefined
   }
   return cssColor(variable.resolved[mode])

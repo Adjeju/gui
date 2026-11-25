@@ -135,7 +135,8 @@ export class DesignTokens {
 
   /**
    * Writes every pending edit into the project's CSS, or none, as one undoable turn of
-   * `chat`. The preview style stays until the page loads the new values (`loaded`).
+   * `chat`. The kept edits' preview stays until the theme is read again over the new values
+   * (`loaded`, after the chat's `filesChanged`).
    */
   async keep(chat: KeepChat): Promise<Kept> {
     const snapshot = this.snapshot

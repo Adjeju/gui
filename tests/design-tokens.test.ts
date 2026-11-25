@@ -60,10 +60,33 @@ test('modes come from the selectors; a mode without its own value inherits the d
   expect(muted?.values.dark).toBeNull()
   expect(muted?.resolved.dark).toBe('#64748b')
   const primary = snapshot.variables.find((v) => v.name === '--primary')
-  expect(primary?.refersTo).toBe('--brand')
+  expect(primary?.refersTo).toEqual({ default: '--brand', dark: '--brand' })
   expect(primary?.resolved).toEqual({ default: '#2563eb', dark: '#60a5fa' })
   expect(primary?.kind).toBe('color')
   expect(snapshot.variables.find((v) => v.name === '--brand')?.uses).toBe(3)
+})
+
+test('a reference is worked out per mode, so an edit lands on the variable that mode uses', () => {
+  const snapshot = snapshotFrom(
+    [
+      decl(':root', '--blue-600', '#2563eb'),
+      decl(':root', '--blue-400', '#60a5fa'),
+      decl(':root', '--primary', 'var(--blue-600)'),
+      decl('.dark', '--primary', 'var(--blue-400)'),
+      decl(':root', '--accent', 'var(--blue-600)'),
+      decl('.dark', '--accent', '#f00'),
+    ],
+    {},
+    {},
+    new Set(),
+    new Map(),
+  )
+  const find = (name: string) => snapshot.variables.find((v) => v.name === name)
+  expect(find('--primary')?.refersTo).toEqual({ default: '--blue-600', dark: '--blue-400' })
+  expect(find('--primary')?.resolved).toEqual({ default: '#2563eb', dark: '#60a5fa' })
+  // A literal in dark is edited in place, not through the default's reference.
+  expect(find('--accent')?.refersTo).toEqual({ default: '--blue-600', dark: null })
+  expect(find('--blue-600')?.refersTo).toEqual({ default: null, dark: null })
 })
 
 test("a reference cycle falls back to the page's computed value", () => {

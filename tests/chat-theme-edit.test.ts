@@ -10,6 +10,7 @@ test('keeping theme changes is one turn of the chat, with Undo', async () => {
   ])
   expect(result.stdout).toContain('Keep records one turn passed.')
   expect(result.stdout).toContain('Undo restores the CSS passed.')
+  expect(result.stdout).toContain('Redo brings it back and reads the theme again passed.')
   expect(result.stdout).toContain('A refused write records nothing passed.')
   expect(result.stdout).toContain('A running turn refuses Keep passed.')
   expect(result.stderr).toBe('')

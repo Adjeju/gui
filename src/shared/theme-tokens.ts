@@ -29,7 +29,8 @@ export interface ThemeVariable {
   kind: ThemeKind
   values: Record<string, string | null>
   resolved: Record<string, string>
-  refersTo: string | null
+  /** Mode id → the variable its own (or inherited default) value is a bare `var()` of */
+  refersTo: Record<string, string | null>
   uses: number
   locked: string | null
 }

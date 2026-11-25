@@ -131,7 +131,11 @@ async function open() {
 try {
   {
     const tab = await open()
+    // Each reads the theme again, so the preview shows what the files now say.
+    let changed = 0
+    tab.chat.on('filesChanged', () => changed++)
     assert.equal(await tab.chat.writeThemeEdits(EDITS, tab.write), true)
+    assert.equal(changed, 1)
     const turns = tab.chat.snapshot().turns
     assert.equal(turns.length, 1)
     const [turn] = turns
@@ -148,13 +152,22 @@ try {
     await tab.chat.restoreTurn(turn.id)
     assert.equal(await tab.css(), CSS)
     assert.equal(tab.chat.snapshot().turns[0]?.reverted, true)
+    assert.equal(changed, 2)
     console.log('Undo restores the CSS passed.')
+
+    await tab.chat.redo()
+    assert.match(await tab.css(), /--brand: #7c3aed;/)
+    assert.equal(changed, 3)
+    console.log('Redo brings it back and reads the theme again passed.')
     await tab.close()
   }
 
   {
     const tab = await open()
+    let changed = 0
+    tab.chat.on('filesChanged', () => changed++)
     assert.equal(await tab.chat.writeThemeEdits(EDITS, async () => false), false)
+    assert.equal(changed, 0)
     assert.equal(tab.chat.snapshot().turns.length, 0)
     console.log('A refused write records nothing passed.')
     await tab.close()

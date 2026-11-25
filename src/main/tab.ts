@@ -1811,6 +1811,19 @@ export class ProjectTab implements ChatPanelOwner {
       this.panel.onAttention()
       this.host.tabChanged(this, false)
     })
+    chat.on('filesChanged', () => {
+      // Hot reload fires no load event: once it has applied a turn's, Keep's, Undo's or Redo's
+      // changes, read the theme again, and while the popover is open put the edits still
+      // pending back over the new CSS (the kept ones' preview goes).
+      const resources = this.resources
+      const generation = resources.generation
+      const tokens = resources.chat === chat ? resources.designTokens : null
+      if (!tokens) return
+      setTimeout(() => {
+        if (resources.stillCurrent(generation) && resources.designTokens === tokens)
+          void tokens.loaded().catch(() => undefined)
+      }, REHIGHLIGHT_DELAY_MS)
+    })
     chat.on('turnEnd', (turn) => {
       // The reply stays in view until the user goes back to their app.
       this.panel.showConversation()
@@ -1826,17 +1839,6 @@ export class ProjectTab implements ChatPanelOwner {
       this.lingerGuide()
       // The agent may have just set the project up; it's left alone while it works.
       if (this.appWatcher) void this.checkForApp()
-      // Hot reload fires no load event: once it has applied the turn's changes, read the theme
-      // again, and while the popover is open put its preview back over the new CSS.
-      const resources = this.resources
-      const generation = resources.generation
-      const tokens = resources.chat === chat ? resources.designTokens : null
-      if (turn.status === 'done' && tokens && turn.changes?.length) {
-        setTimeout(() => {
-          if (resources.stillCurrent(generation) && resources.designTokens === tokens)
-            void tokens.loaded().catch(() => undefined)
-        }, REHIGHLIGHT_DELAY_MS)
-      }
       const shown = primaryPick(turn.context)
       if (turn.status === 'done' && shown && turn.changes?.length) {
         const selector = isRegion(shown) ? undefined : shown.selector
@@ -2537,7 +2539,7 @@ export class ProjectTab implements ChatPanelOwner {
       this.keepKeyboard()
       this.keyboardBeforeLoad = null
       this.patchPreview({ loading: false })
-      // A full load; a hot reload fires none, so a turn's changes read it again (turnEnd).
+      // A full load; a hot reload fires none, so changed files read it again (filesChanged).
       if (!this.loadFailed && wc.getURL() !== 'about:blank')
         void this.resources.designTokens?.loaded().catch(() => undefined)
       // The open frame's page loaded: it didn't hang the preview on its way in.

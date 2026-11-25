@@ -10,7 +10,7 @@ const variable = (name: string, light: string, dark: string | null = null): Them
   kind: 'color',
   values: { light, dark },
   resolved: { light },
-  refersTo: null,
+  refersTo: {},
   uses: 0,
   locked: null,
 })

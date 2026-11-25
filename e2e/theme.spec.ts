@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
+import { READ_THEME } from '../src/main/theme-page'
 import type { ThemePanelState } from '../src/shared/types'
 import { waitFor } from './helpers/env'
 import type { GuiSession } from './helpers/session'
@@ -84,6 +85,14 @@ test('the Theme popover edits a variable live, cancels, keeps with Undo, and the
   await popover.evaluate((e) => window.gui.themePreview(e), edit)
   await waitFor(async () => (await background()) === 'rgb(124, 58, 237)', 'the live preview')
   expect(readFileSync(css, 'utf8')).toBe(original)
+  // Reading the theme again doesn't take Gui's own preview style for the project's.
+  const reread = (await (await session.previewPage()).evaluate(READ_THEME)) as {
+    declarations: { name: string; value: string }[]
+  }
+  expect(reread.declarations.filter((d) => d.name === '--brand-bg').map((d) => d.value)).toEqual([
+    '#e2e8f0',
+    '#1e293b',
+  ])
 
   // Cancel puts the page back.
   await popover.evaluate(() => window.gui.themeCancel())
@@ -114,6 +123,18 @@ test('the Theme popover edits a variable live, cancels, keeps with Undo, and the
   await line.getByRole('button', { name: 'Undo' }).click()
   await waitFor(() => readFileSync(css, 'utf8') === original, 'the theme change to be undone')
   await expect(line).toContainText('Undone')
+  // The page shows it undone too: the kept edit's preview went once the theme was read again.
+  await waitFor(async () => (await background()) === 'rgb(226, 232, 240)', 'the undo in the page')
+  await themeWhere(
+    (state) =>
+      state.snapshot?.variables.find((v) => v.name === '--brand-bg')?.values.default === '#e2e8f0',
+    'the theme read again after Undo',
+  )
+
+  // Dark mode shows the page as its own toggle would.
+  await popover.evaluate(() => window.gui.themeMode('dark'))
+  await waitFor(async () => (await background()) === 'rgb(30, 41, 59)', 'the dark mode')
+  await popover.evaluate(() => window.gui.themeMode(null))
 
   // An agent outside Gui reads the same theme.
   await session.chrome.evaluate(() => window.gui.openSettings('agents'))
