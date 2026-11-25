@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Page } from '@playwright/test'
+import type { Locator, Page, TestInfo } from '@playwright/test'
 import { type AgentId, CUSTOM_AGENT_PREFIX, type TurnItem } from '../src/shared/types'
 import { electronExecutable, waitFor } from './helpers/env'
 import type { GuiSession } from './helpers/session'
@@ -17,6 +17,8 @@ const AGENT: AgentId = `${CUSTOM_AGENT_PREFIX}Approvals`
 const BASIC = 'SCENARIO=basic Run the tests, then edit a file outside the project'
 /** Asks what Auto mode answers itself, and the two it still puts to the user. */
 const CAREFUL = 'SCENARIO=careful Look around and tidy up'
+/** Asks to run four commands, one after the other. */
+const MANY = 'SCENARIO=many Build, lint, test and deploy'
 /** Asks a question of its own (an elicitation form), as Claude's AskUserQuestion does. */
 const ASK = 'SCENARIO=question Tidy up the dev pages'
 
@@ -37,6 +39,11 @@ const SCENARIOS = {
     { toolCallId: 'run-1', title: 'npm test', kind: 'execute' },
     { toolCallId: 'edit-1', title: 'Edit ' + outside, kind: 'edit', locations: [{ path: outside }] },
   ],
+  many: ['build', 'lint', 'test', 'deploy'].map((name, index) => ({
+    toolCallId: 'run-' + (index + 1),
+    title: 'npm run ' + name,
+    kind: 'execute',
+  })),
   careful: [
     // The user decides these: a plan approval, and a request with no way to allow it once.
     { toolCallId: 'plan-1', title: 'Ready to code?', kind: 'switch_mode' },
@@ -413,6 +420,83 @@ test('Auto mode is on per project; off, it asks; on, it answers even outside edi
   await autoModeIs(session, false)
   await expect(autoChip(other)).toHaveAttribute('aria-pressed', 'true')
   expect(await autoApprove(other)).toBe(true)
+})
+
+/** The hint under a card that offers Auto, by its button. */
+const autoHint = (card: Locator) => card.getByRole('button', { name: 'Turn on Auto' })
+
+/** With GUI_E2E_SHOTS=1, an element's screenshot at twice its size, beside the test's output. */
+async function elementShot(element: Locator, testInfo: TestInfo, name: string) {
+  if (process.env.GUI_E2E_SHOTS !== '1') return
+  const page = element.page()
+  const cdp = await page.context().newCDPSession(page)
+  const size = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    ...size,
+    deviceScaleFactor: 2,
+    mobile: false,
+  })
+  try {
+    await element.screenshot({ path: testInfo.outputPath(`${name}.png`), animations: 'disabled' })
+  } finally {
+    await cdp.send('Emulation.clearDeviceMetricsOverride')
+    await cdp.detach()
+  }
+}
+
+test('after two requests answered by hand in Ask, the third card offers to turn on Auto', async ({
+  launch,
+}, testInfo) => {
+  const session = await launch({ fixture: 'vite' })
+  await session.declineConsentDialogs()
+  const agent = await useAgent(session)
+  const { chat } = session
+  await chat.evaluate(() => window.gui.setAutoApprove(false))
+  await autoModeIs(session, false)
+
+  expect(await send(chat, MANY)).toBe(true)
+  const cardOf = ({ card }: OpenCard) => chat.locator(`section[data-permission="${card.id}"]`)
+  // The first two: no hint. The user answers each (⌘↩ still answers the card).
+  const first = await openCard(session, 0, 'execute')
+  await expect(cardOf(first).getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
+  await expect(autoHint(cardOf(first))).toHaveCount(0)
+  await elementShot(cardOf(first), testInfo, 'card')
+  await chat.getByRole('textbox', { name: /^Message / }).press('Meta+Enter')
+  await waitFor(async () => (await cardsOf(session, 0)).length === 2, 'the second card')
+  const second = await openCard(session, 0, 'execute')
+  await expect(cardOf(second).getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
+  await expect(autoHint(cardOf(second))).toHaveCount(0)
+  await answer(session, second, 'allow')
+
+  // The third: one quiet line under the buttons, with the shortcut.
+  const third = await openCard(session, 0, 'execute')
+  const hint = autoHint(cardOf(third))
+  await expect(hint).toBeVisible()
+  await expect(hint).toHaveAttribute('aria-keyshortcuts', 'Shift+Meta+A')
+  const allow = cardOf(third).getByRole('button', { name: 'Allow', exact: true })
+  const below = async () =>
+    ((await hint.boundingBox())?.y ?? 0) > ((await allow.boundingBox())?.y ?? Infinity)
+  expect(await below()).toBe(true)
+  await elementShot(cardOf(third), testInfo, 'card-hint')
+  await chat.emulateMedia({ colorScheme: 'dark' })
+  await elementShot(cardOf(third), testInfo, 'card-hint-dark')
+  await chat.emulateMedia({ colorScheme: 'light' })
+
+  // Clicking it turns Auto on for the project, as the shield does: Gui answers the card it's
+  // on and the request after it, and the turn carries on.
+  await hint.click()
+  await autoModeIs(session, true)
+  await expect(autoChip(chat)).toHaveAttribute('aria-pressed', 'true')
+  const done = await session.waitForTurn(0)
+  expect(done.turn.status).toBe('done')
+  expect(cardsIn(done.turn.items).map(shown)).toEqual([
+    { toolKind: 'execute', resolved: 'allow' },
+    { toolKind: 'execute', resolved: 'allow' },
+    { toolKind: 'execute', resolved: 'allow' },
+  ])
+  expect(agent.outcomes(0)).toEqual(
+    ['run-1', 'run-2', 'run-3', 'run-4'].map((id) => chose(0, id, 'allow')),
+  )
 })
 
 test('Auto mode answers flagged requests, outside reads and sensitive edits, but not a plan', async ({

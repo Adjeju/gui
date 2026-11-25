@@ -1,6 +1,12 @@
 import { type ReactNode, useEffect, useLayoutEffect, useState } from 'react'
+import { offersAuto } from '../../../shared/auto-answer'
 import { imageRef, messageRefParts, pickRef } from '../../../shared/image-refs'
-import type { ShortcutId } from '../../../shared/shortcuts'
+import {
+  ariaShortcut,
+  type ShortcutId,
+  shortcutText,
+  withShortcut,
+} from '../../../shared/shortcuts'
 import {
   type EditDiff,
   isRegion,
@@ -48,7 +54,7 @@ import { PathText } from '../lib/path-text'
 import { Badge } from '../lib/status'
 import { Card, GroupLabel, Thumbnail } from '../lib/surface'
 import { duration } from '../lib/time'
-import { Button, IconButton, PRESS, Spinner, Toggle, withCode } from '../lib/ui'
+import { Button, IconButton, Kbd, PRESS, Spinner, TextButton, Toggle, withCode } from '../lib/ui'
 import { shortName } from './images'
 import { Markdown } from './markdown'
 import { pickLabel, pickName } from './picks'
@@ -570,7 +576,15 @@ function BlockView({
       return <Plan id={block.id} entries={block.entries} />
     case 'permission': {
       const asker = block.subagent ? subagentOf(items, block.subagent) : null
-      return <Permission item={block} turnId={turnId} live={live} asker={asker?.title ?? null} />
+      return (
+        <Permission
+          item={block}
+          turnId={turnId}
+          live={live}
+          asker={asker?.title ?? null}
+          offerAuto={offersAuto(items, block.id)}
+        />
+      )
     }
     case 'subagent':
       return <SubagentGroup item={block} items={items} turnId={turnId} live={live} />
@@ -1114,15 +1128,20 @@ function Permission({
   turnId,
   live,
   asker,
+  offerAuto,
 }: {
   item: PermissionItem
   turnId: string
   live: boolean
   /** The subagent asking, by name; null for the agent itself */
   asker: string | null
+  /** Enough of the turn's requests were answered by hand to offer Auto (`offersAuto`) */
+  offerAuto: boolean
 }) {
   // ⌘↩ and ⌘⌫ answer the card waiting longest, which shows them.
   const keyed = useChat((s) => waitingCard(s.turns)?.item.id === item.id)
+  // In Ask, where Gui can switch it (not an agent deciding by its own settings).
+  const asking = useChat((s) => !!s.meta && !s.meta.autoApprove && !s.meta.ownPermissions)
   // History saved before these fields existed lacks them.
   const toolKind = item.toolKind ?? 'other'
   const locations = item.locations ?? []
@@ -1220,7 +1239,31 @@ function Permission({
           </div>
         </div>
       )}
+      {!asked && offerAuto && asking && <AutoHint />}
     </Card>
+  )
+}
+
+/**
+ * Under a card, once a turn has asked a few times in Ask: Auto would stop the asking. Gui's
+ * own words and button, beside nothing of the agent's, and only the user's click turns Auto
+ * on (as the shield does); the card it's on is then answered as Auto would.
+ */
+function AutoHint() {
+  return (
+    <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-small text-muted">
+      <TextButton
+        title={withShortcut('Turn on Auto', 'autoMode')}
+        aria-keyshortcuts={ariaShortcut('autoMode')}
+        onClick={() => gui.setAutoApprove(true)}
+      >
+        Turn on Auto
+      </TextButton>
+      <span>to stop being asked</span>
+      <Kbd aria-hidden="true" className="ml-1">
+        {shortcutText('autoMode')}
+      </Kbd>
+    </p>
   )
 }
 
