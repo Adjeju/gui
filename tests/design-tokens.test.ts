@@ -175,6 +175,30 @@ test('showing a mode the app takes back marks it as set by the app', async () =>
   expect(changes.at(-1)).toEqual(['dark'])
 })
 
+test('a media mode is emulated while shown and not after the opening closes', async () => {
+  const read = {
+    ...READ,
+    declarations: [
+      decl(':root', '--brand', '#2563eb'),
+      decl(':root', '--brand', '#60a5fa', '(prefers-color-scheme: dark)'),
+    ],
+  }
+  const { tokens, sent } = preview(read)
+  await tokens.loaded()
+  tokens.open = true
+  await tokens.preview({ name: '--brand', mode: 'dark', value: '#7c3aed' })
+  expect(sent.at(-1)).toContain(
+    '@media (prefers-color-scheme: dark) { :root { --brand: #7c3aed !important; } }',
+  )
+  sent.length = 0
+  await tokens.showMode('dark')
+  expect(sent).toContain('Emulation.setEmulatedMedia')
+  sent.length = 0
+  tokens.dispose()
+  await wait(0)
+  expect(sent).toEqual(['Emulation.setEmulatedMedia'])
+})
+
 test('a variable declared in two files is locked with the reason', async () => {
   dir = await mkdtemp(join(tmpdir(), 'gui-design-tokens-'))
   await writeFile(join(dir, 'a.css'), ':root { --brand: #2563eb; }')

@@ -125,24 +125,21 @@ export class DesignTokens {
   async showMode(id: string | null) {
     const mode = id === null ? null : this.snapshot?.modes.find((m) => m.id === id)
     if (mode === undefined) throw new Error('Unknown theme mode')
+    if (mode && !this.live()) return
     this.shown = id
     if (this.modeCheck) clearTimeout(this.modeCheck)
     this.modeCheck = null
-    const markers = mode ? markersOf(mode) : null
-    await this.evaluate(modeExpression(markers))
-    if (!this.live()) return
-    const media = this.snapshot?.modes.some((m) => m.how.kind === 'media')
-    if (mode && media) {
+    // Emulation is the tab's, not the page's: it's reset first, even for a closed opening.
+    if (!mode) await this.stopEmulating()
+    else if (this.snapshot?.modes.some((m) => m.how.kind === 'media')) {
       const value = mode.how.kind === 'media' ? 'dark' : 'light'
       this.emulating = true
       await this.deps.command('Emulation.setEmulatedMedia', {
         features: [{ name: 'prefers-color-scheme', value }],
       })
-    } else if (!mode && this.emulating) {
-      this.emulating = false
-      await this.deps.command('Emulation.setEmulatedMedia', { features: [] })
     }
-    if (!mode || mode.how.kind === 'media') return
+    await this.evaluate(modeExpression(mode ? markersOf(mode) : null))
+    if (!mode || mode.how.kind === 'media' || !this.live()) return
     // The app may put its own mode back (next-themes does on load): Gui doesn't fight it.
     this.modeCheck = setTimeout(() => {
       this.modeCheck = null
@@ -163,6 +160,13 @@ export class DesignTokens {
     if (this.modeCheck) clearTimeout(this.modeCheck)
     this.modeCheck = null
     this.listeners.clear()
+    void this.stopEmulating().catch(() => undefined)
+  }
+
+  private async stopEmulating() {
+    if (!this.emulating) return
+    this.emulating = false
+    await this.deps.command('Emulation.setEmulatedMedia', { features: [] })
   }
 
   private live() {
