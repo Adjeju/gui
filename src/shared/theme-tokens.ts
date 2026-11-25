@@ -106,7 +106,9 @@ const FONT_KEYWORDS = new Set([
   'hidden',
   'visible',
 ])
-const FONT_FIRST = /^(?:"[^"]+"|'[^']+'|[A-Za-z][A-Za-z0-9 _-]*)$/
+const FONT_FIRST = /^(?:"[^"]+"|'[^']+'|[A-Za-z][A-Za-z_-]*(?: [A-Za-z][A-Za-z_-]*)*)$/
+const GENERIC_FAMILY =
+  /^(?:serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-[a-z-]+|emoji|math|fangsong)$/i
 
 export function variableKind(value: string, usedInHsl: boolean, name = ''): ThemeKind {
   const v = value.trim()
@@ -115,8 +117,16 @@ export function variableKind(value: string, usedInHsl: boolean, name = ''): Them
   if (/^[1-9]00$/.test(v) && /weight/i.test(name)) return 'font'
   const items = v.split(',')
   const first = items[0]?.trim() ?? ''
-  if (items.length > 1 && FONT_FIRST.test(first) && !FONT_KEYWORDS.has(first.toLowerCase()))
+  const quoted = /^["']/.test(first)
+  const generic = items.some((item) => GENERIC_FAMILY.test(item.trim()))
+  if (
+    items.length > 1 &&
+    FONT_FIRST.test(first) &&
+    !FONT_KEYWORDS.has(first.toLowerCase()) &&
+    (quoted || generic)
+  ) {
     return 'font'
+  }
   return 'other'
 }
 

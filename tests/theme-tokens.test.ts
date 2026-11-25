@@ -22,6 +22,7 @@ test('modes come from :root, .dark, data-theme and the dark media query', () => 
     id: 'dark',
     how: { kind: 'media' },
   })
+  expect(modeOf(':root, .card', null)?.id).toBe('default')
   expect(modeOf('.card', null)).toBeNull()
   expect(modeOf('.card', '(prefers-color-scheme: dark)')).toBeNull()
   expect(modeOf(':root', '(min-width: 600px)')).toBeNull()
@@ -38,7 +39,11 @@ test('kinds are read from the value', () => {
   expect(variableKind('"Inter Tight", serif', false)).toBe('font')
   expect(variableKind('600', false, '--font-weight-bold')).toBe('font')
   expect(variableKind('600', false, '--z')).toBe('other')
+  expect(variableKind('"SF Pro", sans-serif', false)).toBe('font')
   expect(variableKind('cubic-bezier(.2,0,0,1)', false)).toBe('other')
+  expect(variableKind('inset 0 0 1px red, 0 1px 2px rgba(0,0,0,.2)', false)).toBe('other')
+  expect(variableKind('opacity 200ms, color 200ms', false)).toBe('other')
+  expect(variableKind('ease-in, ease-out', false)).toBe('other')
 })
 
 test('a reference is only a bare var()', () => {
