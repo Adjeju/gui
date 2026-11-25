@@ -1575,6 +1575,7 @@ export class ProjectTab implements ChatPanelOwner {
       guide: (node, caption) => this.guideStep(this.picker, node, caption),
       pointer: this.agentPointer(this.picker),
       variations: (input) => this.variations.show(input),
+      theme: () => (current() ? (resources.designTokens?.latest() ?? null) : null),
       // A late call from an opening since replaced mustn't touch the next project's guides.
       guides: {
         list: () => (current() ? this.guides.list() : []),
@@ -1689,6 +1690,7 @@ export class ProjectTab implements ChatPanelOwner {
       toolAccess: (onReach) => resources.mcp?.session(onReach) ?? null,
       viewport: () => this.promptViewport(),
       guides: () => this.promptGuides(),
+      palette: () => resources.designTokens?.latest() ?? null,
       board: board ? () => this.promptBoard() : undefined,
       startupReport: (tools) => startupReport(this.state, this.getLogs(), tools),
       layout: board ? boardLayout(board, checkpoints, current) : undefined,

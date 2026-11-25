@@ -19,6 +19,7 @@ import {
 import { type ChatTurnUpdate, TurnPublisher } from '../shared/chat-transport'
 import { invokedCommand, parseCommands, sendsContext, takesContext } from '../shared/commands'
 import { editDiffs } from '../shared/edit-diff'
+import type { ThemeSnapshot } from '../shared/theme-tokens'
 import {
   type AgentCommand,
   type AgentId,
@@ -90,6 +91,7 @@ import {
 import {
   buildPrompt,
   describeFollowUp,
+  describePalette,
   describeSteeredBefore,
   PROMPT_VERSION,
   type PromptBoard,
@@ -151,6 +153,8 @@ export interface ChatOptions {
   viewport: () => PromptViewport | null
   /** The user's guides over the preview while the rulers show them, which each prompt names */
   guides?: () => PromptGuides | null
+  /** The project's theme variables, which a session is told once and again when they change */
+  palette?: () => ThemeSnapshot | null
   /** The canvas this chat is on, as each prompt describes it; absent in a project */
   board?: () => PromptBoard | null
   /** Why the app won't start, as the agent is told it (`startupReport`) */
@@ -304,6 +308,17 @@ export class ChatController extends EventEmitter<ChatEvents> {
   /** Bumped by reset; work started in an older epoch must not touch current state. */
   private epoch = 0
   /** False after dispose or a reset that bumped `epoch`; late async work must not apply. */
+  /** The palette block while this session hasn't had it as it is now; null otherwise. */
+  private paletteToSend() {
+    const snapshot = this.options.palette?.()
+    if (!snapshot?.variables.length) return null
+    const text = describePalette(snapshot)
+    const key = text.replaceAll(/theme_[0-9a-f]{8}/g, 'theme')
+    if (key === this.lastPaletteSent) return null
+    this.lastPaletteSent = key
+    return text
+  }
+
   private live(epoch = this.epoch) {
     return !this.disposed && this.epoch === epoch
   }
@@ -326,6 +341,8 @@ export class ChatController extends EventEmitter<ChatEvents> {
    * they're available, so it doesn't keep believing it can't see the preview.
    */
   private primed: 'tools' | 'plain' | null = null
+  /** The palette this session was last told, without its random tag */
+  private lastPaletteSent: string | null = null
   /** Saved session to resume; kept until an agent actually starts. */
   private resumeSessionId: string | null = null
   private persistTimer: NodeJS.Timeout | null = null
@@ -1241,6 +1258,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
       : null
     const blocks = buildPrompt({
       text: item.prompt,
+      palette: this.paletteToSend(),
       selection: payload.selection,
       viewport: payload.viewport,
       guides: this.options.guides?.() ?? null,
@@ -1876,6 +1894,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
           : buildPrompt({
               // A command is placed once everything else is in (placeCommand).
               text: record.command ? null : record.turn.prompt,
+              palette: record.command ? null : this.paletteToSend(),
               selection,
               viewport,
               guides: this.options.guides?.() ?? null,
@@ -2216,6 +2235,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
         if (this.primed === variant) this.primedAgent = agent
       } else {
         this.primed = null
+        this.lastPaletteSent = null
         if (this.hadSession) {
           if (record) this.pushNewSessionNotice(record)
           else this.newSessionNotice = true

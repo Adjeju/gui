@@ -6,6 +6,7 @@ import {
   pageRectFromViewport,
   viewportRectFrom,
 } from '../shared/coords'
+import type { ThemeSnapshot } from '../shared/theme-tokens'
 import type { ElementContext, Rect, RulerGuide, StartCommandInput } from '../shared/types'
 import { base64Bytes, type DecodedImage, encodeWithin, MAX_AGENT_IMAGE_BYTES } from './agent-image'
 import { CaptureInterrupted } from './errors'
@@ -201,6 +202,8 @@ export interface PreviewToolsDeps extends Omit<PageDeps, 'kind'> {
   variations: (input: VariationsInput) => Promise<string>
   website: WebsiteHost
   guides: GuidesHost
+  /** The project's theme variables from its live preview; null before they are read */
+  theme: () => ThemeSnapshot | null
 }
 
 /** The user's ruler guides over the app's preview (guides.ts), for preview_guides. */
@@ -970,6 +973,13 @@ export class PreviewTools extends PageTools {
   variations(input: VariationsInput) {
     this.assertLive()
     return this.deps.variations(input)
+  }
+
+  /** preview_theme: the project's theme variables, as the Theme panel sees them. */
+  theme() {
+    this.assertLoaded()
+    const snapshot = this.deps.theme()
+    return snapshot?.variables.length ? JSON.stringify(snapshot) : 'This page has no CSS variables.'
   }
 
   /**
