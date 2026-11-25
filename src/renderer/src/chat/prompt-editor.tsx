@@ -222,6 +222,24 @@ function plainSlice(text: string) {
   )
 }
 
+const pieceCount = (doc: Node) => pieceIds(doc, 'pick').length + pieceIds(doc, 'image').length
+
+/**
+ * Puts the browser's caret in the text where the draft's caret is. ProseMirror takes the end
+ * of a paragraph (after the space that follows a piece) as the same place as the end of that
+ * space and leaves the browser's caret on the paragraph, but Chromium types there before the
+ * piece: a marker added while the message box has the keyboard got the words after it in
+ * front of it.
+ */
+function caretToDOM(editor: EditorView) {
+  const { empty, head } = editor.state.selection
+  if (!empty || editor.composing || !editor.hasFocus()) return
+  const { node, offset } = editor.domAtPos(head, -1)
+  const selection = document.getSelection()
+  if (!selection || (selection.anchorNode === node && selection.anchorOffset === offset)) return
+  selection.collapse(node, offset)
+}
+
 export interface PromptEditorHandle {
   focus(options?: FocusOptions): void
 }
@@ -309,6 +327,12 @@ export function PromptEditor({
     // The store's draft is the truth: the view follows it, whoever changed it.
     const unsubscribe = useChat.subscribe((state, previous) => {
       if (state.draft !== editor.state) editor.updateState(state.draft)
+      // A marker or image just put in at the caret: typing goes after it.
+      if (
+        state.draft.doc !== previous.draft.doc &&
+        pieceCount(state.draft.doc) > pieceCount(previous.draft.doc)
+      )
+        caretToDOM(editor)
       // A pick's marker shows its number, which changes as markers come, go and move.
       const picks =
         state.attachments !== previous.attachments ||
@@ -330,7 +354,10 @@ export function PromptEditor({
 
   useImperativeHandle(ref, () => ({
     focus(options) {
-      view.current?.dom.focus(options)
+      const editor = view.current
+      if (!editor) return
+      editor.dom.focus(options)
+      caretToDOM(editor)
     },
   }))
 
