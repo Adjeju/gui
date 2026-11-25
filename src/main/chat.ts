@@ -99,6 +99,7 @@ import {
   steeredPrompts,
   TEXT_EDIT_PROMPT,
   TEXT_EDITED_PROMPT,
+  THEME_EDITED_PROMPT,
 } from './prompt'
 import { recordingBlocks } from './recording-prompt'
 import type { Recordings } from './recordings'
@@ -931,12 +932,39 @@ export class ChatController extends EventEmitter<ChatEvents> {
    * `write` didn't write; the caller hands the edit to the agent then.
    */
   async writeTextEdit(edit: TextEdit, file: string, write: () => Promise<boolean>) {
+    return this.writeOwnTurn(
+      'a text edit',
+      { prompt: TEXT_EDITED_PROMPT, textEdit: edit, editedFile: this.displayPath(file) },
+      write,
+    )
+  }
+
+  /**
+   * Writes theme values into the project's CSS (`write`, all or none) as a turn of the user's
+   * own, the way `writeTextEdit` does: false, with nothing recorded, when a turn, undo or redo
+   * is running here or on this folder in another tab, or `write` didn't write.
+   */
+  async writeThemeEdits(edits: NonNullable<Turn['themeEdits']>, write: () => Promise<boolean>) {
+    if (!edits.length) return false
+    return this.writeOwnTurn(
+      'a theme edit',
+      { prompt: THEME_EDITED_PROMPT, themeEdits: edits },
+      write,
+    )
+  }
+
+  /** A turn of the user's own: checkpointed around `write`, with no agent. */
+  private async writeOwnTurn(
+    what: string,
+    { prompt, ...fields }: Pick<Turn, 'prompt' | 'textEdit' | 'editedFile' | 'themeEdits'>,
+    write: () => Promise<boolean>,
+  ) {
     if (this.lock || this.disposed) return false
     const record: TurnRecord = {
       turn: {
         id: randomUUID(),
         index: this.records.length,
-        prompt: TEXT_EDITED_PROMPT,
+        prompt,
         context: [],
         items: [],
         status: 'running',
@@ -944,8 +972,7 @@ export class ChatController extends EventEmitter<ChatEvents> {
         startedAt: Date.now(),
         endedAt: null,
         changes: null,
-        textEdit: edit,
-        editedFile: this.displayPath(file),
+        ...fields,
         reverted: false,
       },
       command: null,
@@ -967,10 +994,10 @@ export class ChatController extends EventEmitter<ChatEvents> {
       await sleep(0)
       // An agent in another tab on this folder is mid-turn: its checkpoint would take this in.
       if (!free || !this.live(epoch)) return false
-      record.before = await this.checkpoints.snapshot('before a text edit').catch(() => null)
+      record.before = await this.checkpoints.snapshot(`before ${what}`).catch(() => null)
       if (!record.before || !this.live(epoch)) return false
       if (!(await write())) return false
-      record.after = await this.checkpoints.snapshot('after a text edit').catch(() => null)
+      record.after = await this.checkpoints.snapshot(`after ${what}`).catch(() => null)
       if (record.after) record.turn.changes = await this.turnChanges(record.before, record.after)
       if (!this.live(epoch)) return true
       record.turn.status = 'done'

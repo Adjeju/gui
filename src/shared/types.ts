@@ -1341,6 +1341,11 @@ export interface Turn {
    * edit, with no agent behind it. The chat shows it in one line, with Undo.
    */
   editedFile?: string
+  /**
+   * Theme values Gui wrote into the project's CSS itself (Keep): the user's own change, with
+   * no agent behind it. `file` is relative to the project; `before` is what was declared.
+   */
+  themeEdits?: { name: string; mode: string; before: string; after: string; file: string }[]
   reverted: boolean
 }
 

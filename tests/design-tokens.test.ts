@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DesignTokens } from '../src/main/design-tokens'
@@ -218,4 +218,78 @@ test('the opening disposes its design tokens', () => {
   void resources.dispose()
   expect(disposed).toBe(true)
   expect(resources.designTokens).toBeNull()
+})
+
+const KEPT_CSS =
+  ':root {\n  --brand: #2563eb;\n  --muted: #64748b;\n  --primary: var(--brand);\n}\n.dark {\n  --brand: #60a5fa;\n}\n'
+
+/** A chat that takes the write as a turn, or refuses as one whose agent is working. */
+function chat(busy = false, beforeWrite: () => Promise<void> = async () => {}) {
+  const turns: unknown[][] = []
+  return {
+    turns,
+    writeThemeEdits: async (edits: unknown[], write: () => Promise<boolean>) => {
+      if (busy) return false
+      await beforeWrite()
+      if (!(await write())) return false
+      turns.push(edits)
+      return true
+    },
+  }
+}
+
+async function keepable() {
+  dir = await mkdtemp(join(tmpdir(), 'gui-design-tokens-'))
+  await writeFile(join(dir, 'app.css'), KEPT_CSS)
+  const page = preview(READ, dir)
+  await page.tokens.loaded()
+  page.tokens.open = true
+  await page.tokens.preview({ name: '--brand', mode: 'default', value: '#7c3aed' })
+  await page.tokens.preview({ name: '--muted', mode: 'dark', value: '#94a3b8' })
+  return { ...page, css: () => readFile(join(dir as string, 'app.css'), 'utf8') }
+}
+
+test('Keep writes every pending edit as one turn, and the preview style goes on the next load', async () => {
+  const { tokens, sent, css } = await keepable()
+  const kept = chat()
+  sent.length = 0
+  expect(await tokens.keep(kept)).toEqual({ ok: true })
+  expect(kept.turns).toEqual([
+    [
+      { name: '--brand', mode: 'default', before: '#2563eb', after: '#7c3aed', file: 'app.css' },
+      { name: '--muted', mode: 'dark', before: '#64748b', after: '#94a3b8', file: 'app.css' },
+    ],
+  ])
+  expect(await css()).toContain('--brand: #7c3aed;')
+  expect(await css()).toContain('--muted: #94a3b8;')
+  expect(tokens.pending()).toEqual([])
+  // Until the page has the new values, the preview keeps showing them.
+  expect(sent).not.toContain(REMOVE_PREVIEW)
+  await tokens.loaded()
+  expect(sent).toContain(REMOVE_PREVIEW)
+})
+
+test('Keep while the agent works writes nothing and keeps the pending edits', async () => {
+  const { tokens, css } = await keepable()
+  expect(await tokens.keep(chat(true))).toEqual({
+    ok: false,
+    blocked: '',
+    reason: 'The agent is working. Keep again when it finishes.',
+  })
+  expect(await css()).toBe(KEPT_CSS)
+  expect(tokens.pending()).toHaveLength(2)
+})
+
+test("Keep refused by the project's CSS says which variable and why", async () => {
+  const { tokens, css } = await keepable()
+  const twice = KEPT_CSS.replace('--muted: #64748b;', '--muted: #64748b;\n  --brand: #000;')
+  const changed = chat(false, () => writeFile(join(dir as string, 'app.css'), twice))
+  expect(await tokens.keep(changed)).toEqual({
+    ok: false,
+    blocked: '--brand',
+    reason: 'Declared more than once in app.css',
+  })
+  expect(changed.turns).toEqual([])
+  expect(await css()).toBe(twice)
+  expect(tokens.pending()).toHaveLength(2)
 })

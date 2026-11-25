@@ -1,5 +1,6 @@
 import type { ThemeEdit, ThemeSnapshot } from '../shared/theme-tokens'
 import { safeName } from '../shared/theme-tokens'
+import type { Turn } from '../shared/types'
 import {
   injectable,
   markersOf,
@@ -14,7 +15,16 @@ import {
   REMOVE_PREVIEW,
   snapshotFrom,
 } from './theme-page'
-import { locate, readCssFiles } from './theme-source'
+import { locate, readCssFiles, writeThemeEdits } from './theme-source'
+
+type KeptEdits = NonNullable<Turn['themeEdits']>
+
+/** The chat Keep records its write in, as a turn of the user's own (ChatController). */
+interface KeepChat {
+  writeThemeEdits: (edits: KeptEdits, write: () => Promise<boolean>) => Promise<boolean>
+}
+
+type Kept = { ok: true } | { ok: false; blocked: string; reason: string }
 
 /** How long the app has to put its own mode back after Gui shows one. */
 const MODE_CHECK_MS = 300
@@ -119,6 +129,53 @@ export class DesignTokens {
   async cancel() {
     this.edits.clear()
     await this.evaluate(REMOVE_PREVIEW)
+  }
+
+  /**
+   * Writes every pending edit into the project's CSS, or none, as one undoable turn of
+   * `chat`. The preview style stays until the page loads the new values (`loaded`).
+   */
+  async keep(chat: KeepChat): Promise<Kept> {
+    const snapshot = this.snapshot
+    const edits = this.pending()
+    if (!snapshot || !edits.length || !this.live()) return { ok: true }
+    const { files } = await readCssFiles(this.deps.root)
+    const kept: KeptEdits = []
+    for (const edit of edits) {
+      const mode = snapshot.modes.find((m) => m.id === edit.mode)
+      const found = mode ? locate(files, edit.name, mode) : null
+      if (!found?.ok) {
+        return { ok: false, blocked: edit.name, reason: found?.reason ?? 'Unknown theme mode' }
+      }
+      const variable = snapshot.variables.find((v) => v.name === edit.name)
+      // A mode override Keep adds had no value of its own: what it inherited.
+      const before = variable?.values[edit.mode] ?? variable?.resolved[edit.mode] ?? ''
+      kept.push({ name: edit.name, mode: edit.mode, before, after: edit.value, file: found.file })
+    }
+    let refused: Kept | null = null
+    const write = async () => {
+      const result = await writeThemeEdits(this.deps.root, edits, snapshot.modes)
+      if (!result.ok) refused = result
+      return result.ok
+    }
+    const wrote = await chat.writeThemeEdits(kept, write).catch(() => null)
+    if (refused) return refused
+    if (wrote === null) {
+      return { ok: false, blocked: '', reason: "Gui couldn't write the project's CSS" }
+    }
+    if (!wrote) {
+      return {
+        ok: false,
+        blocked: '',
+        reason: 'The agent is working. Keep again when it finishes.',
+      }
+    }
+    // An edit previewed while Keep wrote stays pending.
+    for (const edit of edits) {
+      const key = `${edit.mode} ${edit.name}`
+      if (this.edits.get(key)?.value === edit.value) this.edits.delete(key)
+    }
+    return { ok: true }
   }
 
   /** Shows the preview in mode `id`, the way the project's own toggle would; null: its own. */

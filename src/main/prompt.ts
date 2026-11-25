@@ -474,6 +474,9 @@ export const TEXT_EDIT_PROMPT = 'Change this text.'
  */
 export const TEXT_EDITED_PROMPT = 'Edited text in the preview.'
 
+/** What theme values Gui wrote into the project's CSS itself (Keep) are called in the transcript. */
+export const THEME_EDITED_PROMPT = 'Changed the theme.'
+
 /** A text edit's old and new text, one line each, fenced as everything from the page is. */
 function fenceTextEdit({ before, after }: TextEdit) {
   return fenceUntrusted('text_edit', `Old text: ${oneLine(before)}\nNew text: ${oneLine(after)}`)
