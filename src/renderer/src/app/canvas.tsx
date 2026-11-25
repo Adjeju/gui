@@ -69,14 +69,18 @@ export function Canvas({ state }: { state: WindowState }) {
     const el = ref.current
     if (!el) return
     let frame = 0
+    const send = () => {
+      cancelAnimationFrame(frame)
+      const rect = el.getBoundingClientRect()
+      gui.setCanvasRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height })
+    }
     const report = () => {
       cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => {
-        const rect = el.getBoundingClientRect()
-        gui.setCanvasRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height })
-      })
+      frame = requestAnimationFrame(send)
     }
-    const observer = new ResizeObserver(report)
+    // Laid out anew (the drawer's edge dragged, a banner): sent in the frame that draws it, so
+    // the preview over it moves with the chrome around it rather than a frame behind.
+    const observer = new ResizeObserver(send)
     observer.observe(el)
     window.addEventListener('resize', report)
     report()

@@ -1549,6 +1549,7 @@ function registerIpc() {
       tab.guidePointer(id, phase as GuidePointerPhase, at)
   })
   onWindow(Send.setCanvasRect, (win, rect) => isRect(rect) && win.setCanvasRect(rect))
+  onWindow(Send.setDrawerHeight, (win, height) => isNumber(height) && win.setDrawerHeight(height))
   onWindow(Send.setFocusMode, (win, on) => typeof on === 'boolean' && win.setFocusMode(on))
   onWindow(Send.setShortcutsOpen, (win, open) => {
     if (typeof open === 'boolean') win.setShortcutsOpen(open)

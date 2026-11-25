@@ -25,6 +25,11 @@ guardGhosttyWrites()
  */
 const MAX_TERMINAL_MEMORY = 128 * 1024 * 1024
 
+/** How often a terminal still resizing tells its program its new size (`resize`), in ms. */
+const REPORT_MS = 100
+/** How long after the element last resized a terminal fits it once more, in ms (`resize`). */
+const SETTLE_MS = 120
+
 /**
  * A Ghostty of the terminal's own, so that what it leaks goes with it: one shared by every
  * terminal the window ever made would only grow.
@@ -199,14 +204,36 @@ export function mountTerminal(
 
   let reportedCols = -1
   let reportedRows = -1
+  let reportedAt = Number.NEGATIVE_INFINITY
+  let reportTimer: ReturnType<typeof setTimeout> | undefined
+  let settleTimer: ReturnType<typeof setTimeout> | undefined
+  const report = () => {
+    clearTimeout(reportTimer)
+    reportTimer = undefined
+    if (disposed || (term.cols === reportedCols && term.rows === reportedRows)) return
+    reportedCols = term.cols
+    reportedRows = term.rows
+    reportedAt = performance.now()
+    onResize(term.cols, term.rows)
+  }
   const resize = () => {
     // Closed, or not laid out yet: it keeps the size it had.
     if (el.clientHeight < 20) return
+    // The grid follows the element every frame; the program in it hears of a new size at most
+    // every REPORT_MS while it keeps changing (the drawer's edge dragged), and once more for
+    // where it ends, so a full-screen program redraws at the size it's left at.
     fit.fit()
-    if (term.cols === reportedCols && term.rows === reportedRows) return
-    reportedCols = term.cols
-    reportedRows = term.rows
-    onResize(term.cols, term.rows)
+    const wait = REPORT_MS - (performance.now() - reportedAt)
+    if (wait <= 0) report()
+    else reportTimer ??= setTimeout(report, wait)
+    // The fit addon ignores a fit within 50ms of its last resize, so the last of a quick run
+    // can be dropped: once the element stops changing, fit it again and say where it ended.
+    clearTimeout(settleTimer)
+    settleTimer = setTimeout(() => {
+      if (disposed || el.clientHeight < 20) return
+      fit.fit()
+      report()
+    }, SETTLE_MS)
   }
   const observer = new ResizeObserver(resize)
   observer.observe(el)
@@ -225,6 +252,8 @@ export function mountTerminal(
     dispose() {
       disposed = true
       pause()
+      clearTimeout(reportTimer)
+      clearTimeout(settleTimer)
       observer.disconnect()
       el.removeEventListener('copy', copy)
       hosts.delete(el)

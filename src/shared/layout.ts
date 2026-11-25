@@ -38,3 +38,30 @@ export const FRAME_LABEL_HEIGHT = 24
 
 /** The rulers along the canvas's top and left edges (⇧R), which the preview moves over for. */
 export const RULER_SIZE = 20
+
+/**
+ * The drawer under the canvas (⌘J): how tall its terminal area is, under its 36px tab row.
+ * The user drags its top edge; Gui remembers the height (prefs `drawerHeight`).
+ */
+export const DRAWER_HEIGHT = {
+  /** Where it starts, and where a double-click on its edge puts it back */
+  default: 224,
+  /** About seven lines, under the tab row */
+  min: 120,
+  /** One arrow key on its edge */
+  step: 16,
+} as const
+
+/** The strip of the canvas the drawer always leaves above it, so the preview stays usable. */
+export const DRAWER_CANVAS_MIN = 160
+
+/**
+ * How tall the drawer's terminal area is drawn: the remembered `height`, kept at least the
+ * minimum and leaving the canvas `DRAWER_CANVAS_MIN` of `room`, the height the canvas and the
+ * terminal area share. A window too short for the remembered height draws less, and the
+ * height is still remembered; too short even for both minimums, the drawer keeps its own.
+ */
+export function drawerHeight(height: number, room: number): number {
+  const max = Math.max(DRAWER_HEIGHT.min, Math.floor(room) - DRAWER_CANVAS_MIN)
+  return Math.round(Math.min(Math.max(height, DRAWER_HEIGHT.min), max))
+}

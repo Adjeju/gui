@@ -3,7 +3,7 @@ import type { RecentBoard, RecentProject, Rect, WindowState } from '../shared/ty
 
 export type TabState = Omit<
   WindowState,
-  'tabs' | 'activeTab' | 'focusMode' | 'shortcutsOpen' | 'trafficLights'
+  'tabs' | 'activeTab' | 'focusMode' | 'shortcutsOpen' | 'trafficLights' | 'drawerHeight'
 >
 
 /** The window a tab is in (window.ts), as the tab sees it. */

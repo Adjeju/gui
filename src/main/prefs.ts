@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { readFileSync, renameSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { app } from 'electron'
+import { DRAWER_HEIGHT } from '../shared/layout'
 import { currentModelValue, parseRecents, withRecent } from '../shared/recent-models'
 import {
   type AgentId,
@@ -32,6 +33,8 @@ export interface Prefs {
   chatSize: ChatSize
   /** The sidebar's width */
   chatSidebarWidth: number
+  /** The drawer's terminal area, as tall as the user dragged it; windows clamp it to fit */
+  drawerHeight: number
   /** The canvas corner the floating chat panel was last dropped in; new tabs start there */
   chatCorner: PanelCorner
   /** The page corner the variations bar was last dropped in; new tabs start there */
@@ -78,6 +81,7 @@ const DEFAULTS: Prefs = {
   chatSidebarSide: 'left',
   chatSize: { width: 360, height: 520 },
   chatSidebarWidth: 380,
+  drawerHeight: DRAWER_HEIGHT.default,
   chatCorner: { x: 'left', y: 'bottom' },
   variationsCorner: { x: 'left', y: 'bottom' },
   apps: {},
@@ -205,6 +209,7 @@ export function getPrefs(): Prefs {
       chatSidebarSide: parsed.chatSidebarSide === 'right' ? 'right' : 'left',
       chatSize: chatSize(parsed.chatSize),
       chatSidebarWidth: length(parsed.chatSidebarWidth, DEFAULTS.chatSidebarWidth),
+      drawerHeight: length(parsed.drawerHeight, DEFAULTS.drawerHeight),
       chatCorner: panelCorner(parsed.chatCorner, DEFAULTS.chatCorner),
       variationsCorner: panelCorner(parsed.variationsCorner, DEFAULTS.variationsCorner),
       apps: stringRecord(parsed.apps),

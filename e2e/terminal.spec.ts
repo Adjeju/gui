@@ -690,3 +690,166 @@ test('on Linux, plain Ctrl keys reach the shell and Ctrl+Shift keys copy, paste 
   await expect.poll(() => screenText(panel(session, id))).not.toContain('copy-marker-42')
   expect(await output(session, id)).not.toContain('copy-marker-42')
 })
+
+/** Runs in main: where the preview's view is in the window, and the window's content size. */
+function previewPlace({ BrowserWindow, WebContentsView }: typeof import('electron/main')) {
+  const win = BrowserWindow.getAllWindows()[0]
+  const preview = win?.contentView.children.find(
+    (child): child is InstanceType<typeof WebContentsView> =>
+      child instanceof WebContentsView && /^https?:\/\//.test(child.webContents.getURL()),
+  )
+  const morphing = (globalThis as { guiMorphing?: Set<number> }).guiMorphing?.size ?? 0
+  return { bounds: preview?.getBounds() ?? null, morphing: morphing > 0 }
+}
+
+test("the drawer's top edge drags it taller; the preview, the shell and the logs follow, and Gui remembers it", async ({
+  launch,
+}) => {
+  const session = await launch({ fixture: 'vite', env: SHELL })
+  await session.waitForPreview()
+  const { chrome } = session
+  await clickMenu(session, 'Show Terminal')
+  const id = (await drawerWith(session, 1)).terminals[0]?.id
+  if (!id) throw new Error('No terminal')
+  await waitForFocus(session, id)
+  const edge = chrome.getByRole('separator', { name: 'Resize terminal' })
+  const terminals = chrome.locator('[id^="drawer-panel-"]').first().locator('..')
+
+  /** How tall the terminal area is drawn, and the separator says. */
+  const drawn = async () => ({
+    height: Math.round((await terminals.boundingBox())?.height ?? -1),
+    now: Number(await edge.getAttribute('aria-valuenow')),
+  })
+  /** The preview's view ends where the drawer begins: no gap, no overlap. */
+  const seamed = () =>
+    waitFor(async () => {
+      const top = (await drawer(session).boundingBox())?.y
+      const { bounds, morphing } = await session.app.evaluate(previewPlace)
+      if (morphing || !bounds || top === undefined) return null
+      return Math.abs(bounds.y + bounds.height - top) <= 1 ? bounds : null
+    }, 'the preview to end where the drawer begins')
+  /** The rows the shell's terminal has, as `stty size` says. */
+  let asked = 0
+  const shellRows = async () => {
+    const tag = `rows${++asked}`
+    await run(session, `echo "${tag}:$(stty size)"`)
+    const match = await waitForOutput(session, id, new RegExp(`${tag}:(\\d+) \\d+`), tag)
+    return Number(match[1])
+  }
+  /** Drags the edge `dy` px down (negative: up), in steps as a hand would. */
+  const drag = async (dy: number) => {
+    const box = await edge.boundingBox()
+    if (!box) throw new Error('The drawer has no edge')
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+    await chrome.mouse.move(x, y)
+    await chrome.mouse.down()
+    await chrome.mouse.move(x, y + dy, { steps: 12 })
+    await chrome.mouse.up()
+  }
+
+  // At the usual height, the preview right above it.
+  expect(await drawn()).toEqual({ height: 224, now: 224 })
+  expect(await edge.getAttribute('aria-orientation')).toBe('horizontal')
+  expect(await edge.getAttribute('aria-valuemin')).toBe('120')
+  const before = await seamed()
+  const rowsBefore = await shellRows()
+  await run(session, 'seq 1 80')
+  await waitForOutput(session, id, /\n80\r?\n/, 'the count')
+  await session.shot('default')
+
+  // Dragged 200px up: the drawer grows by that, the preview shrinks by it, and the shell is
+  // told its new size once the drag ends.
+  await drag(-200)
+  await expect.poll(drawn).toEqual({ height: 424, now: 424 })
+  const after = await seamed()
+  expect(after.y).toBe(before.y)
+  expect(before.height - after.height).toBe(200)
+  await sleep(300)
+  const rowsAfter = await shellRows()
+  // 200px more is a dozen or more rows more, whatever the cell height (about 14px).
+  expect(rowsAfter).toBeGreaterThanOrEqual(rowsBefore + 12)
+  await expect.poll(async () => (await session.state()).drawerHeight).toBe(424)
+  // Kept the keyboard in the terminal: dragging takes no focus.
+  expect(await focusedPanel(session)).toBe(`drawer-panel-${id}`)
+  await run(session, 'seq 1 80')
+  await waitForOutput(session, id, /\n80\r?\n[\s\S]*\n80\r?\n/, 'the second count')
+  await session.shot('tall')
+  await edge.hover()
+  await session.shot('handle-hover')
+
+  // The dev server's logs fill the same height.
+  await tabs(session)
+    .getByRole('tab', { name: /Dev server/ })
+    .click()
+  await expect
+    .poll(() => panel(session, 'server' as TerminalId).evaluate((el) => el.clientHeight))
+    .toBe(424)
+  await tabs(session).getByRole('tab', { name: 'Terminal', exact: true }).click()
+
+  // Hidden and shown again, it slides back to the height it was left at.
+  await clickMenu(session, 'Hide Terminal')
+  await expect.poll(async () => (await session.state()).drawer.open).toBe(false)
+  await clickMenu(session, 'Show Terminal')
+  await expect.poll(drawn).toEqual({ height: 424, now: 424 })
+  await seamed()
+
+  // The arrow keys move it a step at a time with the keyboard on it.
+  await edge.focus()
+  await chrome.keyboard.press('ArrowDown')
+  await expect.poll(drawn).toEqual({ height: 408, now: 408 })
+  await chrome.keyboard.press('ArrowUp')
+  await chrome.keyboard.press('ArrowUp')
+  await sleep(500)
+  await expect.poll(drawn).toEqual({ height: 440, now: 440 })
+  await expect.poll(async () => (await session.state()).drawerHeight).toBe(440)
+
+  // As far as it goes, it leaves the canvas a strip; never under its minimum.
+  await drag(-2000)
+  const tallest = await seamed()
+  expect(tallest.height).toBeGreaterThanOrEqual(159)
+  expect(tallest.height).toBeLessThanOrEqual(161)
+  // A device frame scales down to fit the strip that's left, inside it.
+  await clickMenu(session, 'Tablet Viewport')
+  await waitFor(async () => {
+    const top = (await drawer(session).boundingBox())?.y
+    const { bounds, morphing } = await session.app.evaluate(previewPlace)
+    if (morphing || !bounds || top === undefined) return false
+    return (
+      bounds.height < tallest.height && bounds.y >= tallest.y && bounds.y + bounds.height <= top
+    )
+  }, 'the tablet frame to fit above the drawer')
+  await clickMenu(session, 'Desktop Viewport')
+  await seamed()
+  await drag(3000)
+  await expect.poll(drawn).toEqual({ height: 120, now: 120 })
+  await seamed()
+
+  // A window too short for the height it was left at draws less and still remembers it.
+  await drag(-300)
+  await expect.poll(drawn).toEqual({ height: 420, now: 420 })
+  const shown = await session.app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0]?.getContentSize(),
+  )
+  const [width = 1200, height = 800] = shown ?? []
+  await session.app.evaluate(({ BrowserWindow }, w) => {
+    BrowserWindow.getAllWindows()[0]?.setContentSize(w, 500)
+  }, width)
+  await expect.poll(async () => (await drawn()).height).toBeLessThan(420)
+  await seamed()
+  expect((await session.state()).drawerHeight).toBe(420)
+  await session.app.evaluate(
+    ({ BrowserWindow }, size) => {
+      BrowserWindow.getAllWindows()[0]?.setContentSize(size.width, size.height)
+    },
+    { width, height },
+  )
+  await expect.poll(drawn).toEqual({ height: 420, now: 420 })
+
+  // Double-clicked, the usual height again, remembered.
+  await session.shot('handle-focus')
+  await edge.dblclick()
+  await expect.poll(drawn).toEqual({ height: 224, now: 224 })
+  await expect.poll(async () => (await session.state()).drawerHeight).toBe(224)
+  await seamed()
+})

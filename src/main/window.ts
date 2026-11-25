@@ -3,6 +3,7 @@ import { BrowserWindow, Menu, shell, type WebContents } from 'electron'
 import { type FindAction, type FindCommand, type FindContext, findArea } from '../shared/find'
 import { Events, type StartForm } from '../shared/ipc'
 import {
+  DRAWER_HEIGHT,
   FOCUS_BAR_HEIGHT,
   FOCUS_TRAFFIC_LIGHTS,
   TAB_ROW_HEIGHT,
@@ -15,6 +16,7 @@ import { type Place, placeIndex } from '../shared/shortcuts'
 import type { RecentBoard, RecentProject, Rect, TabInfo, WindowState } from '../shared/types'
 import { type ClosedTab, ClosedTabs, reopenIndex } from './closed-tabs'
 import { windowChrome } from './os'
+import { getPrefs, setPrefs } from './prefs'
 import { guardAppContents, loadRenderer, PRELOAD } from './renderer'
 import { ProjectTab, type TabHost } from './tab'
 import { followSurface, surfaceColor } from './theme'
@@ -221,12 +223,25 @@ export class ProjectWindow implements TabHost {
       focusMode: this.focus,
       shortcutsOpen: this.sheet,
       trafficLights: IS_MAC && !this.win.isFullScreen(),
+      drawerHeight: getPrefs().drawerHeight,
     }
   }
 
   setCanvasRect(rect: Rect) {
     this.canvas = rect
     this.active.layout()
+  }
+
+  /**
+   * The user dragged the drawer's edge (or moved it with the keyboard): every window's drawer
+   * is that tall from now on, as each next draws. This one's chrome already is.
+   */
+  setDrawerHeight(height: number) {
+    // Any height a screen could show; each window draws it to fit (`drawerHeight`).
+    const remembered = Math.round(Math.min(Math.max(height, DRAWER_HEIGHT.min), 10_000))
+    if (remembered === getPrefs().drawerHeight) return
+    setPrefs({ drawerHeight: remembered })
+    this.sendState()
   }
 
   /**

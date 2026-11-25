@@ -626,6 +626,8 @@ export interface WindowState {
   shortcutsOpen: boolean
   /** The window's traffic lights show: macOS, and not in full screen */
   trafficLights: boolean
+  /** The drawer's terminal area as tall as the user left it (prefs); the window clamps it to fit */
+  drawerHeight: number
 }
 
 /** A frame on a canvas, as the board draws it. */

@@ -1,4 +1,17 @@
-import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react'
+import {
+  lazy,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
+import { flushSync } from 'react-dom'
+import { DRAWER_HEIGHT, drawerHeight } from '../../../shared/layout'
 import {
   type AgentId,
   type DrawerTab,
@@ -9,6 +22,7 @@ import {
 import { gui } from '../lib/api'
 import { cn } from '../lib/cn'
 import { ChevronDown, Info, Plus, SquareTerminal, TriangleAlert } from '../lib/icons'
+import { trackDrag } from '../lib/pointer-drag'
 import { StatusDot } from '../lib/status'
 import { Banner, PanelHeader } from '../lib/surface'
 import {
@@ -82,6 +96,8 @@ export function Drawer({ state }: { state: WindowState }) {
   // down; while it goes it's still drawn open, over the canvas that already has its room.
   const leaving = useLayoutSlide(open, section, { edge: 'bottom' })
   const drawn = open || leaving
+  const body = useRef<HTMLDivElement>(null)
+  const size = useDrawerSize(state.drawerHeight, section, body, open)
   const tabList = useRef<HTMLDivElement>(null)
   // More terminals than fit: the row scrolls, and the one shown is always in it.
   useScrollingTabs(tabList, drawn ? (state.drawer.tab ?? 'server') : null)
@@ -147,6 +163,7 @@ export function Drawer({ state }: { state: WindowState }) {
           drawn && 'border-t-hairline border-line',
         )}
       >
+        {open && <DrawerEdge size={size} />}
         {drawn && (
           // The header recipe, but its tabs carry their own inset, so the first label lands
           // near the 12px the recipe gives a title. Over the terminal's darker canvas, no
@@ -282,7 +299,12 @@ export function Drawer({ state }: { state: WindowState }) {
             </div>
           </PanelHeader>
         )}
-        <div className={cn('relative overflow-hidden bg-canvas', drawn ? 'h-56' : 'h-0')}>
+        <div
+          ref={body}
+          className="relative overflow-hidden bg-canvas"
+          // As tall as the user dragged it, with nothing easing it: it follows the pointer.
+          style={{ height: drawn ? size.height : 0 }}
+        >
           {/* First, so it's the drawer's first terminal on the page. Keyed by project, so each
               project gets a fresh one with its own log history. */}
           <Panel tab="server" shown={shown === 'server'}>
@@ -306,6 +328,140 @@ export function Drawer({ state }: { state: WindowState }) {
         </div>
       </section>
     </>
+  )
+}
+
+interface DrawerSize {
+  /** How tall the terminal area is drawn: the remembered height, fitted to the window */
+  height: number
+  /** The tallest it can be drawn in this window */
+  max: number
+  /** Draws it `height` tall (fitted) now; `remember` keeps that for every window */
+  set(height: number, remember: boolean): void
+}
+
+/**
+ * The terminal area's height: the one the user left it at (`remembered`, from prefs), drawn
+ * to fit the room under the canvas. A short window draws it shorter and still remembers it.
+ */
+function useDrawerSize(
+  remembered: number,
+  section: RefObject<HTMLElement | null>,
+  body: RefObject<HTMLDivElement | null>,
+  open: boolean,
+): DrawerSize {
+  const [height, setHeight] = useState(remembered)
+  // Heights this window sent main and hasn't heard back yet. Coming back, each is already
+  // drawn (or a newer one is); any other is another window's, drawn here too.
+  const sent = useRef<number[]>([])
+  useEffect(() => {
+    const echo = sent.current.indexOf(remembered)
+    if (echo >= 0) sent.current = sent.current.slice(echo + 1)
+    else setHeight(remembered)
+  }, [remembered])
+  // The height the canvas and the terminal area share: from the canvas's top to the window's
+  // bottom, less the drawer's tab row and edge. Measured as the canvas resizes (the window, a
+  // banner over it); its top doesn't move as the drawer does, so this settles at once.
+  const [room, setRoom] = useState(Number.POSITIVE_INFINITY)
+  useLayoutEffect(() => {
+    const el = section.current
+    const canvas = el?.previousElementSibling
+    if (!open || !el || !(canvas instanceof HTMLElement) || !body.current) return
+    const measure = () => {
+      const terminals = body.current
+      if (!terminals) return
+      // Its tab row and edge from offsets, which the slide's transform doesn't move.
+      const above = el.offsetHeight - terminals.offsetHeight
+      setRoom(window.innerHeight - canvas.getBoundingClientRect().top - above)
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(canvas)
+    window.addEventListener('resize', measure)
+    measure()
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [open, section, body])
+
+  const drawn = drawerHeight(height, room)
+  return {
+    height: drawn,
+    max: drawerHeight(Number.POSITIVE_INFINITY, room),
+    set(next, remember) {
+      const fitted = drawerHeight(next, room)
+      // At once, so the canvas reports its new size to main in this frame and the preview
+      // moves with the drawer.
+      flushSync(() => setHeight(fitted))
+      // Main keeps only a change, and says so only then.
+      if (!remember || fitted === (sent.current.at(-1) ?? remembered)) return
+      sent.current.push(fitted)
+      gui.setDrawerHeight(fitted)
+    },
+  }
+}
+
+/**
+ * The drawer's top edge: dragged, it makes the terminal area taller or shorter, the preview
+ * giving way above; double-clicked, back to the usual height. A separator the keyboard
+ * reaches by Tab, whose up and down arrows resize it. Dragging leaves the keyboard where it
+ * was, in the terminal. The hit area straddles the edge; a preview over the canvas covers
+ * its upper part, so it reaches 8px into the drawer.
+ */
+function DrawerEdge({ size }: { size: DrawerSize }) {
+  const [dragging, setDragging] = useState(false)
+  const onPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return
+    // No text selection or focus change while dragging.
+    event.preventDefault()
+    const from = size.height
+    let height = from
+    let pulled = 0
+    setDragging(true)
+    trackDrag(
+      event,
+      (_dx, dy) => {
+        pulled += dy
+        height = drawerHeight(from - pulled, Number.POSITIVE_INFINITY)
+        size.set(height, false)
+      },
+      () => {
+        setDragging(false)
+        if (height !== from) size.set(height, true)
+      },
+    )
+  }
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    const step = { ArrowUp: DRAWER_HEIGHT.step, ArrowDown: -DRAWER_HEIGHT.step }[event.key]
+    if (!step) return
+    event.preventDefault()
+    size.set(size.height + step, true)
+  }
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: an <hr> can't hold the keyboard to resize.
+    <div
+      role="separator"
+      tabIndex={0}
+      aria-label="Resize terminal"
+      aria-orientation="horizontal"
+      aria-valuenow={size.height}
+      aria-valuemin={DRAWER_HEIGHT.min}
+      aria-valuemax={size.max}
+      aria-valuetext={`${size.height} pixels tall`}
+      data-dragging={dragging || undefined}
+      onPointerDown={onPointerDown}
+      onDoubleClick={() => size.set(DRAWER_HEIGHT.default, true)}
+      onKeyDown={onKeyDown}
+      className={cn(
+        // 4px over the canvas, 8px into the drawer.
+        'absolute inset-x-0 -top-1 z-sticky h-3 cursor-row-resize outline-none',
+        // Its line lies just under the drawer's border (the preview's view, snapped to whole
+        // pixels, covers the hairline itself): a little stronger with the pointer on it or
+        // dragging, and as the keyboard's ring with the keyboard on it.
+        'after:absolute after:inset-x-0 after:top-1 after:h-(--hairline) after:bg-line-strong after:opacity-0 after:transition-opacity',
+        'hover:after:opacity-100 focus-visible:after:bg-muted focus-visible:after:opacity-100 data-dragging:after:opacity-100',
+      )}
+    />
   )
 }
 
