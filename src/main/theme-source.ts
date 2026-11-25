@@ -61,6 +61,27 @@ async function cssFiles(root: string, limit: number) {
 export const listCssFiles = async (root: string) =>
   (await cssFiles(root, MAX_THEME_CSS_FILES)).paths
 
+/**
+ * Those files, read. `complete` is false when a file was too big or there were too many,
+ * so a second declaration could be in one Gui didn't read.
+ */
+export async function readCssFiles(root: string) {
+  const { paths, skipped } = await cssFiles(root, MAX_THEME_CSS_FILES + 1)
+  const tooMany = paths.length > MAX_THEME_CSS_FILES
+  const files: CssFile[] = await Promise.all(
+    paths.slice(0, MAX_THEME_CSS_FILES).map(async (path) => ({
+      path,
+      text: await readFile(join(root, path), 'utf8'),
+    })),
+  )
+  const incomplete = tooMany
+    ? 'The project has too many .css files'
+    : skipped
+      ? 'The project has a .css file too big to read'
+      : null
+  return { files, incomplete }
+}
+
 /** `text` with every comment blanked to spaces, so offsets stay the same. */
 function blankComments(text: string) {
   let out = ''
@@ -131,8 +152,17 @@ interface Block {
   last: Last | null
 }
 
-/** Every custom property declaration in `file`, and every block, with the mode each is in. */
+const scans = new WeakMap<CssFile, ReturnType<typeof scanFile>>()
+
+/** `scanFile`, once per file read: locks locate every variable in every mode. */
 function scan(file: CssFile) {
+  const found = scans.get(file) ?? scanFile(file)
+  scans.set(file, found)
+  return found
+}
+
+/** Every custom property declaration in `file`, and every block, with the mode each is in. */
+function scanFile(file: CssFile) {
   const { text } = file
   const clean = blankComments(text)
   const found: Declaration[] = []
@@ -295,16 +325,8 @@ export async function writeThemeEdits(
   const twice = edits.find((_, i) => keys.indexOf(keys[i]) !== i)
   if (twice) return blocked(twice, 'Edited twice')
   // A file Gui doesn't read could hold a second declaration, so "exactly once" can't be proven.
-  const { paths, skipped } = await cssFiles(root, MAX_THEME_CSS_FILES + 1)
-  if (paths.length > MAX_THEME_CSS_FILES)
-    return blocked(edits[0], 'The project has too many .css files')
-  if (skipped) return blocked(edits[0], 'The project has a .css file too big to read')
-  const files = await Promise.all(
-    paths.map(async (path) => ({
-      path,
-      text: await readFile(join(root, path), 'utf8'),
-    })),
-  )
+  const { files, incomplete } = await readCssFiles(root)
+  if (incomplete) return blocked(edits[0], incomplete)
   const splices = new Map<string, { start: number; end: number; text: string }[]>()
   for (const edit of edits) {
     const found = locate(files, edit.name, modeOfEdit(edit))

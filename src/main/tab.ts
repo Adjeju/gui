@@ -101,6 +101,7 @@ import { availableModels, type BoardLayout, ChatController } from './chat'
 import { discardChatImages, saveChatImages } from './chat-image-assets'
 import { listedModels, modelsUnder, offersChoice, pickerFields } from './chat-models'
 import { Checkpoints } from './checkpoints'
+import { DesignTokens } from './design-tokens'
 import { openExternal } from './desktop-open'
 import { DevServer } from './dev-server'
 import { type DeveloperToolsStatus, developerTools } from './developer-tools'
@@ -1598,6 +1599,15 @@ export class ProjectTab implements ChatPanelOwner {
       },
     })
     this.resources.previewTools = tools
+    // A canvas's frames are standalone pages with no shared theme.
+    if (!board) {
+      resources.designTokens = new DesignTokens({
+        command: <T>(method: string, params?: Record<string, unknown>) =>
+          this.inspector.command<T>(method, params),
+        root,
+        live: current,
+      })
+    }
     // A narrated clip's transcript comes in after it's attached: the composer updates it.
     const recordings = new Recordings(root, (clip) => {
       if (current() && this.resources.recordings === recordings)
@@ -2499,6 +2509,10 @@ export class ProjectTab implements ChatPanelOwner {
       this.keepKeyboard()
       this.keyboardBeforeLoad = null
       this.patchPreview({ loading: false })
+      // shortcut: CSS-only hot reload fires no load event, so the theme is read again only on
+      // full loads; re-read on a stylesheet change (CSS.styleSheetAdded) if that matters.
+      if (!this.loadFailed && wc.getURL() !== 'about:blank')
+        void this.resources.designTokens?.loaded().catch(() => undefined)
       // The open frame's page loaded: it didn't hang the preview on its way in.
       const board = this.resources.board
       if (board?.openId && board.frameAt(this.committedUrl) === board.openId) this.clearFrameCheck()
