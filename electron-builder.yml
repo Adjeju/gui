@@ -139,7 +139,9 @@ linux:
   category: Development
   executableName: gui
   syncDesktopName: true
-  icon: build/linux-icon.png
+  # One PNG per hicolor size (16x16.png … 512x512.png): a size hicolor doesn't list is never found.
+  # Downscaled from build/linux-icon.png (1024px), which is kept as their source and not shipped.
+  icon: build/icons
   artifactName: ${productName}-${version}-${arch}.${ext}
   synopsis: Design real interfaces with your own AI agents
   # The .deb's Maintainer; otherwise package.json's author. Its homepage is package.json's.
