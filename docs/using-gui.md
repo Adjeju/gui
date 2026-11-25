@@ -22,7 +22,7 @@ Design mode (⌘D, or the pointer button in the toolbar) outlines whatever is un
 
 ## Variations
 
-Pick an element and ask for options ("show me 15 ways to make this better"): the agent writes each version as real code in your project, behind a small switch, and a bar in the preview's bottom-left corner (right of the floating chat when it's there) flips through them in the live preview (**3 of 15 · Tighter hierarchy**), the original among them. ‹ › flip, as do ← and → in the bar; the page scrolls to the element when it isn't in view, and keeps the one showing when it reloads. **Use this** asks the agent to keep that version and remove the rest; × (or Esc in the bar) undoes the message that made them, asking first when later messages would go too. [Variations](variations.md) has the details.
+Pick an element and ask for options ("show me 15 ways to make this better"): the agent writes each version as real code in your project, behind a small switch, and a bar in a corner of the preview flips through them in the live preview (**3 of 15 · Tighter hierarchy**), the original among them. It starts bottom-left; drag it to any corner, and it sits beside the floating chat when they share one. ‹ › flip, as do ← and → in the bar; the page scrolls to the element when it isn't in view, and keeps the one showing when it reloads. **Use this** asks the agent to keep that version and remove the rest; × (or Esc in the bar) undoes the message that made them, asking first when later messages would go too. [Variations](variations.md) has the details.
 
 ## Rulers and guides
 

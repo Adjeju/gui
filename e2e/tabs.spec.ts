@@ -488,7 +488,7 @@ function workingSeconds(row: string | null) {
 function chatAtRest() {
   const working = [...document.querySelectorAll('p')]
     .map((row) => row.textContent ?? '')
-    .find((text) => text.startsWith('Working '))
+    .find((text) => /^Working \d/.test(text))
   return {
     unseen: document.documentElement.hasAttribute('data-unseen'),
     spinners: [
@@ -552,7 +552,7 @@ test('a chat nobody can see rests, and is right the moment it is seen again', as
       const read = () => {
         const working = [...document.querySelectorAll('p')]
           .map((row) => row.textContent ?? '')
-          .find((text) => text.startsWith('Working '))
+          .find((text) => /^Working \d/.test(text))
         return { working: working ?? null, at: Date.now() }
       }
       page.seenAgain = undefined

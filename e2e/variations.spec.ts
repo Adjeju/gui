@@ -7,8 +7,8 @@ import { expect, test } from './helpers/test'
 import { ask, installToolAgent } from './helpers/tool-agent'
 
 // Variations (docs/variations.md): the agent writes versions of an element behind a switch
-// that follows Gui's contract, and preview_variations shows a bar in the preview's bottom-left
-// corner to flip them, scrolling the element into view.
+// that follows Gui's contract, and preview_variations shows a bar in a corner of the preview
+// (bottom-left at first) to flip them, scrolling the element into view.
 
 /** What Playwright passes to `app.evaluate` callbacks. */
 type ElectronModule = typeof import('electron/main')

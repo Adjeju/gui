@@ -428,9 +428,10 @@ function usePressedKey(key: GuideOverlay['key']) {
 /**
  * The versions the agent wrote of an element (preview_variations), in a corner of the preview
  * that the user can drag or throw it to: ‹ › flip them, as do ← and → here or in the preview,
- * and the page shows each at once, never animated. Use this asks the agent to keep the one showing; × or Esc discards them all,
- * undoing the message that made them (asking first when later messages would go too). Main
- * places it and fits the overlay to it, so it reports its size.
+ * and the page shows each at once, never animated. Use this asks the agent to keep the one
+ * showing; × or Esc discards them all, undoing the message that made them (asking first when
+ * later messages would go too). Main places it and fits the overlay to it, so it reports its
+ * size.
  */
 function Variations({ bar }: { bar: VariationsBar }) {
   const ref = useRef<HTMLDivElement>(null)
