@@ -39,7 +39,7 @@ Object.assign(globalThis, {
   matchMedia: () => media,
 })
 const { connectChat, useChat } = await import('../../src/renderer/src/chat/store')
-const meta = { queue: [], docked: true } as unknown as ChatMeta
+const meta = { queue: [], selection: [], docked: true } as unknown as ChatMeta
 const turn: Turn = {
   id: 'turn',
   index: 0,

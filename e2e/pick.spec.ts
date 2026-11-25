@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs'
+import { copyFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type AgentId, CUSTOM_AGENT_PREFIX, isRegion } from '../src/shared/types'
 import { electronExecutable, waitFor } from './helpers/env'
@@ -215,6 +215,7 @@ test('picks are markers in the message box: typing goes there, and the agent get
   if (shots) {
     await session.chat.locator('form').screenshot({ path: join(shots, 'message-box.png') })
     await session.shot('page-badges', true)
+    copyFileSync(test.info().outputPath('page-badges.png'), join(shots, 'page-badges.png'))
   }
 
   // Pointing at a marker shows its element in the page, as its row did.
@@ -255,7 +256,10 @@ test('picks are markers in the message box: typing goes there, and the agent get
   await session.chat.evaluate(() => window.gui.expandChat())
   const sent = session.chat.locator(`[data-user-message="${turn.id}"]`)
   await expect(sent.locator('[data-pick-ref]')).toHaveText(['1Heading', '2Button'])
-  if (shots) await session.shot('sent-message', true)
+  if (shots) {
+    await session.shot('sent-message', true)
+    copyFileSync(test.info().outputPath('sent-message.png'), join(shots, 'sent-message.png'))
+  }
 })
 
 test('deleting a marker drops its pick and the rest renumber, on the page too', async ({
