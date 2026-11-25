@@ -766,19 +766,21 @@ export class ChatPanel {
   }
 
   /**
-   * A pick landed: the keyboard goes to the message box, where its marker is, wherever the chat
-   * is on screen (docked, floating, popped out), and picking goes on. A chat that's hidden
-   * stays hidden; the marker is in its draft for when it's back.
+   * A pick landed: the keyboard goes to the message box, where its marker is, and picking goes
+   * on. As a pick always has, it brings the chat back to write about it (out of focus mode,
+   * or ⌘B's hiding), docked, floating or popped out as it was.
    */
   focusAfterPick() {
-    if (!this.tab.host.isActive(this.tab)) return
+    if (!this.tab.hasProject) return
+    this.tab.leaveFocusMode()
+    this.cancelCollapse()
+    this.untuck()
     if (this.popout) {
+      if (!this.tab.host.isActive(this.tab)) return
       focusWindow(this.popout)
     } else {
-      if (!this.chatShown) return
-      this.cancelCollapse()
-      this.untuck()
-      this.tab.layout()
+      this.showPanel()
+      if (!this.tab.host.isActive(this.tab)) return
     }
     this.tab.chatView.webContents.focus()
     this.tab.sendChat(Events.chatFocus, null)
