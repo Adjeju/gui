@@ -493,9 +493,14 @@ interface MorphSample {
 interface MorphStore {
   guiMorphSamples?: MorphSample[]
   guiMorphSampler?: NodeJS.Timeout
+  guiMorphSample?: () => void
 }
 
-/** Runs in main: records the chat's and the preview's bounds every 4 ms until stopped. */
+/**
+ * Runs in main: records the chat's and the preview's bounds every 4 ms until stopped, and once
+ * more as it stops, so the samples end where the views are then: a morph's last step can land
+ * between two ticks, just before the test sees the views at rest and stops.
+ */
 function startMorphSampling({ BrowserWindow, WebContentsView }: ElectronModule) {
   const store = globalThis as unknown as MorphStore
   const views = (BrowserWindow.getAllWindows()[0]?.contentView.children ?? []).filter(
@@ -505,15 +510,16 @@ function startMorphSampling({ BrowserWindow, WebContentsView }: ElectronModule) 
   const preview = views.find((view) => /^https?:\/\//.test(view.webContents.getURL()))
   if (!chat || !preview) throw new Error('No chat or preview view')
   const samples: MorphSample[] = []
+  const sample = () => samples.push({ chat: chat.getBounds(), preview: preview.getBounds() })
   store.guiMorphSamples = samples
-  store.guiMorphSampler = setInterval(() => {
-    samples.push({ chat: chat.getBounds(), preview: preview.getBounds() })
-  }, 4)
+  store.guiMorphSample = sample
+  store.guiMorphSampler = setInterval(sample, 4)
 }
 
 function stopMorphSampling() {
   const store = globalThis as unknown as MorphStore
   if (store.guiMorphSampler) clearInterval(store.guiMorphSampler)
+  store.guiMorphSample?.()
   return store.guiMorphSamples ?? []
 }
 
