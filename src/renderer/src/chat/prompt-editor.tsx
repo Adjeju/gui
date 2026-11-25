@@ -2,10 +2,22 @@ import { Fragment, type Node, Slice } from 'prosemirror-model'
 import type { EditorState } from 'prosemirror-state'
 import { EditorView, type NodeView } from 'prosemirror-view'
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
+import { gui } from '../lib/api'
 import { cn } from '../lib/cn'
-import { draftText, isPiece, type PieceKind, schema } from './draft'
+import { draftText, isPiece, type PieceKind, pieceIds, schema } from './draft'
 import { fileSize, shortName } from './images'
-import { applyDraft, useChat } from './store'
+import { pickLabel, pickName } from './picks'
+import { applyDraft, pickById, pieceAttached, useChat } from './store'
+
+/** The picks' markers in the order the draft has them, for their numbers. */
+let numbered: { doc: Node; ids: string[] } | null = null
+
+/** A pick's marker's number: its place among the markers in the text, as the page shows it. */
+function pickNumber(id: string) {
+  const { doc } = useChat.getState().draft
+  if (numbered?.doc !== doc) numbered = { doc, ids: pieceIds(doc, 'pick') }
+  return numbered.ids.indexOf(id) + 1
+}
 
 /** Each kind of piece as the message box draws it, redrawn when what it stands for changes. */
 const PIECE_VIEWS: Record<
@@ -39,6 +51,34 @@ const PIECE_VIEWS: Record<
     // Copied out of the message box, an image reads as its file's name.
     text: (id) => useChat.getState().attachments.find((attached) => attached.id === id)?.name ?? '',
   },
+  // Something picked in the preview: its number, as the page's badge shows it, and its name.
+  pick: {
+    draw(dom, id) {
+      const picked = pickById(id)
+      dom.replaceChildren()
+      if (!picked) {
+        dom.removeAttribute('title')
+        return
+      }
+      const number = String(pickNumber(id))
+      const { name, detail, where } = pickLabel(picked)
+      dom.title = [[name, detail].filter(Boolean).join(' '), where].filter(Boolean).join('\n')
+      dom.dataset.pickNumber = number
+      // The page's badge (Counter), at the size of an image piece's thumbnail.
+      const badge = document.createElement('span')
+      badge.className =
+        'flex size-4 shrink-0 items-center justify-center rounded-full bg-accent text-caption font-medium text-accent-fg tabular-nums'
+      badge.textContent = number
+      const label = document.createElement('span')
+      label.className = 'truncate'
+      label.textContent = pickName(picked)
+      dom.append(badge, label)
+    },
+    text: (id) => {
+      const picked = pickById(id)
+      return picked ? pickName(picked) : ''
+    },
+  },
 }
 
 const redraws = new Set<() => void>()
@@ -53,11 +93,70 @@ function pieceView(node: Node): NodeView {
   const draw = () => PIECE_VIEWS[kind].draw(dom, node.attrs.id)
   draw()
   redraws.add(draw)
-  return { dom, ignoreMutation: () => true, destroy: () => redraws.delete(draw) }
+  // Pointing at a pick's marker shows which it is in the page.
+  let hovered = false
+  if (kind === 'pick') {
+    dom.addEventListener('pointerenter', () => {
+      hovered = true
+      gui.hoverSelection(node.attrs.id)
+    })
+    dom.addEventListener('pointerleave', () => {
+      hovered = false
+      gui.hoverSelection(null)
+    })
+  }
+  return {
+    dom,
+    ignoreMutation: () => true,
+    destroy: () => {
+      redraws.delete(draw)
+      if (hovered) gui.hoverSelection(null)
+    },
+  }
 }
 
 const pieceText = (node: Node) =>
   isPiece(node) ? PIECE_VIEWS[node.attrs.kind as PieceKind].text(node.attrs.id) : (node.text ?? '')
+
+/**
+ * What was last cut or copied from the message box, as text and as it was: pasted back, its
+ * pieces come back with it when what they stand for is still there and they aren't in the
+ * message already (a marker cut and pasted elsewhere moves; a copied one pastes as its name).
+ */
+let copied: { text: string; slice: Slice } | null = null
+
+function revived(fragment: Fragment, keep: (piece: Node) => boolean): Fragment {
+  const nodes: Node[] = []
+  fragment.forEach((node) => {
+    if (isPiece(node)) {
+      if (keep(node)) nodes.push(node)
+      else {
+        const text = pieceText(node)
+        if (text) nodes.push(schema.text(text))
+      }
+    } else if (node.isText) nodes.push(node)
+    else nodes.push(node.copy(revived(node.content, keep)))
+  })
+  return Fragment.from(nodes)
+}
+
+/** `text` pasted into `state`: what was cut or copied here, as it was; anything else plain. */
+function pastedSlice(state: EditorState, text: string) {
+  if (!copied || copied.text !== text) return plainSlice(text)
+  const present = new Set<string>()
+  state.doc.descendants((node) => {
+    if (isPiece(node)) present.add(`${node.attrs.kind}:${node.attrs.id}`)
+  })
+  const { slice } = copied
+  const content = revived(slice.content, (piece) => {
+    const key = `${piece.attrs.kind}:${piece.attrs.id}`
+    if (present.has(key) || !pieceAttached(piece.attrs.kind as PieceKind, piece.attrs.id))
+      return false
+    present.add(key)
+    return true
+  })
+  return new Slice(content, slice.openStart, slice.openEnd)
+}
 
 /** Pasted text as paragraphs of plain text: never rich text, never a piece. */
 function plainSlice(text: string) {
@@ -133,7 +232,9 @@ export function PromptEditor({
         // Always handled here, so nothing pasted is read as HTML.
         if (text)
           editorView.dispatch(
-            editorView.state.tr.replaceSelection(plainSlice(text)).scrollIntoView(),
+            editorView.state.tr
+              .replaceSelection(pastedSlice(editorView.state, text))
+              .scrollIntoView(),
           )
         return true
       },
@@ -151,7 +252,9 @@ export function PromptEditor({
           else parts.push(pieceText(node))
           lines.push(parts.join(''))
         })
-        return lines.join('\n')
+        const text = lines.join('\n')
+        copied = { text, slice }
+        return text
       },
       dispatchTransaction: applyDraft,
     })
@@ -159,7 +262,13 @@ export function PromptEditor({
     // The store's draft is the truth: the view follows it, whoever changed it.
     const unsubscribe = useChat.subscribe((state, previous) => {
       if (state.draft !== editor.state) editor.updateState(state.draft)
-      if (state.attachments !== previous.attachments) for (const redraw of redraws) redraw()
+      // A pick's marker shows its number, which changes as markers come, go and move.
+      const picks =
+        state.attachments !== previous.attachments ||
+        state.meta?.selection !== previous.meta?.selection ||
+        (state.draft.doc !== previous.draft.doc &&
+          pieceIds(state.draft.doc, 'pick').join() !== pieceIds(previous.draft.doc, 'pick').join())
+      if (picks) for (const redraw of redraws) redraw()
     })
     return () => {
       unsubscribe()

@@ -289,7 +289,7 @@ function QueuedItem({
         title={edit ? `${item.prompt} ${edit}` : item.prompt}
         onDoubleClick={startEdit}
       >
-        <PromptText text={item.prompt} images={item.attachments} />
+        <PromptText text={item.prompt} images={item.attachments} picks={item.context} />
         {edit && <span className="text-subtle"> {edit}</span>}
       </p>
       {!!item.recordings?.length && (

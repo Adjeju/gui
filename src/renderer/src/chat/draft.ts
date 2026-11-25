@@ -3,18 +3,19 @@ import { closeHistory, history, redo, undo } from 'prosemirror-history'
 import { keymap } from 'prosemirror-keymap'
 import { Fragment, type Node, Schema, Slice } from 'prosemirror-model'
 import { EditorState, Plugin, Selection, TextSelection, type Transaction } from 'prosemirror-state'
-import { imageRef } from '../../../shared/image-refs'
+import { imageRef, pickRef } from '../../../shared/image-refs'
 
 /**
  * The message being written: a ProseMirror document of paragraphs holding text and pieces.
- * A piece stands for something attached to the message (an image, for now) by that thing's
- * id, never by a number: numbers are given only when the message is sent (`serializeDraft`),
+ * A piece stands for something attached to the message (an image, or an element or area
+ * picked in the preview) by that thing's id, never by a number: numbers are given only when the message is sent (`serializeDraft`),
  * in the order the pieces appear in the text. Text the user types is only ever text.
  *
  * Another kind of piece is one more entry in PIECES: its label for the sent message.
  */
 export const PIECES = {
   image: { label: imageRef },
+  pick: { label: pickRef },
 } satisfies Record<string, { label: (n: number) => string }>
 
 export type PieceKind = keyof typeof PIECES
@@ -103,6 +104,27 @@ export const draftText = (doc: Node) => doc.textBetween(0, doc.content.size, '\n
 
 /** Whether anything is written besides pieces and space. */
 export const hasWords = (doc: Node) => draftText(doc).replaceAll(OBJECT, '').trim() !== ''
+
+const idsByDoc = new WeakMap<Node, Record<PieceKind, string[]>>()
+
+/** The ids of the pieces of `kind`, in the order the text has them; once per document. */
+export function pieceIds(doc: Node, kind: PieceKind): string[] {
+  let found = idsByDoc.get(doc)
+  if (!found) {
+    const ids = Object.fromEntries(
+      Object.keys(PIECES).map((each) => [each, [] as string[]]),
+    ) as Record<PieceKind, string[]>
+    doc.descendants((node) => {
+      if (!isPiece(node)) return !node.isInline
+      const list = ids[node.attrs.kind as PieceKind]
+      if (list && !list.includes(node.attrs.id)) list.push(node.attrs.id)
+      return false
+    })
+    found = ids
+    idsByDoc.set(doc, found)
+  }
+  return found[kind]
+}
 
 /** The document position of a text offset (`draftText`). */
 export function positionAt(doc: Node, offset: number) {

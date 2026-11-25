@@ -1,5 +1,3 @@
-const REF = /\[Image (\d+)\]/g
-
 /**
  * How a sent message names its Nth image: the composer writes each image piece this way,
  * numbered in the order the message names them, and main labels the images to match.
@@ -25,13 +23,28 @@ export function withoutImageRefs(text: string, count: number) {
     .trim()
 }
 
-/** A sent message as text and image numbers, to show each label as its image. */
-export function imageRefParts(text: string): (string | number)[] {
-  const parts: (string | number)[] = []
+/**
+ * How a sent message names its Nth pick (an element or area picked in the preview): the
+ * composer writes each marker this way, numbered in the order the message names them, and
+ * main lists the picks in that order under the same labels (`buildPrompt`).
+ */
+export const pickRef = (n: number) => `[Selection ${n}]`
+
+const REFS = /\[(Image|Selection) (\d+)\]/g
+
+/** A label in a sent message: the Nth image or pick. */
+export interface MessageRef {
+  kind: 'image' | 'pick'
+  n: number
+}
+
+/** A sent message as text and labels, to show each label as what it names. */
+export function messageRefParts(text: string): (string | MessageRef)[] {
+  const parts: (string | MessageRef)[] = []
   let cursor = 0
-  for (const match of text.matchAll(REF)) {
+  for (const match of text.matchAll(REFS)) {
     if (match.index > cursor) parts.push(text.slice(cursor, match.index))
-    parts.push(Number(match[1]))
+    parts.push({ kind: match[1] === 'Image' ? 'image' : 'pick', n: Number(match[2]) })
     cursor = match.index + match[0].length
   }
   if (cursor < text.length) parts.push(text.slice(cursor))

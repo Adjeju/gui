@@ -1238,7 +1238,7 @@ function registerIpc() {
       Array.isArray(value) && value.length <= MAX_PICK_IDS && value.every(isString)
     if (!ids(order) || !ids(dropped)) return
     tabFor(event)?.arrangeSelection(order as string[], dropped as string[])
-  }
+  })
   handleLegacy(Invoke.fixProblems, (event) => tabFor(event)?.fixProblems() ?? false)
   handleLegacy(Invoke.fixStartup, (event) => tabFor(event)?.fixStartup() ?? false)
   handleLegacy(Invoke.setStartCommand, (event, start: unknown) =>

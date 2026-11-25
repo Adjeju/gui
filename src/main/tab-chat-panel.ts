@@ -200,7 +200,8 @@ export class ChatPanel {
    * message box shows, to write about it, as picking goes on.
    */
   private get bubbled() {
-    const picking = this.tab.state.preview.selecting && !this.tab.resources.chat?.meta.selection.length
+    const picking =
+      this.tab.state.preview.selecting && !this.tab.resources.chat?.meta.selection.length
     return (picking || this.tucked) && this.chatShown && !this.docked
   }
 

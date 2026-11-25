@@ -1,16 +1,26 @@
 import { expect, test } from 'bun:test'
-import { imageRefParts, withoutImageRefs } from '../src/shared/image-refs'
+import { messageRefParts, pickRef, withoutImageRefs } from '../src/shared/image-refs'
 
-test('a message splits into text and image numbers', () => {
-  expect(imageRefParts('Is [Image 1] darker than [Image 2]?')).toEqual([
+test('a message splits into text and labels for images and picks', () => {
+  expect(messageRefParts('Is [Image 1] darker than [Image 2]?')).toEqual([
     'Is ',
-    1,
+    { kind: 'image', n: 1 },
     ' darker than ',
-    2,
+    { kind: 'image', n: 2 },
     '?',
   ])
-  expect(imageRefParts('[Image 3]')).toEqual([3])
-  expect(imageRefParts('No images')).toEqual(['No images'])
+  expect(messageRefParts('[Image 3]')).toEqual([{ kind: 'image', n: 3 }])
+  expect(messageRefParts('No images')).toEqual(['No images'])
+  expect(messageRefParts(`Make ${pickRef(1)} match ${pickRef(2)}`)).toEqual([
+    'Make ',
+    { kind: 'pick', n: 1 },
+    ' match ',
+    { kind: 'pick', n: 2 },
+  ])
+})
+
+test('without images, pick labels stay', () => {
+  expect(withoutImageRefs('Put [Image 1] in [Selection 1]', 1)).toBe('Put in [Selection 1]')
 })
 
 test('without images, a message loses only the labels of the images it had', () => {

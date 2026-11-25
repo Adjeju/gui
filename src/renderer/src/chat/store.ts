@@ -7,6 +7,7 @@ import type {
   ChatMeta,
   ChatSnapshot,
   ImageAttachment,
+  Picked,
   QueuedMessage,
   RecordingAttachment,
   Turn,
@@ -18,6 +19,7 @@ import {
   hasWords,
   insertPieces,
   type PieceKind,
+  pieceIds,
   removePieces,
   replaceText,
   serializeDraft,
@@ -152,16 +154,120 @@ export function focusComposer() {
   document.querySelector<HTMLElement>('[data-composer]')?.focus({ preventScroll: true })
 }
 
-/** Whether the thing a piece in the draft stands for is still attached. */
-function attached(kind: PieceKind, id: string): boolean {
+/**
+ * Whether the thing a piece in the draft stands for is still attached. A pick dropped lately
+ * may come back with its marker (⌘Z, a paste after a cut), as main still has it (`syncPicks`).
+ */
+export function pieceAttached(kind: PieceKind, id: string): boolean {
   switch (kind) {
     case 'image':
       return useChat.getState().attachments.some((image) => image.id === id)
+    case 'pick':
+      return pickById(id) !== null
   }
 }
 
+// Picks and their markers. Main holds the picks (meta.selection), the draft holds a marker
+// for each (a 'pick' piece), and they live and die together: a new pick puts its marker at
+// the caret; a pick main drops (clicked again, Esc, a new chat) takes its marker; a marker
+// deleted drops its pick, and one brought back brings its pick back; and the picks follow the
+// markers' order in the text, so the page's numbers are the markers'.
+
+/** Picks seen lately, by id, newest last: what a marker draws, and what can come back. */
+const pickCache = new Map<string, Picked>()
+/** Kept as main keeps dropped picks to bring back (tab.ts MAX_DROPPED_PICKS), and the live ones. */
+const MAX_CACHED_PICKS = 100
+/** Picks whose marker was deleted, until main has dropped them. */
+const dropping = new Set<string>()
+/** Markers brought back, until main says whether their picks came back with them. */
+const restoring = new Set<string>()
+/** Picks that went out with the message being sent: their markers go when it clears. */
+let sendingPicks = new Set<string>()
+/** The draft's markers as of the last sync, in order. */
+let syncedPicks: string[] = []
+let syncQueued = false
+
+/** A pick the draft can draw: picked now, or seen lately. */
+export function pickById(id: string): Picked | null {
+  return (
+    useChat.getState().meta?.selection.find((picked) => picked.id === id) ??
+    pickCache.get(id) ??
+    null
+  )
+}
+
+function rememberPick(picked: Picked) {
+  pickCache.delete(picked.id)
+  pickCache.set(picked.id, picked)
+  const [oldest] = pickCache.keys()
+  if (pickCache.size > MAX_CACHED_PICKS) pickCache.delete(oldest)
+}
+
+/** After this change is done (never inside a store update): picks and markers agree again. */
+function queueSyncPicks() {
+  if (syncQueued) return
+  syncQueued = true
+  queueMicrotask(() => {
+    syncQueued = false
+    syncPicks()
+  })
+}
+
+function syncPicks() {
+  const { meta, draft } = useChat.getState()
+  if (!meta) return
+  const picks = meta.selection
+  for (const picked of picks) rememberPick(picked)
+  const picked = new Set(picks.map((pick) => pick.id))
+  for (const id of dropping) if (!picked.has(id)) dropping.delete(id)
+  const marked = pieceIds(draft.doc, 'pick')
+  const was = new Set(syncedPicks)
+  const settling = (id: string) => restoring.has(id) || sendingPicks.has(id)
+  // Main dropped these picks since: their markers go.
+  const gone = marked.filter((id) => !picked.has(id) && was.has(id) && !settling(id))
+  // The user deleted these markers: their picks go.
+  const dropped = syncedPicks.filter(
+    (id) => !marked.includes(id) && picked.has(id) && !dropping.has(id),
+  )
+  // Markers back in the text (⌘Z, a paste) whose picks were dropped: they come back too.
+  const back = marked.filter((id) => !picked.has(id) && !was.has(id) && !settling(id))
+  // New picks: a marker each, at the caret.
+  const fresh = picks
+    .map((pick) => pick.id)
+    .filter((id) => !marked.includes(id) && !was.has(id) && !dropping.has(id))
+  if (gone.length) editDraft((current) => removePieces(current, 'pick', gone))
+  if (fresh.length) editDraft((current) => insertPieces(current, 'pick', fresh))
+  const order = pieceIds(useChat.getState().draft.doc, 'pick')
+  syncedPicks = order
+  const named = order.filter((id) => picked.has(id))
+  const shown = picks.map((pick) => pick.id).filter((id) => order.includes(id))
+  const reordered = named.some((id, i) => id !== shown[i])
+  if (!dropped.length && !back.length && !reordered) return
+  for (const id of dropped) dropping.add(id)
+  for (const id of back) restoring.add(id)
+  void gui
+    .arrangeSelection(order, dropped)
+    .catch(() => undefined)
+    .finally(() => {
+      // A pick main no longer had stays dropped: its marker goes on the next sync.
+      for (const id of back) restoring.delete(id)
+      queueSyncPicks()
+    })
+}
+
+/** What the next message sends goes out: its picks' markers stay until the composer clears. */
+function sendingWith(picks: string[]) {
+  sendingPicks = new Set(picks)
+}
+
+function sentDone() {
+  if (sendingPicks.size === 0) return
+  sendingPicks = new Set()
+  queueSyncPicks()
+}
+
 function newDraft(text = ''): EditorState {
-  return createDraft(text, attached)
+  return createDraft(text, pieceAttached)
 }
 
 /** A change to the draft, from the message box or from outside it. */
@@ -342,6 +448,7 @@ const permission = (itemId: string) => () =>
 interface Sent {
   prompt: string
   images: string[]
+  picks: string[]
   recordings: string[]
   followUp: string | null
   at: number
@@ -357,16 +464,19 @@ const SENT_WINDOW_MS = 3000
 const SENT_CLEAR_MS = 300
 
 /**
- * The composer is sending `text` with the draft images `images` (by id): when main's turn or
- * queued message for it arrives, it rises out of the composer as the composer clears.
+ * The composer is sending `text` with the draft images `images` and the picks `picks` (by id):
+ * when main's turn or queued message for it arrives, it rises out of the composer as the
+ * composer clears.
  */
 export function noteSend(
   text: string,
   images: string[],
+  picks: string[] = [],
   recordings: string[] = [],
   followUp: string | null = null,
 ) {
-  sent = { prompt: text, images, recordings, followUp, at: performance.now() }
+  sent = { prompt: text, images, picks, recordings, followUp, at: performance.now() }
+  sendingWith(picks)
 }
 
 /**
@@ -385,6 +495,7 @@ export function settleSend(
   if (!accepted) {
     if (pending?.fallback) clearTimeout(pending.fallback)
     sent = null
+    sentDone()
     return
   }
   if (pending && !pending.fallback) {
@@ -425,6 +536,7 @@ function clearSent(
   if (followUp && useChat.getState().followUp === followUp) setFollowUp(null)
   removeAttachments(images)
   removeRecordings(recordings)
+  sentDone()
 }
 
 /** Queued messages the user removed: they leave, rather than wait for a turn to move into. */
@@ -796,6 +908,14 @@ export function connectChat() {
     gui.onChatSeen((seen) => {
       seenReceived = true
       setSeen(seen)
+    }),
+    // Picks and markers follow each other (`syncPicks`), whichever changed.
+    useChat.subscribe((state, previous) => {
+      if (
+        state.draft.doc !== previous.draft.doc ||
+        state.meta?.selection !== previous.meta?.selection
+      )
+        queueSyncPicks()
     }),
     gui.onCommand((command) => {
       if (command === 'chooseModel') chooseModel()

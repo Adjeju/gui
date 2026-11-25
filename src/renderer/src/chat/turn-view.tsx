@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useLayoutEffect, useState } from 'react'
-import { imageRef, imageRefParts } from '../../../shared/image-refs'
+import { imageRef, messageRefParts, pickRef } from '../../../shared/image-refs'
 import type { ShortcutId } from '../../../shared/shortcuts'
 import {
   type EditDiff,
@@ -7,7 +7,6 @@ import {
   type PermissionChoice,
   type Picked,
   type PreviewFrame,
-  type SourceLocation,
   type TextEdit,
   type Turn,
   type TurnItem,
@@ -49,9 +48,10 @@ import { PathText } from '../lib/path-text'
 import { Badge } from '../lib/status'
 import { Card, GroupLabel, Thumbnail } from '../lib/surface'
 import { duration } from '../lib/time'
-import { Button, IconButton, PRESS, Spinner, Toggle, withCode } from '../lib/ui'
+import { Button, Counter, IconButton, PRESS, Spinner, Toggle, withCode } from '../lib/ui'
 import { shortName } from './images'
 import { Markdown } from './markdown'
+import { pickLabel, pickName } from './picks'
 import { RecordingClip } from './recording-clip'
 import { focusComposer, setFollowUp, useChat, waitingCard } from './store'
 import { isNewRow, markSeen } from './transitions'
@@ -232,7 +232,7 @@ function UserMessage({ turn }: { turn: Turn }) {
         data-user-message={turn.id}
         className="max-w-7/8 whitespace-pre-wrap break-words rounded-lg bg-fill px-3 py-1.5 text-fg"
       >
-        <PromptText text={turn.prompt} images={turn.attachments} />
+        <PromptText text={turn.prompt} images={turn.attachments} picks={turn.context} />
       </p>
     </MessageBody>
   )
@@ -240,28 +240,57 @@ function UserMessage({ turn }: { turn: Turn }) {
 
 type SteerItem = Extract<TurnItem, { kind: 'steer' }>
 
-/** A sent (or queued) message, each image label in it shown as that image. */
-export function PromptText({ text, images }: { text: string; images?: Turn['attachments'] }) {
-  if (!images?.length) return text
+/** How a label for an image or a pick shows in a sent message: as the message box drew it. */
+const REF_CHIP =
+  'mx-0.5 inline-flex max-w-56 items-center gap-1 rounded-md border border-line bg-raised py-px pr-1.5 pl-0.5 align-bottom text-small leading-snug'
+
+/**
+ * A sent (or queued) message, each label in it shown as what it names: an image as that
+ * image, a pick as its marker (its number, as the page showed it, and its name).
+ */
+export function PromptText({
+  text,
+  images,
+  picks,
+}: {
+  text: string
+  images?: Turn['attachments']
+  picks?: Picked[]
+}) {
+  if (!images?.length && !picks?.length) return text
   const nodes: ReactNode[] = []
   let at = 0
-  for (const part of imageRefParts(text)) {
-    const image = typeof part === 'number' ? images[part - 1] : undefined
-    if (typeof part === 'string') nodes.push(part)
-    else if (!image) nodes.push(imageRef(part))
-    else
+  for (const part of messageRefParts(text)) {
+    if (typeof part === 'string') {
+      nodes.push(part)
+      at += part.length
+      continue
+    }
+    const label = part.kind === 'image' ? imageRef(part.n) : pickRef(part.n)
+    const image = part.kind === 'image' ? images?.[part.n - 1] : undefined
+    const picked = part.kind === 'pick' ? picks?.[part.n - 1] : undefined
+    if (image)
       nodes.push(
-        <span
-          key={at}
-          title={image.name}
-          data-image-ref={part}
-          className="mx-0.5 inline-flex max-w-56 items-center gap-1 rounded-md border border-line bg-raised py-px pr-1.5 pl-0.5 align-bottom text-small leading-snug"
-        >
+        <span key={at} title={image.name} data-image-ref={part.n} className={REF_CHIP}>
           <img src={image.thumbnail} alt="" className="size-4 shrink-0 rounded-sm object-cover" />
           <span className="truncate">{shortName(image.name)}</span>
         </span>,
       )
-    at += typeof part === 'number' ? imageRef(part).length : part.length
+    else if (picked) {
+      const { name, detail, where } = pickLabel(picked)
+      nodes.push(
+        <span
+          key={at}
+          title={[[name, detail].filter(Boolean).join(' '), where].filter(Boolean).join('\n')}
+          data-pick-ref={part.n}
+          className={REF_CHIP}
+        >
+          <Counter>{part.n}</Counter>
+          <span className="truncate">{pickName(picked)}</span>
+        </span>,
+      )
+    } else nodes.push(label)
+    at += label.length
   }
   return nodes
 }
@@ -279,7 +308,7 @@ function SteerMessage({ item }: { item: SteerItem }) {
           data-steer-message={item.id}
           className="max-w-7/8 whitespace-pre-wrap break-words rounded-lg bg-fill px-3 py-1.5 text-fg"
         >
-          <PromptText text={item.prompt} images={item.attachments} />
+          <PromptText text={item.prompt} images={item.attachments} picks={item.context} />
         </p>
       </MessageBody>
     </>
@@ -291,14 +320,17 @@ function MessageBody({
   message: turn,
   children,
 }: {
-  message: Pick<Turn, 'context' | 'attachments' | 'recordings' | 'followUp' | 'textEdit'>
+  message: Pick<Turn, 'prompt' | 'context' | 'attachments' | 'recordings' | 'followUp' | 'textEdit'>
   children: ReactNode
 }) {
+  // Picks the message names show in it, as their markers; the rest (a text edit's, or from
+  // before markers) above it.
+  const unnamed = turn.context.filter((_, i) => !turn.prompt.includes(pickRef(i + 1)))
   return (
     <div className="flex flex-col items-end gap-1.5">
-      {turn.context.length > 0 && (
+      {unnamed.length > 0 && (
         <ul aria-label="Selected" className="flex max-w-7/8 flex-wrap justify-end gap-1">
-          {turn.context.map((picked) => (
+          {unnamed.map((picked) => (
             <li key={picked.id} className="min-w-0">
               <PickedChip picked={picked} />
             </li>
@@ -472,37 +504,6 @@ function DirectEdit({
       </Row>
     </TurnPresentationScope>
   )
-}
-
-function sourceLabel(source: SourceLocation | null) {
-  if (!source) return null
-  return `${source.file.split('/').at(-1)}:${source.line}${source.approximate ? ' (approx.)' : ''}`
-}
-
-/**
- * How a pick is named in the chat. An element: what it is (`name`: its tag, h1 or button),
- * its text (`detail`), and quieter, its component and source location (`where`). An area:
- * its size, and what it's in. `title` is the full path, for a tooltip.
- */
-export function pickLabel(picked: Picked) {
-  if (isRegion(picked)) {
-    const { rect, container } = picked
-    const size = `${Math.round(rect.width)} × ${Math.round(rect.height)}`
-    const source = sourceLabel(container?.source ?? null)
-    return {
-      name: 'Area',
-      detail: size,
-      where: container ? `in ${container.tag}${source ? ` · ${source}` : ''}` : null,
-      title: container?.source?.file ?? container?.selector,
-    }
-  }
-  const where = [picked.componentStack[0], sourceLabel(picked.source)].filter(Boolean).join(' · ')
-  return {
-    name: picked.tag,
-    detail: picked.text ? `“${picked.text.slice(0, 60)}”` : null,
-    where: where || null,
-    title: picked.source?.file ?? picked.selector,
-  }
 }
 
 function PickedChip({ picked }: { picked: Picked }) {

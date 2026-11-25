@@ -12,14 +12,13 @@ import {
 } from 'react'
 import { MAX_IMAGES } from '../../../shared/bounded'
 import { matchesShortcut, shortcutText } from '../../../shared/shortcuts'
-import { type ChatMeta, isRegion, type Picked, type Problem } from '../../../shared/types'
+import type { ChatMeta, Problem } from '../../../shared/types'
 import { gui } from '../lib/api'
 import { cn } from '../lib/cn'
 import { TechnicalDetails, useReveal } from '../lib/disclosure'
 import {
   ArrowUp,
   ChevronUp,
-  Crop,
   type IconComponent,
   Info,
   MousePointer2,
@@ -30,16 +29,7 @@ import {
   X,
 } from '../lib/icons'
 import { Card, Thumbnail } from '../lib/surface'
-import {
-  Button,
-  Counter,
-  HIT_AREA,
-  IconButton,
-  Kbd,
-  Spinner,
-  TIGHT_HIT_AREA,
-  withCode,
-} from '../lib/ui'
+import { Button, HIT_AREA, IconButton, Kbd, Spinner, TIGHT_HIT_AREA, withCode } from '../lib/ui'
 import { AgentSetup, shouldShowAgentSetup } from './agent-setup'
 import { AutoToggle } from './auto-toggle'
 import { useCommandMenu } from './command-menu'
@@ -63,7 +53,7 @@ import {
   settleSend,
   useChat,
 } from './store'
-import { NOTE_INSET, pickLabel } from './turn-view'
+import { NOTE_INSET } from './turn-view'
 
 const NOTICE_MS = 5000
 
@@ -210,7 +200,8 @@ export function Composer({
   const submit = async (event?: FormEvent, steer = false) => {
     event?.preventDefault()
     if (!canSend || sending.current) return
-    // Pieces are numbered in the order the message names them, and the images go in that order.
+    // Pieces are numbered in the order the message names them, and the images go in that order
+    // (main has the picks in it already: they follow their markers).
     const { text: message, order } = serializeDraft(draft.doc)
     const sent = inTextOrder(attachments, order.image)
     const clips = recordings.map((clip) => clip.id)
@@ -227,6 +218,7 @@ export function Composer({
     noteSend(
       message,
       sent.map((image) => image.id),
+      order.pick,
       clips,
       about,
     )
@@ -263,7 +255,15 @@ export function Composer({
       void submit(undefined, steers(matchesShortcut(event, 'sendOther')))
       return true
     }
-    if (event.key === 'Escape' && meta.selection.length > 0) gui.clearSelection()
+    // Esc while picking ends picking, as it does over the page; then it clears the picks, and
+    // their markers with them.
+    if (event.key === 'Escape' && !event.isComposing) {
+      if (meta.selecting) {
+        gui.stopSelecting()
+        return true
+      }
+      if (meta.selection.length > 0) gui.clearSelection()
+    }
     return false
   }
 
@@ -309,7 +309,6 @@ export function Composer({
             {meta.selectionError}
           </Line>
         )}
-        {meta.selection.length > 0 && <Selection selection={meta.selection} />}
         {followUp && (
           <FollowUpCard
             number={followUp.index + 1}
@@ -519,7 +518,7 @@ function problemsTitle(problems: Problem[]) {
   return `${errors} in the preview and dev server`
 }
 
-/** What arrives above the message box (a notice, the problems, the picks) rises in as a transcript row does. */
+/** What arrives above the message box (a notice, the problems) rises in as a transcript row does. */
 const ARRIVE = 'motion-safe:animate-row-in motion-reduce:animate-row-fade'
 
 /** True once the composer has been on screen a frame (Composer's `settled`). */
@@ -571,66 +570,6 @@ function ProblemsLine({ meta, running }: { meta: ChatMeta; running: boolean }) {
   )
 }
 
-/**
- * What's picked for the next message, in the order it was picked (numbered as the preview
- * numbers it, when there are several). Pointing at one shows which it is in the page.
- */
-function Selection({ selection }: { selection: Picked[] }) {
-  const several = selection.length > 1
-  const arrive = useArrive()
-  return (
-    <Card
-      tone="inset"
-      padding="none"
-      className={cn(arrive, 'scroll-stable max-h-36 overflow-y-auto')}
-    >
-      <ul
-        aria-label={several ? `${selection.length} selected` : 'Selected'}
-        className="divide-y divide-line"
-      >
-        {selection.map((picked, i) => (
-          <li
-            key={picked.id}
-            onPointerEnter={() => gui.hoverSelection(picked.id)}
-            onPointerLeave={() => gui.hoverSelection(null)}
-            className="flex items-center gap-2 p-1.5"
-          >
-            <div className="relative shrink-0">
-              {picked.screenshot ? (
-                <Thumbnail src={picked.screenshot} size="sm" fit="contain" />
-              ) : (
-                <Thumbnail size="sm">
-                  {isRegion(picked) ? (
-                    <Crop className="size-3.5" aria-hidden="true" />
-                  ) : (
-                    <MousePointer2 className="size-3.5" aria-hidden="true" />
-                  )}
-                </Thumbnail>
-              )}
-              {several && <Counter className="absolute -top-1 -left-1">{i + 1}</Counter>}
-            </div>
-            <PickedLabel picked={picked} />
-            <IconButton
-              size="sm"
-              className={TIGHT_HIT_AREA}
-              label={several ? `Remove ${pickLabel(picked).name}` : 'Remove selection'}
-              title="Remove"
-              icon={X}
-              onClick={() => {
-                gui.hoverSelection(null)
-                document
-                  .querySelector<HTMLElement>('[data-composer]')
-                  ?.focus({ preventScroll: true })
-                gui.removeSelection(picked.id)
-              }}
-            />
-          </li>
-        ))}
-      </ul>
-    </Card>
-  )
-}
-
 /** The earlier turn the next message follows up on, until it's sent or removed. */
 function FollowUpCard({
   number,
@@ -658,23 +597,6 @@ function FollowUpCard({
         onClick={onRemove}
       />
     </Card>
-  )
-}
-
-function PickedLabel({ picked }: { picked: Picked }) {
-  const { name, detail, where, title } = pickLabel(picked)
-  return (
-    <div className="min-w-0 flex-1" title={title}>
-      <p className="truncate text-small">
-        <span className="font-medium">{name}</span>
-        {detail && <span className="text-muted"> {detail}</span>}
-      </p>
-      {where && (
-        <p className="truncate font-mono text-caption text-subtle" title={title}>
-          {where}
-        </p>
-      )}
-    </div>
   )
 }
 

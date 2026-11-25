@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { ContentBlock } from '@agentclientprotocol/sdk'
-import { imageRef, withoutImageRefs } from '../shared/image-refs'
+import { imageRef, pickRef, withoutImageRefs } from '../shared/image-refs'
 import {
   type ElementContext,
   type ImageAttachment,
@@ -204,21 +204,11 @@ export function buildPrompt({
   if (board) blocks.push({ type: 'text', text: describeBoard(board) })
   if (viewport) blocks.push({ type: 'text', text: describeViewport(viewport) })
   if (guides?.guides.length) blocks.push({ type: 'text', text: describeGuides(guides) })
-  if (selection.length > 1) {
-    blocks.push({
-      type: 'text',
-      text: `The user selected ${selection.length} things in the preview, in this order:`,
-    })
-  }
-  selection.forEach((picked, i) => {
-    const position = selection.length > 1 ? { index: i + 1, count: selection.length } : null
-    const text = isRegion(picked)
-      ? describeRegion(picked, position)
-      : describeElement(picked, position)
-    blocks.push({ type: 'text', text })
-    const image = images && picked.screenshot ? parseDataUrl(picked.screenshot) : null
-    if (image) blocks.push({ type: 'image', ...image })
-  })
+  // A message that names its picks by label (the message box's markers) comes first, and the
+  // picks after it, in the order it names them, as its images are. Otherwise they lead.
+  const named = text?.includes(pickRef(1)) ?? false
+  const picks = describeSelection(selection, named, images)
+  if (!named) blocks.push(...picks)
   if (textEdit) blocks.push({ type: 'text', text: describeTextEdit(textEdit) })
   blocks.push(...followUp)
   // An agent that can't see the images doesn't get their labels either, as if none were attached.
@@ -226,7 +216,45 @@ export function buildPrompt({
     const said = images ? text : withoutImageRefs(text, attachments.length)
     if (said) blocks.push({ type: 'text', text: said })
   }
+  if (named) blocks.push(...picks)
   if (images && attachments.length) blocks.push(...describeAttachments(attachments))
+  return blocks
+}
+
+/**
+ * What the user picked in the preview, in order, each under its label ([Selection N]): the
+ * message names them by those labels when `named`.
+ */
+export function describeSelection(
+  selection: Picked[],
+  named: boolean,
+  images: boolean,
+): ContentBlock[] {
+  const blocks: ContentBlock[] = []
+  const count = selection.length
+  if (named) {
+    blocks.push({
+      type: 'text',
+      text:
+        count === 1
+          ? `The user selected 1 thing in the preview. The message calls it ${pickRef(1)}:`
+          : `The user selected ${count} things in the preview. The message calls them ${pickRef(1)} to ${pickRef(count)}, in this order:`,
+    })
+  } else if (count > 1) {
+    blocks.push({
+      type: 'text',
+      text: `The user selected ${count} things in the preview, in this order:`,
+    })
+  }
+  selection.forEach((picked, i) => {
+    const position = named || count > 1 ? i + 1 : null
+    const text = isRegion(picked)
+      ? describeRegion(picked, position)
+      : describeElement(picked, position)
+    blocks.push({ type: 'text', text })
+    const image = images && picked.screenshot ? parseDataUrl(picked.screenshot) : null
+    if (image) blocks.push({ type: 'image', ...image })
+  })
   return blocks
 }
 
@@ -336,8 +364,10 @@ export function describeFollowUp(turn: Turn, images: boolean): ContentBlock[] {
   lines.push('Other changes may have been made since then; read the current source before editing.')
   const blocks: ContentBlock[] = [{ type: 'text', text: lines.join('\n') }]
   if (turn.context.length) blocks.push({ type: 'text', text: 'In it, the user had selected:' })
+  // Under the labels its message named them by, as they were sent.
+  const named = turn.prompt.includes(pickRef(1))
   turn.context.forEach((picked, i) => {
-    const position = turn.context.length > 1 ? { index: i + 1, count: turn.context.length } : null
+    const position = named || turn.context.length > 1 ? i + 1 : null
     const text = isRegion(picked)
       ? describeRegion(picked, position)
       : describeElement(picked, position)
@@ -395,10 +425,10 @@ export function describeGuides({ width, guides }: PromptGuides) {
 const oneLine = (value: string) => value.replace(/[\s\p{Cc}]+/gu, ' ')
 
 /** Where a pick sits among several, for its block's first line; null when it's the only one */
-type PickPosition = { index: number; count: number } | null
+/** A pick's number among several (its label's), or null for one alone */
+type PickPosition = number | null
 
-const numbered = (position: PickPosition) =>
-  position ? [`Selection ${position.index} of ${position.count}`] : []
+const numbered = (position: PickPosition) => (position ? [pickRef(position)] : [])
 
 const describeSource = (source: SourceLocation) =>
   `${source.file}:${source.line}${source.column ? `:${source.column}` : ''}${source.approximate ? ' (approximate)' : ''}`
