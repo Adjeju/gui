@@ -214,8 +214,8 @@ test('gui_selection gives what the user picked, fenced as page data, with its sc
   expect(await callTool(harness, 'gui_selection')).toEqual({ isError: false, text: NOTHING_PICKED })
 
   const png = 'iVBORw0KGgo='
-  picks.push({
-    kind: 'element',
+  const button = {
+    kind: 'element' as const,
     id: 'p1',
     url: 'http://localhost:5173/',
     viewport: { width: 1280, height: 800 },
@@ -229,13 +229,24 @@ test('gui_selection gives what the user picked, fenced as page data, with its sc
     componentStack: ['BuyButton'],
     source: { file: 'src/App.tsx', line: 12, approximate: false },
     screenshot: `data:image/png;base64,${png}`,
-  })
+  }
+  picks.push(button)
   const reply = await post(harness, 'tools/call', { name: 'gui_selection', arguments: {} })
   const [block, image] = (await reply.json()).result.content
   expect(block.text).toMatch(/^<selected_element_[0-9a-f]{8}>/)
   expect(block.text).toContain('Source: src/App.tsx:12')
   expect(block.text).toContain('Components (innermost first): BuyButton')
   expect(image).toEqual({ type: 'image', data: png, mimeType: 'image/png' })
+
+  // Several picks are numbered as their markers in Gui's message box are, in that order.
+  picks.push({ ...button, id: 'p2', tag: 'a', screenshot: null })
+  const several = await post(harness, 'tools/call', { name: 'gui_selection', arguments: {} })
+  const texts = (await several.json()).result.content.map((part: { text?: string }) => part.text)
+  expect(texts[0]).toBe('The user selected 2 things in the preview, in this order:')
+  expect(texts[1]).toContain('[Selection 1]\nPage:')
+  expect(texts[1]).toContain('Element: <button>')
+  expect(texts[3]).toContain('[Selection 2]\nPage:')
+  expect(texts[3]).toContain('Element: <a>')
 })
 
 test('only the token from Settings gets in, at /mcp, by POST, while signed in', async () => {
