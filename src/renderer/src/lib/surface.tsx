@@ -604,6 +604,11 @@ interface MessageProps {
   /** Buttons, under the text: at most one primary */
   actions?: ReactNode
   /**
+   * Announces the heading and explanation (not the buttons) as it appears: alert for
+   * something that went wrong, status otherwise. Only on a message that appears by itself.
+   */
+  role?: 'status' | 'alert'
+  /**
    * Takes the rest of a panel or sheet with nothing else to show, and sits in the middle of it
    * at the empty-state inset, scrolling if it doesn't fit.
    */
@@ -621,6 +626,7 @@ export function Message({
   heading,
   children,
   actions,
+  role,
   fill = false,
   className,
 }: MessageProps) {
@@ -644,7 +650,7 @@ export function Message({
           <Icon className="size-4" aria-hidden="true" />
         )}
       </span>
-      <div className="flex flex-col gap-1">
+      <div role={role} className="flex flex-col gap-1">
         {heading && <p className="font-semibold text-balance">{heading}</p>}
         {children && <div className="flex flex-col gap-1 text-pretty text-muted">{children}</div>}
       </div>

@@ -266,6 +266,8 @@ function CanvasMessage({ state }: { state: WindowState }) {
         icon={failed ? TriangleAlert : Info}
         tone={failed ? 'danger' : 'neutral'}
         heading="Your app stopped"
+        // Said once as it appears; with the page still on screen, the bar under it says it.
+        role={preview.visible ? undefined : failed ? 'alert' : 'status'}
         detail={
           failed ? (
             <Cause line={devServer.errorLine} fallback="It quit with an error." />
@@ -550,6 +552,8 @@ interface SetupCardProps {
   env?: EnvSetup | null
   /** The project whose start command to show, with a way to change it, as a row of its own */
   start?: ProjectInfo
+  /** Announces the message as the card appears (`Message`'s role) */
+  role?: 'status' | 'alert'
 }
 
 /**
@@ -567,10 +571,11 @@ function SetupCard({
   children,
   env,
   start,
+  role,
 }: SetupCardProps) {
   return (
     <Card padding="canvas" className="flex w-full max-w-sm flex-col gap-4">
-      <Message icon={icon} tone={tone} heading={heading} actions={actions}>
+      <Message icon={icon} tone={tone} heading={heading} actions={actions} role={role}>
         {detail}
       </Message>
       {children}

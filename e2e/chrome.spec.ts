@@ -291,8 +291,14 @@ test('logs open in the drawer from the status menu and ⌘J; a crash dims the pa
   expect(new Set(frames.map((frame) => frame.height)).size).toBe(1)
   // The card comes with the picture, in the same frame.
   expect(frames.filter((frame) => frame.card !== frame.still)).toEqual([])
-  // The bar under a page that's still on screen isn't shown over the card too.
-  await expect(session.chrome.getByRole('alert')).toHaveCount(0)
+  // The card says it to a screen reader as it appears, without taking the keyboard; the bar
+  // under a page that's still on screen isn't shown over it to say it twice.
+  const alert = session.chrome.getByRole('alert')
+  await expect(alert).toHaveCount(1)
+  await expect(alert).toContainText('Your app stopped')
+  await expect(alert).toContainText('terminated by signal SIGKILL')
+  await expect(alert.getByRole('button')).toHaveCount(0)
+  expect(await canvas.evaluate((main) => main.contains(document.activeElement))).toBe(false)
   await session.shot('crash-card')
 
   await canvas.getByRole('button', { name: 'Show logs' }).click()
