@@ -169,3 +169,39 @@ test('the Theme popover edits a variable live, cancels, keeps with Undo, and the
   expect(result.isError).not.toBe(true)
   expect(result.content.map((c) => c.text).join('\n')).toContain('--brand-bg')
 })
+
+test('dragging a size handle changes it live, and Esc puts it back', async ({ launch }) => {
+  const session = await launch({ fixture: 'vite' })
+  await session.waitForPreview()
+  const radius = () => session.styleOf('button.counter', 'borderTopLeftRadius')
+  expect(await radius()).toBe('4px')
+
+  await session.chrome.evaluate(() => window.gui.toggleTheme())
+  const popover = await pageEnding(session, '/theme.html')
+  await popover
+    .getByRole('button', { name: /^Edit --radius in / })
+    .first()
+    .click()
+  const handle = popover.locator('[title^="Drag to change"]')
+  const box = await handle.boundingBox()
+  if (!box) throw new Error('no drag handle')
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+
+  // 2px a step: 20px right is 10 steps.
+  await popover.mouse.move(at.x, at.y)
+  await popover.mouse.down()
+  await popover.mouse.move(at.x + 10, at.y, { steps: 3 })
+  await popover.mouse.move(at.x + 20, at.y, { steps: 3 })
+  await popover.mouse.up()
+  await waitFor(async () => (await radius()) === '14px', 'the radius to follow the drag')
+
+  // Esc mid-drag goes back to where that drag started, and leaves the popover open.
+  await popover.mouse.move(at.x, at.y)
+  await popover.mouse.down()
+  await popover.mouse.move(at.x + 40, at.y, { steps: 4 })
+  await waitFor(async () => (await radius()) === '34px', 'the radius to follow the second drag')
+  await popover.keyboard.press('Escape')
+  await popover.mouse.up()
+  await waitFor(async () => (await radius()) === '14px', 'Esc to undo the drag')
+  expect(popover.isClosed()).toBe(false)
+})

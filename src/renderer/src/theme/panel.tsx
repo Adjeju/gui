@@ -16,6 +16,7 @@ import { trackDrag } from '../lib/pointer-drag'
 import { GroupLabel, PopoverNote, PopoverSearch } from '../lib/surface'
 import { Button, IconButton, TextButton } from '../lib/ui'
 import { ColorField, TextField } from './color-field'
+import { ScrubHandle } from './scrub'
 
 const GROUP_NAMES: Record<ThemeKind, string> = {
   color: 'Colors',
@@ -364,6 +365,11 @@ function Editor({
     <div className="pb-2">
       {variable.kind === 'color' ? (
         <ColorField value={value} label={label} onChange={preview} />
+      ) : variable.kind === 'size' ? (
+        <div className="flex items-center gap-2">
+          <ScrubHandle name={variable.name} value={value} onChange={preview} />
+          <TextField value={value} label={label} onChange={preview} />
+        </div>
       ) : (
         <TextField value={value} label={label} onChange={preview} />
       )}

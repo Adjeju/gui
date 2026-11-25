@@ -199,6 +199,25 @@ export function nudgeSize(text: string, direction: 1 | -1, big: boolean): string
   return `${Number((Number(size[1]) + direction * step).toFixed(3))}${size[2]}`
 }
 
+/**
+ * A size `start` scrubbed `steps` steps (one per few pixels dragged): ten times the step with
+ * `big` (Shift), a tenth with `fine` (Alt). A size that started at 0 or more never goes below 0.
+ * Null when `start` isn't a size.
+ */
+export function scrubSize(
+  start: string,
+  steps: number,
+  big: boolean,
+  fine: boolean,
+): string | null {
+  const size = NUMBER_UNIT.exec(start.trim())
+  if (!size) return null
+  const from = Number(size[1])
+  const step = (NUDGE[size[2]] ?? 1) * (big ? 10 : fine ? 0.1 : 1)
+  const next = from + Math.trunc(steps) * step
+  return `${Number((from >= 0 ? Math.max(0, next) : next).toFixed(3))}${size[2]}`
+}
+
 const MAX_VALUE = 500
 
 export function safeName(name: string): boolean {
