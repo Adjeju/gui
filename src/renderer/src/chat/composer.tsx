@@ -11,7 +11,6 @@ import {
   useState,
 } from 'react'
 import { MAX_IMAGES } from '../../../shared/bounded'
-import { writtenText } from '../../../shared/image-refs'
 import { matchesShortcut, shortcutText } from '../../../shared/shortcuts'
 import { type ChatMeta, isRegion, type Picked, type Problem } from '../../../shared/types'
 import { gui } from '../lib/api'
@@ -44,6 +43,7 @@ import {
 import { AgentSetup, shouldShowAgentSetup } from './agent-setup'
 import { AutoToggle } from './auto-toggle'
 import { useCommandMenu } from './command-menu'
+import { caretOffset, draftText, inTextOrder, serializeDraft } from './draft'
 import { imageFiles, sentAsset } from './images'
 import { ModelButton } from './model-picker'
 import { NewChatQuestion } from './new-chat-question'
@@ -53,11 +53,11 @@ import { RecordingClip } from './recording-clip'
 import {
   attachFiles,
   dismissProblems,
+  draftHasWords,
   noteSend,
   removeAttachments,
   removeRecordings,
-  setComposerEditor,
-  setDraft,
+  replaceDraftText,
   setFollowUp,
   setNotice,
   settleSend,
@@ -98,7 +98,7 @@ export function ImageDropOverlay() {
     <div
       aria-hidden="true"
       style={{ background: 'linear-gradient(var(--fill), var(--fill)), var(--raised)' }}
-      className="pointer-events-none absolute inset-2 z-chrome flex items-center justify-center gap-2 rounded-lg border border-dashed border-muted px-3 text-small font-medium text-muted"
+      className="pointer-events-none absolute inset-2 z-chrome flex items-center gap-2 rounded-lg border border-dashed border-muted px-3 text-small font-medium text-muted"
     >
       <Paperclip className="size-3.5 shrink-0" aria-hidden="true" />
       Drop images to attach
@@ -137,7 +137,8 @@ export function Composer({
   onGrab,
 }: ComposerProps) {
   // The draft lives in the store: docking and floating remount this component.
-  const text = useChat((s) => s.draft)
+  const draft = useChat((s) => s.draft)
+  const text = draftText(draft.doc)
   const firstMessage = useChat((s) => s.turnIds.length === 0)
   const attachments = useChat((s) => s.attachments)
   const recordings = useChat((s) => s.recordings)
@@ -160,11 +161,6 @@ export function Composer({
   const notice = useChat((s) => s.notice)
 
   useEffect(() => gui.onChatFocus(() => input.current?.focus()), [])
-  useEffect(() => {
-    const editor = { insertImages: (numbers: number[]) => input.current?.insertImages(numbers) }
-    setComposerEditor(editor)
-    return () => setComposerEditor(null, editor)
-  }, [])
   const previousRecordings = useRef(recordings.length)
   useEffect(() => {
     if (recordings.length > previousRecordings.current)
@@ -185,7 +181,7 @@ export function Composer({
   // A narrated clip goes out with what was said, once it's transcribed (a second or two).
   const transcribing = recordings.some((clip) => clip.narration?.status === 'transcribing')
   const canSend =
-    (writtenText(text) !== '' || attachments.length > 0 || recordings.length > 0) &&
+    (draftHasWords(draft) || attachments.length > 0 || recordings.length > 0) &&
     pending === 0 &&
     !transcribing
   /** Why Send is off, for its tooltip. */
@@ -214,8 +210,9 @@ export function Composer({
   const submit = async (event?: FormEvent, steer = false) => {
     event?.preventDefault()
     if (!canSend || sending.current) return
-    const message = writtenText(text)
-    const sent = attachments
+    // Pieces are numbered in the order the message names them, and the images go in that order.
+    const { text: message, order } = serializeDraft(draft.doc)
+    const sent = inTextOrder(attachments, order.image)
     const clips = recordings.map((clip) => clip.id)
     sending.current = true
     const images = await Promise.all(
@@ -228,7 +225,7 @@ export function Composer({
     const about = followUp?.id ?? null
     // Its turn (or queued message) rises out of the composer when main reports it.
     noteSend(
-      text,
+      message,
       sent.map((image) => image.id),
       clips,
       about,
@@ -239,7 +236,7 @@ export function Composer({
       const accepted = await gui.send(message, images, clips, about, steer)
       settleSend(
         accepted,
-        text,
+        message,
         sent.map((image) => image.id),
         clips,
         about,
@@ -252,9 +249,9 @@ export function Composer({
 
   const commands = useCommandMenu({
     text,
+    caret: caretOffset(draft),
     commands: meta.commands,
-    input,
-    setText: setDraft,
+    setText: replaceDraftText,
     send: () => void submit(undefined, steers(false)),
   })
 
@@ -397,9 +394,6 @@ export function Composer({
           )}
           <PromptEditor
             ref={input}
-            value={text}
-            onChange={setDraft}
-            onCaret={commands.noteCaret}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             attributes={{

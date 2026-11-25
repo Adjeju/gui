@@ -18,7 +18,7 @@ import { Banner, Card } from '../lib/surface'
 import { Button, IconButton } from '../lib/ui'
 import { noteRemoveQueued, noteSteerQueued } from './store'
 import { isNewRow, markSeen } from './transitions'
-import { textEditLabel } from './turn-view'
+import { PromptText, textEditLabel } from './turn-view'
 
 /** Why the queue is holding back. */
 const PAUSED: Record<QueuePauseReason, string> = {
@@ -289,7 +289,7 @@ function QueuedItem({
         title={edit ? `${item.prompt} ${edit}` : item.prompt}
         onDoubleClick={startEdit}
       >
-        {item.prompt}
+        <PromptText text={item.prompt} images={item.attachments} />
         {edit && <span className="text-subtle"> {edit}</span>}
       </p>
       {!!item.recordings?.length && (

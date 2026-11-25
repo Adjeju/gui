@@ -560,6 +560,14 @@ html.transparent body {
 }
 
 @layer base {
+  /* ProseMirror (the message box) puts this image after a piece that ends a line, to hold the
+     caret; it stays inline, unlike other images. */
+  img.ProseMirror-separator {
+    display: inline;
+    border: none;
+    margin: 0;
+  }
+
   h1,
   h2,
   h3,

@@ -240,7 +240,8 @@ function UserMessage({ turn }: { turn: Turn }) {
 
 type SteerItem = Extract<TurnItem, { kind: 'steer' }>
 
-function PromptText({ text, images }: { text: string; images?: Turn['attachments'] }) {
+/** A sent (or queued) message, each image label in it shown as that image. */
+export function PromptText({ text, images }: { text: string; images?: Turn['attachments'] }) {
   if (!images?.length) return text
   const nodes: ReactNode[] = []
   let at = 0

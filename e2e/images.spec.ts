@@ -212,7 +212,7 @@ test('images dropped anywhere on the chat sit in the message by name', async ({ 
   }, images)
 
   const field = chat.getByRole('textbox', { name: /^Message / })
-  const chips = field.locator('[data-image-ref]')
+  const chips = field.locator('[data-piece="image"]')
   await field.fill('Compare')
   const header = chat.locator('[data-chat-panel] header').first()
   await header.dispatchEvent('dragover', { dataTransfer: transfer })
@@ -262,11 +262,112 @@ test('a message of images alone sends them with the default prompt', async ({ la
     buffer: Buffer.from(red.data, 'base64'),
   })
   const field = chat.getByRole('textbox', { name: /^Message / })
-  await expect(field.locator('[data-image-ref]')).toHaveAttribute('title', 'red.png')
+  await expect(field.locator('[data-piece="image"]')).toHaveAttribute('title', 'red.png')
   await chat.getByRole('button', { name: 'Send' }).click()
   const { turn } = await cancelWhileStarting(session, 0)
   expect(turn.prompt).toBe('Use the attached image as a reference.')
   await expect(field).toHaveText('')
+})
+
+test('typed text stays text when an image goes, and ⌘Z then undoes the typing', async ({
+  launch,
+}) => {
+  const session = await launch({ fixture: 'vite' })
+  await session.waitForPreview()
+  const { chat } = session
+  const red = await chat.evaluate(solidImage, {
+    name: 'red.png',
+    width: 40,
+    height: 40,
+    color: '#ff0000',
+  })
+  const field = chat.getByRole('textbox', { name: /^Message / })
+  const pieces = field.locator('[data-piece="image"]')
+  await field.fill('Keep [Image 1] typed')
+  await chat.locator('input[type="file"]').setInputFiles({
+    name: red.name,
+    mimeType: 'image/png',
+    buffer: Buffer.from(red.data, 'base64'),
+  })
+  await expect(pieces).toHaveCount(1)
+  // After a pause, so it's its own step to undo.
+  await sleep(700)
+  await field.pressSequentially('after')
+  await expect(field).toHaveText(/^Keep \[Image 1\] typed\s+red\.png.*after$/)
+
+  await chat.getByRole('button', { name: 'Remove red.png' }).click()
+  await expect(pieces).toHaveCount(0)
+  await expect(field).toHaveText('Keep [Image 1] typed after')
+  await expect(field).toBeFocused()
+
+  await field.press('Meta+z')
+  await expect(field).toHaveText('Keep [Image 1] typed')
+  await field.pressSequentially('then more')
+  await field.press('Enter')
+  const { turn } = await cancelWhileStarting(session, 0)
+  expect(turn.prompt).toBe('Keep [Image 1] typed then more')
+  expect(turn.attachments ?? []).toEqual([])
+})
+
+/** Runs in the chat page: pastes `data` (type to text) into the focused element, as ⌘V would. */
+function paste(data: Record<string, string>) {
+  const transfer = new DataTransfer()
+  for (const [type, text] of Object.entries(data)) transfer.setData(type, text)
+  const event = new ClipboardEvent('paste', {
+    clipboardData: transfer,
+    bubbles: true,
+    cancelable: true,
+  })
+  document.activeElement?.dispatchEvent(event)
+}
+
+test('pasted text goes in once, as plain text, and never as an image', async ({ launch }) => {
+  const session = await launch({ fixture: 'vite' })
+  await session.waitForPreview()
+  const { chat } = session
+  const red = await chat.evaluate(solidImage, {
+    name: 'red.png',
+    width: 40,
+    height: 40,
+    color: '#ff0000',
+  })
+  const field = chat.getByRole('textbox', { name: /^Message / })
+  const pieces = field.locator('[data-piece="image"]')
+  await chat.locator('input[type="file"]').setInputFiles({
+    name: red.name,
+    mimeType: 'image/png',
+    buffer: Buffer.from(red.data, 'base64'),
+  })
+  await expect(pieces).toHaveCount(1)
+  await field.press('Meta+a')
+  await field.press('Backspace')
+  await expect(pieces).toHaveCount(0)
+
+  await chat.evaluate(paste, { 'text/plain': 'make it pop' })
+  await expect(field).toHaveText('make it pop')
+
+  // Rich text, and the transcript's own image chip, come in as their plain text.
+  await field.press('Meta+a')
+  await field.press('Backspace')
+  await expect(field).toHaveText('')
+  await chat.evaluate(paste, {
+    'text/plain': 'Bold and red.png here',
+    'text/html':
+      '<p><b>Bold</b> and <span data-image-ref="1" data-piece="image" data-id="x">red.png</span> here</p>',
+  })
+  await expect(field).toHaveText('Bold and red.png here')
+  await expect(pieces).toHaveCount(0)
+  await expect(field.locator('b, strong')).toHaveCount(0)
+
+  // Lines stay lines, and a long paste goes in whole.
+  await field.press('Meta+a')
+  await field.press('Backspace')
+  await expect(field).toHaveText('')
+  const long = Array.from({ length: 400 }, (_, i) => `line ${i} ${'x'.repeat(60)}`).join('\n')
+  await chat.evaluate(paste, { 'text/plain': long })
+  await field.press('Enter')
+  const { turn } = await cancelWhileStarting(session, 0)
+  expect(turn.prompt).toBe(long)
 })
 
 /** Runs in the chat page: answers one permission prompt. */

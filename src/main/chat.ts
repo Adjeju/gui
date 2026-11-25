@@ -19,7 +19,6 @@ import {
 import { type ChatTurnUpdate, TurnPublisher } from '../shared/chat-transport'
 import { invokedCommand, parseCommands, sendsContext, takesContext } from '../shared/commands'
 import { editDiffs } from '../shared/edit-diff'
-import { writtenText } from '../shared/image-refs'
 import {
   type AgentCommand,
   type AgentId,
@@ -260,7 +259,7 @@ const imagePrompt = (count: number) =>
 
 /** What a message asks the agent; empty when there's nothing to send. */
 const messagePrompt = (text: string, images: ImageAttachment[]) =>
-  writtenText(text) || (images.length ? imagePrompt(images.length) : '')
+  text.trim() || (images.length ? imagePrompt(images.length) : '')
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 

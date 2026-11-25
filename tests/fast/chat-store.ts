@@ -136,7 +136,7 @@ let applyTransition: (() => void) | undefined
 media.matches = false
 Object.assign(document, {
   visibilityState: 'visible',
-  querySelector: () => ({}),
+  querySelector: () => ({ focus: () => {} }),
   startViewTransition: (apply: () => void) => {
     applyTransition = apply
     // Skipped, as Chromium skips one (a hidden page, another transition): not a failure.
@@ -246,9 +246,21 @@ assert.ok(disconnectRetry)
 disconnectRetry.reject(new Error('Temporary failure'))
 await Promise.resolve()
 await Promise.resolve()
+// A narrated clip's transcript becomes the message while nothing is written, even with an
+// image attached (its piece isn't writing): the words go after the piece.
+const { serializeDraft } = await import('../../src/renderer/src/chat/draft')
+const say = (name: string, value: unknown) => listeners.get(name)?.(value as never)
+say('onChatAttach', { name: 'shot.png', mimeType: 'image/png', data: 'AAAA', thumbnail: 'data:,' })
+say('onRecordingAttach', { id: 'clip', narration: { status: 'transcribing' } })
+say('onRecordingUpdate', { id: 'clip', narration: { status: 'done', text: 'make it blue' } })
+assert.equal(serializeDraft(useChat.getState().draft.doc).text, '[Image 1] make it blue')
+// Once something is written, a later transcript leaves it alone.
+say('onRecordingUpdate', { id: 'clip', narration: { status: 'done', text: 'other words' } })
+assert.equal(serializeDraft(useChat.getState().draft.doc).text, '[Image 1] make it blue')
+useChat.setState({ attachments: [], recordings: [] })
 disconnect()
 await new Promise((resolve) => setTimeout(resolve, 280))
 assert.equal(requests.length, 0)
 console.log(
-  'Chat store checks passed: initial race, duplicates, recovery, deferred reset, final-event retries, queue edit/reorder/send-from-middle, bounded failures and retry cancellation.',
+  'Chat store checks passed: initial race, duplicates, recovery, deferred reset, final-event retries, queue edit/reorder/send-from-middle, bounded failures, retry cancellation and a transcript beside an image.',
 )

@@ -124,6 +124,9 @@ test('the composer lists the agent’s slash commands and sends them first', asy
   await session.shot('slash-commands-mid-message')
   await box.press('Enter')
   await expect(box).toHaveText('/review the motion only')
+  // The caret is where the command's input ends: typing goes on from there, not inside it.
+  await box.pressSequentially(', please')
+  await expect(box).toHaveText('/review the motion only, please')
   await box.fill('')
 
   // A session command goes alone, and one typed out in full that takes nothing runs on

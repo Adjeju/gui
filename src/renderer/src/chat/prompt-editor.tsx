@@ -1,189 +1,96 @@
-import 'prosemirror-view/style/prosemirror.css'
-import { baseKeymap, splitBlock } from 'prosemirror-commands'
-import { history, redo, undo } from 'prosemirror-history'
-import { keymap } from 'prosemirror-keymap'
-import { type Node, Schema } from 'prosemirror-model'
-import { EditorState, Selection, TextSelection } from 'prosemirror-state'
+import { Fragment, type Node, Slice } from 'prosemirror-model'
+import type { EditorState } from 'prosemirror-state'
 import { EditorView, type NodeView } from 'prosemirror-view'
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
-import { imageRef, imageRefParts } from '../../../shared/image-refs'
 import { cn } from '../lib/cn'
+import { draftText, isPiece, type PieceKind, schema } from './draft'
 import { fileSize, shortName } from './images'
-import { useChat } from './store'
+import { applyDraft, useChat } from './store'
 
-const schema = new Schema({
-  nodes: {
-    doc: { content: 'paragraph+' },
-    paragraph: {
-      content: 'inline*',
-      parseDOM: [{ tag: 'p' }],
-      toDOM: () => ['p', 0],
+/** Each kind of piece as the message box draws it, redrawn when what it stands for changes. */
+const PIECE_VIEWS: Record<
+  PieceKind,
+  { draw(dom: HTMLElement, id: string): void; text(id: string): string }
+> = {
+  image: {
+    draw(dom, id) {
+      const image = useChat.getState().attachments.find((attached) => attached.id === id)
+      dom.replaceChildren()
+      if (!image) {
+        dom.removeAttribute('title')
+        return
+      }
+      dom.title = image.name
+      const thumbnail = document.createElement('img')
+      thumbnail.src = image.thumbnail
+      thumbnail.alt = ''
+      thumbnail.className = 'size-4 shrink-0 rounded-sm object-cover'
+      const name = document.createElement('span')
+      name.className = 'truncate'
+      name.textContent = shortName(image.name)
+      dom.append(thumbnail, name)
+      if (image.size) {
+        const size = document.createElement('span')
+        size.className = 'shrink-0 text-caption text-subtle'
+        size.textContent = fileSize(image.size)
+        dom.append(size)
+      }
     },
-    image: {
-      inline: true,
-      group: 'inline',
-      atom: true,
-      selectable: false,
-      attrs: { n: { validate: 'number' } },
-      parseDOM: [
-        {
-          tag: 'span[data-image-ref]',
-          getAttrs: (dom) => ({ n: Number((dom as HTMLElement).dataset.imageRef) }),
-        },
-      ],
-      toDOM: (node) => ['span', { 'data-image-ref': String(node.attrs.n) }, imageRef(node.attrs.n)],
-    },
-    text: { group: 'inline' },
+    // Copied out of the message box, an image reads as its file's name.
+    text: (id) => useChat.getState().attachments.find((attached) => attached.id === id)?.name ?? '',
   },
-})
-
-const OBJECT = '\uFFFC'
-
-const isImage = (node: Node) => node.type === schema.nodes.image
-
-function inlineNodes(line: string, count: number) {
-  return imageRefParts(line).flatMap((part) =>
-    typeof part === 'string'
-      ? part
-        ? [schema.text(part)]
-        : []
-      : part >= 1 && part <= count
-        ? [schema.nodes.image.create({ n: part })]
-        : [schema.text(imageRef(part))],
-  )
-}
-
-function toDoc(text: string, count: number) {
-  return schema.nodes.doc.create(
-    null,
-    text.split('\n').map((line) => schema.nodes.paragraph.create(null, inlineNodes(line, count))),
-  )
-}
-
-const nodeText = (node: Node) => (isImage(node) ? imageRef(node.attrs.n) : (node.text ?? ''))
-
-function lineText(paragraph: Node) {
-  let line = ''
-  paragraph.forEach((child) => {
-    line += nodeText(child)
-  })
-  return line
-}
-
-function toText(doc: Node) {
-  const lines: string[] = []
-  doc.forEach((paragraph) => {
-    lines.push(lineText(paragraph))
-  })
-  return lines.join('\n')
-}
-
-function offsetOf(doc: Node, pos: number) {
-  let offset = 0
-  let found = 0
-  doc.forEach((paragraph, start, index) => {
-    if (index > 0) offset += 1
-    const from = start + 1
-    if (pos >= from && pos <= from + paragraph.content.size) {
-      let at = from
-      let inner = offset
-      paragraph.forEach((child) => {
-        if (at >= pos) return
-        inner += child.isText ? Math.min(child.nodeSize, pos - at) : nodeText(child).length
-        at += child.nodeSize
-      })
-      found = inner
-    }
-    offset += lineText(paragraph).length
-  })
-  return found
-}
-
-function posOf(doc: Node, target: number) {
-  let offset = 0
-  let found = doc.content.size - 1
-  let done = false
-  doc.forEach((paragraph, start, index) => {
-    if (done) return
-    if (index > 0) offset += 1
-    const length = lineText(paragraph).length
-    if (target > offset + length) {
-      offset += length
-      return
-    }
-    let pos = start + 1
-    let at = offset
-    paragraph.forEach((child) => {
-      if (at >= target) return
-      pos += child.isText ? Math.min(child.nodeSize, target - at) : child.nodeSize
-      at += nodeText(child).length
-    })
-    found = pos
-    done = true
-  })
-  return found
 }
 
 const redraws = new Set<() => void>()
 
-function imageView(node: Node): NodeView {
+function pieceView(node: Node): NodeView {
+  const kind = node.attrs.kind as PieceKind
   const dom = document.createElement('span')
   dom.contentEditable = 'false'
-  dom.dataset.imageRef = String(node.attrs.n)
+  dom.dataset.piece = kind
   dom.className =
     'mx-0.5 inline-flex max-w-56 items-center gap-1 rounded-md border border-line bg-fill py-px pr-1.5 pl-0.5 align-bottom text-small leading-snug text-fg select-none'
-  const draw = () => {
-    const image = useChat.getState().attachments[node.attrs.n - 1]
-    dom.replaceChildren()
-    if (!image) {
-      dom.removeAttribute('title')
-      dom.append(imageRef(node.attrs.n))
-      return
-    }
-    dom.title = image.name
-    const thumbnail = document.createElement('img')
-    thumbnail.src = image.thumbnail
-    thumbnail.alt = ''
-    thumbnail.className = 'size-4 shrink-0 rounded-sm object-cover'
-    const name = document.createElement('span')
-    name.className = 'truncate'
-    name.textContent = shortName(image.name)
-    dom.append(thumbnail, name)
-    if (image.size) {
-      const size = document.createElement('span')
-      size.className = 'shrink-0 text-caption text-subtle'
-      size.textContent = fileSize(image.size)
-      dom.append(size)
-    }
-  }
+  const draw = () => PIECE_VIEWS[kind].draw(dom, node.attrs.id)
   draw()
   redraws.add(draw)
   return { dom, ignoreMutation: () => true, destroy: () => redraws.delete(draw) }
 }
 
+const pieceText = (node: Node) =>
+  isPiece(node) ? PIECE_VIEWS[node.attrs.kind as PieceKind].text(node.attrs.id) : (node.text ?? '')
+
+/** Pasted text as paragraphs of plain text: never rich text, never a piece. */
+function plainSlice(text: string) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  return new Slice(
+    Fragment.from(
+      lines.map((line) => schema.nodes.paragraph.create(null, line ? schema.text(line) : null)),
+    ),
+    1,
+    1,
+  )
+}
+
 export interface PromptEditorHandle {
   focus(options?: FocusOptions): void
-  setCaret(offset: number): void
-  insertImages(numbers: number[]): void
 }
 
 interface PromptEditorProps {
   ref?: Ref<PromptEditorHandle>
-  value: string
-  onChange(text: string): void
-  onCaret(text: string, offset: number): void
   onKeyDown(event: KeyboardEvent): boolean
+  /** Images pasted: true when it took the paste */
   onPaste(event: ClipboardEvent): boolean
   attributes: Record<string, string>
   placeholder: string
   className?: string
 }
 
+/**
+ * The message box: a ProseMirror view of the store's draft (draft.ts). Every change, typed
+ * or from outside, is a transaction on that state, so undo and the caret carry through.
+ */
 export function PromptEditor({
   ref,
-  value,
-  onChange,
-  onCaret,
   onKeyDown,
   onPaste,
   attributes,
@@ -192,10 +99,8 @@ export function PromptEditor({
 }: PromptEditorProps) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
-  const latest = useRef({ onChange, onCaret, onKeyDown, onPaste })
-  latest.current = { onChange, onCaret, onKeyDown, onPaste }
-  const count = useChat((s) => s.attachments.length)
-  const initial = useRef(value)
+  const latest = useRef({ onKeyDown, onPaste })
+  latest.current = { onKeyDown, onPaste }
 
   const domAttributes = (state: EditorState): Record<string, string> => ({
     ...attributes,
@@ -203,9 +108,11 @@ export function PromptEditor({
     'aria-multiline': 'true',
     'aria-placeholder': placeholder,
     'data-placeholder': placeholder,
-    ...(toText(state.doc) === '' ? { 'data-empty': '' } : {}),
+    spellcheck: 'true',
+    ...(draftText(state.doc) === '' ? { 'data-empty': '' } : {}),
     class: cn(
-      'relative whitespace-pre-wrap break-words outline-none focus-visible:outline-none',
+      // ProseMirror's own stylesheet isn't used: it turns ligatures off. What it needs is here.
+      'relative whitespace-break-spaces break-words outline-none focus-visible:outline-none',
       'data-empty:before:pointer-events-none data-empty:before:absolute data-empty:before:text-subtle data-empty:before:content-[attr(data-placeholder)]',
       className,
     ),
@@ -215,69 +122,51 @@ export function PromptEditor({
 
   useLayoutEffect(() => {
     if (!host.current) return
-    const doc = toDoc(initial.current, useChat.getState().attachments.length)
     const editor: EditorView = new EditorView(host.current, {
-      state: EditorState.create({
-        doc,
-        selection: Selection.atEnd(doc),
-        plugins: [
-          history(),
-          keymap({ 'Mod-z': undo, 'Shift-Mod-z': redo, 'Mod-y': redo, 'Shift-Enter': splitBlock }),
-          keymap(baseKeymap),
-        ],
-      }),
+      state: useChat.getState().draft,
       attributes: (state) => attributesRef.current(state),
-      nodeViews: { image: (node) => imageView(node) },
+      nodeViews: { piece: (node) => pieceView(node) },
       handleKeyDown: (_view, event) => latest.current.onKeyDown(event),
       handlePaste: (editorView, event) => {
         if (latest.current.onPaste(event)) return true
         const text = event.clipboardData?.getData('text/plain') ?? ''
-        return text ? editorView.pasteText(text, event) : false
+        // Always handled here, so nothing pasted is read as HTML.
+        if (text)
+          editorView.dispatch(
+            editorView.state.tr.replaceSelection(plainSlice(text)).scrollIntoView(),
+          )
+        return true
       },
+      // Files dropped here attach through the chat panel's drop (useImageDrop); the editor
+      // writes nothing for them.
+      handleDrop: (_view, event) => event.dataTransfer?.types.includes('Files') ?? false,
       clipboardTextSerializer: (slice) => {
         const lines: string[] = []
         slice.content.forEach((node) => {
-          lines.push(node.isTextblock ? lineText(node) : nodeText(node))
+          const parts: string[] = []
+          if (node.isTextblock)
+            node.forEach((child) => {
+              parts.push(pieceText(child))
+            })
+          else parts.push(pieceText(node))
+          lines.push(parts.join(''))
         })
         return lines.join('\n')
       },
-      dispatchTransaction(tr) {
-        const next = editor.state.apply(tr)
-        editor.updateState(next)
-        const text = toText(next.doc)
-        if (tr.docChanged) latest.current.onChange(text)
-        if (tr.docChanged || tr.selectionSet) {
-          const { empty, from } = next.selection
-          latest.current.onCaret(text, empty ? offsetOf(next.doc, from) : -1)
-        }
-      },
+      dispatchTransaction: applyDraft,
     })
     view.current = editor
+    // The store's draft is the truth: the view follows it, whoever changed it.
+    const unsubscribe = useChat.subscribe((state, previous) => {
+      if (state.draft !== editor.state) editor.updateState(state.draft)
+      if (state.attachments !== previous.attachments) for (const redraw of redraws) redraw()
+    })
     return () => {
+      unsubscribe()
       editor.destroy()
       view.current = null
     }
   }, [])
-
-  useEffect(() => {
-    const editor = view.current
-    if (!editor) return
-    const { doc, selection } = editor.state
-    if (toText(doc) === value) return
-    const caret = Math.min(offsetOf(doc, selection.from), value.length)
-    const tr = editor.state.tr.replaceWith(0, doc.content.size, toDoc(value, count).content)
-    tr.setSelection(TextSelection.near(tr.doc.resolve(posOf(tr.doc, caret))))
-    tr.setMeta('addToHistory', false)
-    editor.dispatch(tr)
-  }, [value, count])
-
-  useEffect(
-    () =>
-      useChat.subscribe((state, previous) => {
-        if (state.attachments !== previous.attachments) for (const redraw of redraws) redraw()
-      }),
-    [],
-  )
 
   useEffect(() => {
     view.current?.setProps({ attributes: (state) => attributesRef.current(state) })
@@ -286,38 +175,6 @@ export function PromptEditor({
   useImperativeHandle(ref, () => ({
     focus(options) {
       view.current?.dom.focus(options)
-    },
-    setCaret(offset) {
-      const editor = view.current
-      if (!editor) return
-      const { doc } = editor.state
-      editor.dispatch(
-        editor.state.tr.setSelection(TextSelection.near(doc.resolve(posOf(doc, offset)))),
-      )
-    },
-    insertImages(numbers) {
-      const editor = view.current
-      if (!editor || numbers.length === 0) return
-      const { $from, $to, from, to } = editor.state.selection
-      const before = $from.parent.textBetween(0, $from.parentOffset, undefined, OBJECT)
-      const after = $to.parent.textBetween(
-        $to.parentOffset,
-        $to.parent.content.size,
-        undefined,
-        OBJECT,
-      )
-      const nodes: Node[] = []
-      if (before && !/\s$/.test(before)) nodes.push(schema.text(' '))
-      numbers.forEach((n, i) => {
-        if (i > 0) nodes.push(schema.text(' '))
-        nodes.push(schema.nodes.image.create({ n }))
-      })
-      if (!/^\s/.test(after)) nodes.push(schema.text(' '))
-      const size = nodes.reduce((total, node) => total + node.nodeSize, 0)
-      const tr = editor.state.tr.replaceWith(from, to, nodes)
-      tr.setSelection(TextSelection.create(tr.doc, from + size)).scrollIntoView()
-      editor.dispatch(tr)
-      editor.dom.focus({ preventScroll: true })
     },
   }))
 

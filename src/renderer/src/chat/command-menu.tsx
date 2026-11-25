@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject, useEffect, useId, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { commandLabel, commandQuery, filterCommands, insertCommand } from '../../../shared/commands'
 import type { AgentCommand } from '../../../shared/types'
 import { gui } from '../lib/api'
@@ -16,7 +16,6 @@ interface CommandMenu {
   element: ReactNode
   /** Attributes for the message box, which keeps focus and points at the highlighted command */
   inputAttributes: Record<string, string>
-  noteCaret(text: string, at: number): void
   /** Handles ↑/↓, Enter, Tab and Esc while the menu is open; true when it took the key */
   onKeyDown(event: KeyboardEvent): boolean
 }
@@ -29,29 +28,24 @@ interface CommandMenu {
  */
 export function useCommandMenu({
   text,
+  caret,
   commands,
-  input,
   setText,
   send,
 }: {
+  /** The message as text (draft.ts's draftText) */
   text: string
+  /** Where the caret is in it; -1 while text is selected */
+  caret: number
   commands: AgentCommand[]
-  /** The message box, to place the caret */
-  input: RefObject<{ setCaret(at: number): void } | null>
-  setText(text: string): void
+  /** The message reads `text` instead, with the caret at `caret`, in one change */
+  setText(text: string, caret: number): void
   send(): void
 }): CommandMenu {
   const id = useId()
   const listId = `${id}-commands`
-  // Where the caret was last reported, for the message as it was then: a change without
-  // one (pasted, filled in) leaves it at the end. -1 while text is selected: no menu.
-  const [caret, setCaret] = useState<{ text: string; at: number } | null>(null)
-  const at =
-    caret?.text !== text
-      ? commandQuery(text)
-      : caret.at === -1
-        ? null
-        : commandQuery(text, caret.at)
+  // No menu while text is selected.
+  const at = caret === -1 ? null : commandQuery(text, caret)
   const query = at?.query ?? null
   const shown = query === null ? [] : filterCommands(commands, query)
   /** Esc closes the menu for the message as it is; typing opens it again. */
@@ -98,12 +92,8 @@ export function useCommandMenu({
   const choose = (command: AgentCommand) => {
     if (!at) return
     const next = insertCommand(text, at, command)
-    setText(next.text)
-    setCaret({ text: next.text, at: next.caret })
-    requestAnimationFrame(() => input.current?.setCaret(next.caret))
+    setText(next.text, next.caret)
   }
-
-  const noteCaret = (value: string, position: number) => setCaret({ text: value, at: position })
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (!open || event.isComposing) return false
@@ -201,7 +191,6 @@ export function useCommandMenu({
           'aria-activedescendant': activeId,
         }
       : {},
-    noteCaret,
     onKeyDown,
   }
 }

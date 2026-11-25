@@ -1,7 +1,7 @@
+import type { EditorState, Transaction } from 'prosemirror-state'
 import { create } from 'zustand'
 import { MAX_IMAGES } from '../../../shared/bounded'
 import { applyTurnUpdate, type ChatTurnUpdate } from '../../../shared/chat-transport'
-import { dropImageRef, imageRef, writtenText } from '../../../shared/image-refs'
 import type {
   ChatFloat,
   ChatMeta,
@@ -12,6 +12,17 @@ import type {
   Turn,
 } from '../../../shared/types'
 import { gui } from '../lib/api'
+import {
+  appendText,
+  createDraft,
+  hasWords,
+  insertPieces,
+  type PieceKind,
+  removePieces,
+  replaceText,
+  serializeDraft,
+  setText,
+} from './draft'
 import { type DraftImage, ImageError, imageFiles, prepareImage } from './images'
 import { applyInOrder, forgetSeen, type Move, markSeen, rowKeys, transition } from './transitions'
 
@@ -20,8 +31,11 @@ interface ChatStore {
   turns: Turn[]
   turnsById: Record<string, Turn>
   turnIds: string[]
-  /** Unsent composer text; kept here so it survives the composer remounting on dock/float */
-  draft: string
+  /**
+   * The message being written (draft.ts), which the message box shows and edits; kept here
+   * so it survives the composer remounting on dock/float
+   */
+  draft: EditorState
   /** Images attached to the draft, already downscaled; kept here for the same reason */
   attachments: DraftImage[]
   pendingImages: number
@@ -51,7 +65,7 @@ export const useChat = create<ChatStore>(() => ({
   turns: [],
   turnsById: {},
   turnIds: [],
-  draft: '',
+  draft: newDraft(),
   attachments: [],
   pendingImages: 0,
   recordings: [],
@@ -138,9 +152,44 @@ export function focusComposer() {
   document.querySelector<HTMLElement>('[data-composer]')?.focus({ preventScroll: true })
 }
 
-export function setDraft(draft: string) {
-  useChat.setState({ draft })
+/** Whether the thing a piece in the draft stands for is still attached. */
+function attached(kind: PieceKind, id: string): boolean {
+  switch (kind) {
+    case 'image':
+      return useChat.getState().attachments.some((image) => image.id === id)
+  }
 }
+
+function newDraft(text = ''): EditorState {
+  return createDraft(text, attached)
+}
+
+/** A change to the draft, from the message box or from outside it. */
+export function applyDraft(tr: Transaction) {
+  useChat.setState(({ draft }) => ({ draft: draft.apply(tr) }))
+}
+
+function editDraft(change: (draft: EditorState) => Transaction) {
+  applyDraft(change(useChat.getState().draft))
+}
+
+/** The draft reads `text` instead, as one step ⌘Z undoes. */
+export function setDraft(text: string) {
+  editDraft((draft) => setText(draft, text))
+}
+
+/** The draft's text (draftText) changed to `text` by a control outside it, caret at `caret`. */
+export function replaceDraftText(text: string, caret: number) {
+  editDraft((draft) => replaceText(draft, text, caret))
+}
+
+/** An empty draft, with nothing to undo: ⌘Z goes back to undoing the agent's changes. */
+function clearDraft() {
+  useChat.setState({ draft: newDraft() })
+}
+
+/** Whether the draft has anything to send besides its pieces. */
+export const draftHasWords = (draft: EditorState) => hasWords(draft.doc)
 
 /** Follow up on an earlier turn: the composer shows it, and the next message takes it along. */
 export function setFollowUp(followUp: string | null) {
@@ -155,24 +204,18 @@ export function dismissProblems(ids: string[]) {
   useChat.setState({ dismissedProblems: ids })
 }
 
-interface ComposerEditor {
-  insertImages(numbers: number[]): void
-}
-
-let composerEditor: ComposerEditor | null = null
-
-export function setComposerEditor(editor: ComposerEditor | null, leaving?: ComposerEditor) {
-  if (editor || composerEditor === leaving) composerEditor = editor
-}
-
+/** Images join the strip, and each is a piece at the caret, where typing goes on. */
 function attachImages(images: DraftImage[]) {
   if (images.length === 0) return
-  const { attachments, draft } = useChat.getState()
-  useChat.setState({ attachments: [...attachments, ...images] })
-  const numbers = images.map((_, i) => attachments.length + i + 1)
-  if (composerEditor) composerEditor.insertImages(numbers)
-  else
-    setDraft(`${draft}${draft && !/\s$/.test(draft) ? ' ' : ''}${numbers.map(imageRef).join(' ')} `)
+  useChat.setState(({ attachments }) => ({ attachments: [...attachments, ...images] }))
+  editDraft((draft) =>
+    insertPieces(
+      draft,
+      'image',
+      images.map((image) => image.id),
+    ),
+  )
+  focusComposer()
 }
 
 export async function attachFiles(files: Iterable<File>, canvas: boolean) {
@@ -202,11 +245,12 @@ export async function attachFiles(files: Iterable<File>, canvas: boolean) {
 function updateRecording(clip: RecordingAttachment) {
   const { recordings, draft } = useChat.getState()
   if (!recordings.some((other) => other.id === clip.id)) return
-  const said = clip.narration?.status === 'done' ? (clip.narration.text ?? '') : ''
+  const said = clip.narration?.status === 'done' ? (clip.narration.text ?? '').trim() : ''
   useChat.setState({
     recordings: recordings.map((other) => (other.id === clip.id ? clip : other)),
-    ...(said && draft.trim() === '' ? { draft: said } : {}),
   })
+  // Attached images' pieces aren't writing: the words go after them.
+  if (said && !hasWords(draft.doc)) editDraft((current) => appendText(current, said))
 }
 
 export function removeRecordings(ids: string[], discard = false) {
@@ -219,13 +263,10 @@ export function removeRecordings(ids: string[], discard = false) {
 }
 
 export function removeAttachments(ids: string[]) {
-  const { attachments, draft } = useChat.getState()
-  const removed = attachments.flatMap((image, i) => (ids.includes(image.id) ? [i + 1] : []))
-  if (removed.length === 0) return
-  useChat.setState({
-    attachments: attachments.filter((image) => !ids.includes(image.id)),
-    draft: removed.reduceRight(dropImageRef, draft),
-  })
+  const { attachments } = useChat.getState()
+  if (!attachments.some((image) => ids.includes(image.id))) return
+  useChat.setState({ attachments: attachments.filter((image) => !ids.includes(image.id)) })
+  editDraft((draft) => removePieces(draft, 'image', ids))
 }
 
 /** An image main prepared for the draft, such as a screenshot of the preview. */
@@ -325,7 +366,7 @@ export function noteSend(
   recordings: string[] = [],
   followUp: string | null = null,
 ) {
-  sent = { prompt: writtenText(text), images, recordings, followUp, at: performance.now() }
+  sent = { prompt: text, images, recordings, followUp, at: performance.now() }
 }
 
 /**
@@ -357,7 +398,7 @@ export function settleSend(
     return
   }
   // Already risen (or rising, its update about to apply): this only finds it done.
-  applyInOrder(() => clearSent(writtenText(text), images, recordings, followUp))
+  applyInOrder(() => clearSent(text, images, recordings, followUp))
 }
 
 /** Takes the sent message if `prompt` is it, still fresh. */
@@ -380,7 +421,7 @@ function clearSent(
   followUp: string | null,
 ) {
   const { draft } = useChat.getState()
-  if (writtenText(draft) === prompt) setDraft('')
+  if (serializeDraft(draft.doc).text === prompt) clearDraft()
   if (followUp && useChat.getState().followUp === followUp) setFollowUp(null)
   removeAttachments(images)
   removeRecordings(recordings)

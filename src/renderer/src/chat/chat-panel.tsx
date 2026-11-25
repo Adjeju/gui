@@ -48,7 +48,14 @@ import { ArchivePopover } from './archive'
 import { Composer, ImageDropOverlay, useImageDrop } from './composer'
 import { Morph } from './morph'
 import { connectShape, currentShape, subscribeShape, useShaping } from './shape'
-import { connectChat, keyedAnswer, useChat, waitingCard, whenPanelShown } from './store'
+import {
+  connectChat,
+  draftHasWords,
+  keyedAnswer,
+  useChat,
+  waitingCard,
+  whenPanelShown,
+} from './store'
 import { Transcript } from './transcript'
 
 /** Fields ⌘⌫ deletes typing in. */
@@ -96,7 +103,7 @@ export function ChatPanel() {
   const float = useChat((s) => s.float)
   // Something to send keeps the floating panel open when the user presses in the page.
   const drafted = useChat(
-    (s) => s.draft.trim() !== '' || s.attachments.length > 0 || s.recordings.length > 0,
+    (s) => draftHasWords(s.draft) || s.attachments.length > 0 || s.recordings.length > 0,
   )
   useEffect(() => {
     gui.chatDrafted(drafted)
