@@ -44,6 +44,7 @@ import { REVEAL_IN_FILES, YOUR_COMPUTER } from '../shared/platform'
 import { PreviewText } from '../shared/preview-text'
 import { SHORTCUTS } from '../shared/shortcuts'
 import { replyRunning } from '../shared/stop-question'
+import { safeName, type ThemeEdit } from '../shared/theme-tokens'
 import {
   type AgentId,
   agentName,
@@ -189,6 +190,7 @@ import type { TabHost, TabState } from './tab-host'
 import { Terminals } from './terminals'
 import { collapseText, rewriteText } from './text-edit'
 import { openAsText } from './text-editor'
+import { ThemePopover } from './theme-popover'
 import { thumbnail } from './thumbnail'
 import {
   agreeTo,
@@ -478,6 +480,13 @@ export class ProjectTab implements ChatPanelOwner {
   private readonly picker: Picker
   /** Rulers and guides over the preview (⇧R) */
   private readonly guides: Guides
+  /** The Theme popover over the preview; its edits are the opening's `designTokens` */
+  private readonly themePopover: ThemePopover
+  /** The mode the popover shows the preview in; null: the page's own */
+  private themeShown: string | null = null
+  /** Why the last Keep wrote nothing */
+  private themeBlocked: { name: string; reason: string } | null = null
+  private themeKeeping = false
   /** The versions of an element the agent showed to flip through (docs/variations.md) */
   private readonly variations: Variations
   /** Each picked element's node (by pick id), to outline it; an area has none. */
@@ -622,6 +631,7 @@ export class ProjectTab implements ChatPanelOwner {
         zoom: 1,
         selecting: false,
         rulers: getPrefs().rulers,
+        theme: false,
         selectable: false,
         visible: false,
         still: null,
@@ -692,6 +702,7 @@ export class ProjectTab implements ChatPanelOwner {
     })
     this.panel = new ChatPanel(this)
     this.picker = new Picker(this.preview.webContents, this.inspector, () => this.emulation.scale)
+    this.themePopover = new ThemePopover(() => this.chatView)
     this.guides = new Guides(this.preview, {
       inspector: this.inspector,
       scale: () => this.emulation.scale,
@@ -754,6 +765,7 @@ export class ProjectTab implements ChatPanelOwner {
       wc === this.chatView.webContents ||
       this.picker.owns(wc) ||
       this.guides.owns(wc) ||
+      this.themePopover.owns(wc) ||
       this.website?.picker.owns(wc) === true
     )
   }
@@ -847,6 +859,7 @@ export class ProjectTab implements ChatPanelOwner {
     const { contentView } = this.host.win
     contentView.removeChildView(this.preview)
     this.guides.unmount()
+    this.themePopover.place(null, null)
     contentView.removeChildView(this.picker.view)
     if (this.website) {
       contentView.removeChildView(this.website.view)
@@ -1608,6 +1621,7 @@ export class ProjectTab implements ChatPanelOwner {
         root,
         live: current,
       })
+      resources.designTokens.onChange(() => this.pushTheme())
     }
     // A narrated clip's transcript comes in after it's attached: the composer updates it.
     const recordings = new Recordings(root, (clip) => {
@@ -2084,6 +2098,7 @@ export class ProjectTab implements ChatPanelOwner {
 
   private disposeProjectResources() {
     const root = this.projectRoot
+    this.closeTheme()
     this.agentViewport.restore(false)
     // A website the project's agent opened goes with it, and its session is cleared.
     this.closeWebsite()
@@ -4457,6 +4472,7 @@ export class ProjectTab implements ChatPanelOwner {
     // Guides follow the app's own page, at rest: not mid-morph, nor under a website or a sheet.
     const guided = visible && !live && !website && !this.resources.board
     this.guides.place(this.host.win.contentView, guided ? bounds : null, this.host.canvas)
+    this.themePopover.place(this.host.win.contentView, covered ? null : this.host.canvas)
     // Mid-morph the chrome draws the device frame where the view is; this one shows once it rests.
     const rect = inCanvas(bounds, this.host.canvas)
     this.showFrame(frame ? { viewport, rect, scale: frame.scale } : null)
@@ -4539,6 +4555,125 @@ export class ProjectTab implements ChatPanelOwner {
 
   guidePointer(id: string, phase: GuidePointerPhase, at: Point) {
     this.guides.stripPointer(id, phase, at)
+  }
+
+  ownsThemePopover(wc: WebContents) {
+    return this.themePopover.owns(wc)
+  }
+
+  /**
+   * The toolbar's Theme button (projects only): opens the popover with its corner at `at`, or
+   * closes it. Its mode and edits last only while it's open.
+   */
+  toggleTheme(at: Point | null) {
+    if (this.themePopover.isOpen) return this.closeTheme()
+    const tokens = this.resources.designTokens
+    if (!tokens || this.resources.board || !this.host.isActive(this)) return
+    this.themeShown = null
+    this.themeBlocked = null
+    tokens.open = true
+    this.themePopover.open(at, this.host.canvas)
+    this.patchPreview({ theme: true })
+    this.layout()
+    this.themePopover.focus()
+    this.pushTheme()
+    // The read runs as it opens, so it lists what the page has now.
+    void tokens.loaded().catch(() => undefined)
+  }
+
+  private closeTheme() {
+    if (!this.themePopover.isOpen) return
+    // Closing drops its edits and puts the page's own mode back (DesignTokens.open).
+    const tokens = this.resources.designTokens
+    if (tokens) tokens.open = false
+    this.themePopover.close()
+    this.themeShown = null
+    this.themeBlocked = null
+    this.patchPreview({ theme: false })
+  }
+
+  private pushTheme() {
+    const tokens = this.resources.designTokens
+    if (!this.themePopover.isOpen || !tokens) return
+    this.themePopover.update({
+      snapshot: tokens.latest(),
+      pending: tokens.pending(),
+      mode: this.themeShown,
+      blocked: this.themeBlocked,
+    })
+  }
+
+  /** Runs `work` on this opening's theme, then tells the popover, unless the opening is gone. */
+  private themeWork(work: (tokens: DesignTokens) => Promise<unknown>) {
+    const resources = this.resources
+    const tokens = resources.designTokens
+    if (!tokens || !this.themePopover.isOpen) return
+    const generation = resources.generation
+    void work(tokens)
+      .catch(() => undefined)
+      .then(() => {
+        if (resources.stillCurrent(generation) && resources.designTokens === tokens)
+          this.pushTheme()
+      })
+  }
+
+  themePreview(edit: ThemeEdit) {
+    this.themeWork((tokens) => tokens.preview(edit))
+  }
+
+  themeCancel() {
+    this.themeBlocked = null
+    this.themeWork((tokens) => tokens.cancel())
+  }
+
+  themeMode(id: string | null) {
+    this.themeWork(async (tokens) => {
+      await tokens.showMode(id)
+      this.themeShown = id
+    })
+  }
+
+  themeKeep() {
+    const chat = this.resources.chat
+    if (!chat) return
+    this.themeWork(async (tokens) => {
+      // One Keep at a time: a second click mustn't record the same edits twice.
+      if (this.themeKeeping) return
+      this.themeKeeping = true
+      try {
+        const kept = await tokens.keep(chat)
+        this.themeBlocked = kept.ok ? null : { name: kept.blocked, reason: kept.reason }
+      } catch {
+        this.themeBlocked = { name: '', reason: "Gui couldn't write the project's CSS" }
+      } finally {
+        this.themeKeeping = false
+      }
+    })
+  }
+
+  themeDrag(dx: number, dy: number) {
+    this.themePopover.drag(dx, dy)
+  }
+
+  /**
+   * Gui's own words to the agent: make a locked variable (`name`) one Gui can edit, or with
+   * null, give the page color variables at all.
+   */
+  themeAskAgent(name: string | null) {
+    if (!this.themePopover.isOpen) return
+    if (name === null) {
+      void this.sendChatMessage(
+        "Replace hard-coded colors with CSS variables in the project's main stylesheet.",
+        [],
+      )
+      return
+    }
+    const known = this.resources.designTokens?.latest()?.variables.some((v) => v.name === name)
+    if (!safeName(name) || !known) return
+    void this.sendChatMessage(
+      `Use a CSS variable for ${name} instead of its current definition.`,
+      [],
+    )
   }
 
   /** The preview's page scrolled to `x`, `y` (its preload says). */
@@ -4959,6 +5094,7 @@ export class ProjectTab implements ChatPanelOwner {
     this.emulation.dispose()
     this.picker.dispose()
     this.guides.dispose()
+    this.themePopover.dispose()
     this.inspector.dispose()
     if (!this.preview.webContents.isDestroyed()) this.preview.webContents.close()
     if (!this.chatView.webContents.isDestroyed()) this.chatView.webContents.close()

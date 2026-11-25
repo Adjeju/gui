@@ -1,5 +1,6 @@
 import type { BoardCamera, BoardFrameLayout, BoardSection } from './board'
 import type { ShortcutId } from './shortcuts'
+import type { ThemeEdit, ThemeSnapshot } from './theme-tokens'
 
 /** A built-in agent's id, or `custom:<name>` for one the user added in agents.json */
 export type AgentId = string
@@ -480,6 +481,8 @@ export interface PreviewState {
   selecting: boolean
   /** The rulers are on (⇧R, View → Rulers): Gui's pref, the same in every tab */
   rulers: boolean
+  /** The Theme popover is open (projects only) */
+  theme: boolean
   /** Element picking is only allowed on the local app, not off-site pages */
   selectable: boolean
   visible: boolean
@@ -494,6 +497,18 @@ export interface PreviewState {
    * separate, signed-out session (main/website.ts); null while the preview shows the app
    */
   website: string | null
+}
+
+/** What the Theme popover shows (main/theme-popover.ts). */
+export interface ThemePanelState {
+  /** The latest read of the preview's theme; null before the first */
+  snapshot: ThemeSnapshot | null
+  /** Edits previewed and not yet kept */
+  pending: ThemeEdit[]
+  /** The mode the preview is shown in; null: the page's own */
+  mode: string | null
+  /** Why the last Keep wrote nothing; `name` is empty when no one edit was at fault */
+  blocked: { name: string; reason: string } | null
 }
 
 /**

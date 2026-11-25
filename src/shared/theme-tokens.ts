@@ -150,6 +150,42 @@ export function foldScales(names: string[]): { prefix: string; names: string[] }
     .map(([prefix, members]) => ({ prefix, names: members }))
 }
 
+export type PanelRow =
+  | { kind: 'var'; variable: ThemeVariable }
+  | { kind: 'scale'; prefix: string; variables: ThemeVariable[] }
+
+const PANEL_GROUPS: ThemeKind[] = ['color', 'size', 'font', 'other']
+
+/**
+ * The Theme panel's rows: variables whose name has `query` in it (any case), grouped by kind
+ * in PANEL_GROUPS order, with each group's scales folded into one row where their first step was.
+ */
+export function panelRows(
+  snapshot: ThemeSnapshot,
+  query: string,
+): { group: ThemeKind; rows: PanelRow[] }[] {
+  const needle = query.trim().toLowerCase()
+  const matching = snapshot.variables.filter((v) => v.name.toLowerCase().includes(needle))
+  return PANEL_GROUPS.flatMap((group) => {
+    const members = matching.filter((v) => v.kind === group)
+    const scaleOf = new Map<string, string>()
+    for (const { prefix, names } of foldScales(members.map((v) => v.name)))
+      for (const name of names) scaleOf.set(name, prefix)
+    const rows: PanelRow[] = []
+    for (const variable of members) {
+      const prefix = scaleOf.get(variable.name)
+      if (!prefix) rows.push({ kind: 'var', variable })
+      else if (!rows.some((row) => row.kind === 'scale' && row.prefix === prefix))
+        rows.push({
+          kind: 'scale',
+          prefix,
+          variables: members.filter((v) => scaleOf.get(v.name) === prefix),
+        })
+    }
+    return rows.length ? [{ group, rows }] : []
+  })
+}
+
 const MAX_VALUE = 500
 
 export function safeName(name: string): boolean {
