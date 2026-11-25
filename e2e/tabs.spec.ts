@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { type AgentId, CUSTOM_AGENT_PREFIX, type TabInfo, type Turn } from '../src/shared/types'
 import { electronExecutable, sleep, waitFor } from './helpers/env'
@@ -10,8 +10,8 @@ import { expect, test } from './helpers/test'
 
 // A window holds projects as tabs, each with its own preview, chat, dev server and agent;
 // background tabs keep running. A stand-in ACP agent (like queue.spec.ts's) does the turns:
-// TABS-WORK takes WORK_MS (TABS-LONG, LONG_MS), TABS-ASK waits on a permission card. No login
-// or usage needed.
+// TABS-WORK takes WORK_MS (TABS-LONG, LONG_MS), TABS-ASK waits on a permission card (TABS-TWICE,
+// on two at once). No login or usage needed.
 
 const AGENT: AgentId = `${CUSTOM_AGENT_PREFIX}Tabs`
 const WORK_MS = 4000
@@ -31,14 +31,17 @@ const ask = (method, params) =>
     pending.set(id, resolve)
     write({ id, method, params })
   })
-const askToRun = async (id, sessionId) => {
-  const toolCall = { toolCallId: 'run-1', title: 'npm test', kind: 'execute', status: 'pending' }
+const askOne = async (sessionId, toolCallId) => {
+  const toolCall = { toolCallId, title: 'npm test', kind: 'execute', status: 'pending' }
   write({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'tool_call', ...toolCall } } })
   const options = [
     { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
     { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
   ]
   await ask('session/request_permission', { sessionId, toolCall, options })
+}
+const askToRun = async (id, sessionId, twice) => {
+  await Promise.all(twice ? [askOne(sessionId, 'run-1'), askOne(sessionId, 'run-2')] : [askOne(sessionId, 'run-1')])
   write({ id, result: { stopReason: 'end_turn' } })
 }
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
@@ -56,7 +59,8 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   } else if (method === 'session/prompt') {
     const text = params.prompt.filter((block) => block.type === 'text').map((block) => block.text).join('\n')
     appendFileSync(log, JSON.stringify(text) + '\n')
-    if (text.includes('TABS-ASK')) return void askToRun(id, params.sessionId)
+    if (text.includes('TABS-ASK')) return void askToRun(id, params.sessionId, false)
+    if (text.includes('TABS-TWICE')) return void askToRun(id, params.sessionId, true)
     const timer = setTimeout(() => {
       running.delete(params.sessionId)
       write({ id, result: { stopReason: 'end_turn' } })
@@ -503,6 +507,88 @@ function chatAtRest() {
     at: Date.now(),
   }
 }
+
+/** Runs in main: the system notifications Gui would have shown (waiting-notice.ts). */
+function recordedNotices() {
+  type Notice = { title: string; body: string; closed: boolean }
+  const store = globalThis as unknown as { guiE2eNotices?: Notice[] }
+  return (store.guiE2eNotices ?? []).map(({ title, body, closed }) => ({ title, body, closed }))
+}
+
+test('a card waiting in a background tab notifies once per wait, unless switched off', async ({
+  launch,
+}) => {
+  const session = await launch({ fixture: 'vite' })
+  const first = await session.waitForPreview()
+  await useTabsAgent(session)
+  await session.chat.evaluate(() => window.gui.setAutoApprove(false))
+  const project = basename(session.fixture.root)
+  const cards = async () =>
+    ((await turnsIn(session.chat)).at(-1)?.items ?? []).filter(
+      (item) => item.kind === 'permission' && !item.resolved,
+    )
+
+  // Another tab in front: two cards come up in the first one's reply, one notification.
+  await session.chrome.evaluate(() => window.gui.newTab())
+  await waitFor(async () => (await tabsOf(session)).length === 2, 'a second tab')
+  expect(await session.chat.evaluate(() => window.gui.send('TABS-TWICE'))).toBe(true)
+  await waitFor(async () => (await cards()).length === 2, 'two permission cards')
+  await tabStatus(session, first.activeTab, 'attention')
+  expect(await session.app.evaluate(recordedNotices)).toEqual([
+    { title: 'Tabs is waiting for your OK', body: project, closed: false },
+  ])
+
+  // Clicking it shows the tab with the cards.
+  await session.app.evaluate(() => {
+    const store = globalThis as unknown as { guiE2eNotices?: { click: () => void }[] }
+    store.guiE2eNotices?.[0]?.click()
+  })
+  await waitFor(
+    async () => (await session.state()).activeTab === first.activeTab,
+    'the waiting tab in front',
+  )
+
+  // Answered, the wait is over; it showed once.
+  const turn = (await turnsIn(session.chat)).at(-1)
+  if (!turn) throw new Error('The turn is gone')
+  for (const card of await cards()) {
+    await session.chat.evaluate(
+      ([turnId, itemId]) => window.gui.respondPermission(turnId, itemId, 'reject'),
+      [turn.id, card.id] as const,
+    )
+  }
+  await tabStatus(session, first.activeTab, 'idle')
+  expect(await session.app.evaluate(recordedNotices)).toHaveLength(1)
+
+  // Switched off in Settings, the next wait shows nothing.
+  await session.chrome.evaluate(() => window.gui.openSettings('agents'))
+  const settings = await waitFor(
+    () =>
+      session.app
+        .context()
+        .pages()
+        .find((page) => page.url().endsWith('/settings.html')),
+    'the Settings window',
+  )
+  await settings.waitForFunction(() => 'gui' in window)
+  const toggle = settings.getByRole('switch', { name: 'Notify me when an agent is waiting for me' })
+  await expect(toggle).toBeChecked()
+  if (process.env.GUI_E2E_SHOTS === '1') {
+    await settings.screenshot({ path: test.info().outputPath('notify-setting.png') })
+  }
+  await toggle.click()
+  await waitFor(
+    async () => !(await settings.evaluate(() => window.gui.getSettings())).notifyWhenWaiting,
+    'the setting off',
+  )
+  const others = (await tabsOf(session)).find((tab) => tab.id !== first.activeTab)
+  if (!others) throw new Error('The second tab is gone')
+  await session.chrome.evaluate((id) => window.gui.selectTab(id), others.id)
+  expect(await session.chat.evaluate(() => window.gui.send('TABS-ASK'))).toBe(true)
+  await waitFor(async () => (await cards()).length === 1, 'the next permission card')
+  await tabStatus(session, first.activeTab, 'attention')
+  expect(await session.app.evaluate(recordedNotices)).toHaveLength(1)
+})
 
 test('a chat nobody can see rests, and is right the moment it is seen again', async ({
   launch,

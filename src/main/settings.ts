@@ -127,6 +127,7 @@ async function buildState(): Promise<SettingsState> {
     shareUsage: prefs.shareUsage,
     whileWorking: prefs.whileWorking,
     keepAwakeMode: prefs.keepAwakeMode,
+    notifyWhenWaiting: prefs.notifyWhenWaiting,
     outsideAgents: outsideAgentsState(),
   }
 }
@@ -180,6 +181,11 @@ export function setShareUsage(on: boolean) {
 /** Open chats follow it at once (ChatController listens for prefs changes). */
 export function setWhileWorking(whileWorking: WhileWorking) {
   setPrefs({ whileWorking })
+}
+
+/** Cards from now on follow it; a notification already showing stays until its wait ends. */
+export function setNotifyWhenWaiting(on: boolean) {
+  setPrefs({ notifyWhenWaiting: on })
 }
 
 export async function saveCustom(originalName: string | null, entry: CustomAgentEntry) {

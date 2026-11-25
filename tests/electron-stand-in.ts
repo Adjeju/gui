@@ -23,6 +23,7 @@ export const ELECTRON_EXPORTS = {
   nativeImage: { createFromDataURL: () => ({ isEmpty: () => true }) },
   nativeTheme: { on: noop, shouldUseDarkColors: false },
   net: {},
+  Notification: Object.assign(class {}, { isSupported: () => false }),
   powerMonitor: { on: noop },
   powerSaveBlocker: {},
   protocol: { registerSchemesAsPrivileged: noop, handle: noop },

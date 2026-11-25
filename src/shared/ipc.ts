@@ -216,6 +216,7 @@ export const Send = {
   setShareUsage: 'settings:share-usage',
   setWhileWorking: 'settings:while-working',
   setKeepAwakeMode: 'settings:keep-awake-mode',
+  setNotifyWhenWaiting: 'settings:notify-when-waiting',
   reportError: 'app:report-error',
   openCustomAgentsFile: 'settings:open-agents-file',
   newBoard: 'board:new',
@@ -880,6 +881,8 @@ export interface GuiApi {
   /** What Enter does while the agent works: queue the message, or steer the reply under way */
   setWhileWorking(choice: WhileWorking): void
   setKeepAwakeMode(mode: KeepAwakeMode): void
+  /** A system notification when an agent waits on the user away from its chat */
+  setNotifyWhenWaiting(on: boolean): void
   /** Agents outside Gui may use its tools; resolves once it listens (or failed to: see Settings) */
   setOutsideAgents(on: boolean): Promise<void>
   /** A new token for other agents; the old one stops working */

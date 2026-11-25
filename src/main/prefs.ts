@@ -68,6 +68,8 @@ export interface Prefs {
   canvasFolder: string | null
   /** Canvases (their folders) committed to their git repo after each turn, without asking */
   commitAfterTurn: string[]
+  /** A system notification when a card waits on the user away from its chat (waiting-notice.ts) */
+  notifyWhenWaiting: boolean
 }
 
 const DEFAULTS: Prefs = {
@@ -93,6 +95,7 @@ const DEFAULTS: Prefs = {
   outsideAgents: false,
   canvasFolder: null,
   commitAfterTurn: [],
+  notifyWhenWaiting: true,
 }
 /** More guides than anyone draws; keeps a damaged file from making thousands of views. */
 export const MAX_GUIDES = 50
@@ -227,6 +230,10 @@ export function getPrefs(): Prefs {
           ? parsed.canvasFolder
           : null,
       commitAfterTurn: roots(parsed.commitAfterTurn),
+      notifyWhenWaiting:
+        typeof parsed.notifyWhenWaiting === 'boolean'
+          ? parsed.notifyWhenWaiting
+          : DEFAULTS.notifyWhenWaiting,
     }
   } catch (error) {
     // A damaged file would otherwise be replaced by defaults on the next save, losing (among

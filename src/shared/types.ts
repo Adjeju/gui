@@ -1490,6 +1490,8 @@ export interface SettingsState {
   /** What a message sent while the agent works does (see ChatMeta.whileWorking) */
   whileWorking: WhileWorking
   keepAwakeMode: KeepAwakeMode
+  /** A system notification when an agent waits on the user away from its chat */
+  notifyWhenWaiting: boolean
   /** Agents outside Gui may use its tools (main/outside-agents.ts) */
   outsideAgents: OutsideAgentsState
 }

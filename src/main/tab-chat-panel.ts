@@ -205,6 +205,18 @@ export class ChatPanel {
     return (picking || this.tucked) && this.chatShown && !this.docked
   }
 
+  /**
+   * The user is looking at the chat: its tab is the one in front, in the window that has the
+   * keyboard, and the chat shows in full there, not hidden (⌘B), behind focus mode or its
+   * bubble. Popped out, its own window has the keyboard.
+   */
+  get looking() {
+    const { tab } = this
+    if (tab.disposed || !tab.host.isActive(tab)) return false
+    if (this.popout) return !this.popout.isDestroyed() && this.popout.isFocused()
+    return tab.host.win.isFocused() && this.chatShown && !this.bubbled
+  }
+
   /** The chat is on screen in some form, popped out included, so its turns can be seen. */
   get chatInView() {
     return this.chatShown || !!this.popout

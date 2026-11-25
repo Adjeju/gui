@@ -16,7 +16,7 @@ import { InlineError } from '../lib/field'
 import { ExternalLink, Plus, TriangleAlert } from '../lib/icons'
 import { PathText } from '../lib/path-text'
 import { Card, List, ListItem } from '../lib/surface'
-import { Button, Code, SegmentedControl } from '../lib/ui'
+import { Button, Code, SegmentedControl, Switch } from '../lib/ui'
 import { AgentRow } from './agent-row'
 import { AgentStatusLabel } from './agent-status'
 import { CustomAgentForm } from './custom-agent-form'
@@ -122,6 +122,18 @@ export function AgentsSection({ settings }: { settings: SettingsState }) {
             detail={`Queue holds your message until the agent finishes. Steer adds it to the reply under way. ${shortcutText('sendOther')} does the other for one message.`}
             trailing={<WhileWorking settings={settings} />}
           />
+          <ListItem
+            heading={<label htmlFor="notify-when-waiting">{NOTIFY_LABEL}</label>}
+            detail="When you’re not looking at its chat."
+            trailing={
+              <Switch
+                id="notify-when-waiting"
+                label={NOTIFY_LABEL}
+                checked={settings.notifyWhenWaiting}
+                onCheckedChange={(on) => gui.setNotifyWhenWaiting(on)}
+              />
+            }
+          />
         </List>
       </SettingsGroup>
 
@@ -146,6 +158,8 @@ export function AgentsSection({ settings }: { settings: SettingsState }) {
     </>
   )
 }
+
+const NOTIFY_LABEL = 'Notify me when an agent is waiting for me'
 
 const KEEP_AWAKE_SEGMENTS: readonly { value: KeepAwakeMode; label: string }[] = [
   { value: 'off', label: 'Off' },

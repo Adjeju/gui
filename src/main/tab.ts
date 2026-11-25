@@ -84,6 +84,7 @@ import {
   viewportSpec,
   type WorkspaceApp,
 } from '../shared/types'
+import { QUESTION_KIND } from './agent-protocol'
 import { agentHealth } from './agent-status'
 import { AgentViewport, viewportForWidth } from './agent-viewport'
 import { declaresOwnPermissions } from './agents'
@@ -203,9 +204,10 @@ import {
 import { readyUpdate, updateOffer } from './updates'
 import { Variations } from './variations'
 import { placePreview, ViewportEmulation, type Zoom, zoomed } from './viewport'
+import { WaitingNotice } from './waiting-notice'
 import { isPublicWebsite, LOCAL_ADDRESS } from './web-session'
 import { Website, type WebsiteHooks } from './website'
-import { focusWindow } from './window-presentation'
+import { focusWindow, showWindow } from './window-presentation'
 
 export type { TabHost, TabState } from './tab-host'
 
@@ -1705,7 +1707,7 @@ export class ProjectTab implements ChatPanelOwner {
       startupReport: (tools) => startupReport(this.state, this.getLogs(), tools),
       layout: board ? boardLayout(board, checkpoints, current) : undefined,
     })
-    this.bindChat(chat)
+    this.bindChat(chat, this.waitingNotice(chat, root, resources))
     resources.chat = chat
     this.panel.untuck()
     chat.setCanSelect(this.canSelect)
@@ -1755,8 +1757,43 @@ export class ProjectTab implements ChatPanelOwner {
     this.openRequest?.finish(false)
   }
 
+  /**
+   * The system notification for a card waiting on the user while nobody looks at this chat
+   * (waiting-notice.ts), for this opening only: a click once it closed or reopened does nothing.
+   */
+  private waitingNotice(chat: ChatController, root: string, resources: ProjectResources) {
+    const generation = resources.generation
+    const notice = new WaitingNotice({
+      enabled: () => getPrefs().notifyWhenWaiting,
+      signal: resources.signal,
+      onClick: () => resources.ifCurrent(generation, () => this.showWaitingCard()),
+    })
+    return {
+      cardWaiting: () =>
+        notice.cardWaiting({
+          waiting: chat.awaitingPermission,
+          looking: this.panel.looking,
+          kind: chat.oldestPermission()?.item.toolKind === QUESTION_KIND ? 'question' : 'approval',
+          agent: agentName(chat.meta.agentId),
+          project: basename(root),
+        }),
+      settle: () => notice.settle(chat.awaitingPermission),
+    }
+  }
+
+  /** The waiting notification was clicked: as if the user switched to this tab's card. */
+  private showWaitingCard() {
+    const { win } = this.host
+    if (this.disposed || win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    if (!win.isVisible()) showWindow(win)
+    focusWindow(win, { steal: true })
+    this.host.selectTab(this.id)
+    this.panel.focusChat()
+  }
+
   /** What the tab does as its chat changes, turns run and permission cards come up. */
-  private bindChat(chat: ChatController) {
+  private bindChat(chat: ChatController, waiting: { cardWaiting(): void; settle(): void }) {
     chat.on('meta', (meta) => {
       this.sendChat(Events.chatMeta, meta)
       this.onSelection(meta.selection)
@@ -1787,8 +1824,10 @@ export class ProjectTab implements ChatPanelOwner {
       this.variations.onTurn(turn)
       // Working, or a permission card answered: the tab strip shows it.
       this.host.tabChanged(this, false)
+      waiting.settle()
     })
     chat.on('reset', (snapshot) => {
+      waiting.settle()
       this.sendChat(Events.chatReset, snapshot)
       this.variations.clear()
       // A chat opened from the archive shows; a new one has nothing to show yet, so the
@@ -1804,6 +1843,8 @@ export class ProjectTab implements ChatPanelOwner {
       }
     })
     chat.on('attention', () => {
+      // Before the panel shows the card: whether the user was looking until now.
+      waiting.cardWaiting()
       this.panel.onAttention()
       this.host.tabChanged(this, false)
     })

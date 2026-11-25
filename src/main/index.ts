@@ -162,6 +162,7 @@ import {
   setChatSidebarSide,
   setCrashReports,
   setDefaultAgent,
+  setNotifyWhenWaiting,
   setShareUsage,
   setWhileWorking,
   untrustProject,
@@ -1466,6 +1467,7 @@ function registerIpc() {
   onSettings(Send.setKeepAwakeMode, (mode) => {
     if (isKeepAwakeMode(mode)) setKeepAwakeMode(mode)
   })
+  onSettings(Send.setNotifyWhenWaiting, (on) => typeof on === 'boolean' && setNotifyWhenWaiting(on))
   onSettings(Send.openCustomAgentsFile, () => void openCustomAgents())
   ipcMain.on(Send.reportError, (event, error: unknown) => {
     if (!isAppContents(event.sender) || !error || typeof error !== 'object') return

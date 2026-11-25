@@ -21,6 +21,8 @@ export interface TabHost {
    */
   readonly sheetShown: boolean
   setFocusMode(on: boolean): void
+  /** Shows the tab with this id, as clicking it in the strip does. */
+  selectTab(id: string): void
   /** The tab whose views are in the window; only it lays out and talks to the chrome. */
   isActive(tab: { readonly id: string }): boolean
   /** The tab's state changed (`stateChanged`), or only what its tab in the strip shows. */
