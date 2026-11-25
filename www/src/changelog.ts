@@ -12,11 +12,12 @@ export interface Release {
 export const releases: Release[] = [
   {
     version: '0.1.0-alpha.30',
-    date: '2026-11-24',
+    date: '2026-11-25',
     changes: [
       'Settings → Agents → Keep awake keeps your computer from going to sleep on its own while agents work, or the whole time Gui is open. The screen still turns off, and closing the lid still sleeps it.',
       'Drop images anywhere on the chat, not only on the message box. Each one sits in your message by name where you were typing, so you can write “compare this one with that one” and the agent knows which is which.',
       'In design mode, each element you click is a numbered marker in your message, matching its badge on the page, so one message can say “1 Heading make this shorter, 2 Button make it blue.” Clicking keeps design mode on to pick more, and deleting a marker removes its pick.',
+      'In Ask mode, once you’ve allowed two requests in one reply, the next permission card offers Turn on Auto, so you stop being asked. Turning Auto on also answers a request that is already waiting.',
       'Drag the variations bar to any corner of the preview to see what it covers. Gui remembers the corner.',
       'The Working count in the chat reads in minutes and hours, like 20m 54s, where it used to count only in seconds.',
       'On Linux, Gui no longer shows a “JavaScript error in the main process” box when a git command it runs for undo ends early.',
