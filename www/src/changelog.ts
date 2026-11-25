@@ -11,6 +11,13 @@ export interface Release {
 
 export const releases: Release[] = [
   {
+    version: '0.1.0-alpha.32',
+    date: '2026-11-25',
+    changes: [
+      'On Linux, the dock and app menu show Gui’s icon. They showed a placeholder because the package shipped the icon at a size desktops never look up.',
+    ],
+  },
+  {
     version: '0.1.0-alpha.31',
     date: '2026-11-25',
     changes: [
