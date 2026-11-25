@@ -1810,6 +1810,17 @@ export class ProjectTab implements ChatPanelOwner {
       this.lingerGuide()
       // The agent may have just set the project up; it's left alone while it works.
       if (this.appWatcher) void this.checkForApp()
+      // Hot reload fires no load event: once it has applied the turn's changes, read the theme
+      // again, and while the popover is open put its preview back over the new CSS.
+      const resources = this.resources
+      const generation = resources.generation
+      const tokens = resources.chat === chat ? resources.designTokens : null
+      if (turn.status === 'done' && tokens && turn.changes?.length) {
+        setTimeout(() => {
+          if (resources.stillCurrent(generation) && resources.designTokens === tokens)
+            void tokens.loaded().catch(() => undefined)
+        }, REHIGHLIGHT_DELAY_MS)
+      }
       const shown = primaryPick(turn.context)
       if (turn.status === 'done' && shown && turn.changes?.length) {
         const selector = isRegion(shown) ? undefined : shown.selector
@@ -2509,8 +2520,7 @@ export class ProjectTab implements ChatPanelOwner {
       this.keepKeyboard()
       this.keyboardBeforeLoad = null
       this.patchPreview({ loading: false })
-      // shortcut: CSS-only hot reload fires no load event, so the theme is read again only on
-      // full loads; re-read on a stylesheet change (CSS.styleSheetAdded) if that matters.
+      // A full load; a hot reload fires none, so a turn's changes read it again (turnEnd).
       if (!this.loadFailed && wc.getURL() !== 'about:blank')
         void this.resources.designTokens?.loaded().catch(() => undefined)
       // The open frame's page loaded: it didn't hang the preview on its way in.
