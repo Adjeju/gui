@@ -183,3 +183,5 @@ export const MAX_THEME_VARIABLES = 2000
 export const MAX_THEME_CSS_FILES = 400
 export const MAX_THEME_CSS_BYTES = 2_000_000
 export const MAX_PALETTE_PROMPT_CHARS = 6000
+/** preview_theme's answer: past it, the rest of the variables are counted, not listed. */
+export const MAX_THEME_TOOL_CHARS = 60_000

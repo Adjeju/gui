@@ -1,4 +1,5 @@
 import type { WebContents } from 'electron'
+import { MAX_THEME_TOOL_CHARS } from '../shared/bounded'
 import {
   CROP_MARGIN,
   type PageRect,
@@ -978,8 +979,7 @@ export class PreviewTools extends PageTools {
   /** preview_theme: the project's theme variables, as the Theme panel sees them. */
   theme() {
     this.assertLoaded()
-    const snapshot = this.deps.theme()
-    return snapshot?.variables.length ? JSON.stringify(snapshot) : 'This page has no CSS variables.'
+    return themeText(this.deps.theme())
   }
 
   /**
@@ -1047,4 +1047,21 @@ export class PreviewTools extends PageTools {
     this.assertLive()
     return logTail(this.deps.logs(), lines)
   }
+}
+
+/** preview_theme's answer: the snapshot as JSON, its variables cut at MAX_THEME_TOOL_CHARS. */
+export function themeText(snapshot: ThemeSnapshot | null) {
+  if (!snapshot?.variables.length) return 'This page has no CSS variables.'
+  const { variables } = snapshot
+  // Room for the "more" line.
+  let size = JSON.stringify({ ...snapshot, variables: [] }).length + 100
+  let count = 0
+  for (const variable of variables) {
+    size += JSON.stringify(variable).length + 1
+    if (size > MAX_THEME_TOOL_CHARS) break
+    count++
+  }
+  const text = JSON.stringify({ ...snapshot, variables: variables.slice(0, count) })
+  const more = variables.length - count
+  return more ? `${text}\n… ${more} more variables` : text
 }
