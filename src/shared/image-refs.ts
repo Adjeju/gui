@@ -6,13 +6,22 @@ const REF = /\[Image (\d+)\]/g
  */
 export const imageRef = (n: number) => `[Image ${n}]`
 
-/** The message without its labels for images 1 to `count`, for an agent that can't see them. */
+/**
+ * The message without its labels for images 1 to `count`, for an agent that can't see them.
+ * Only the space around a label goes with it: the rest of the message, indentation
+ * included, stays as written.
+ */
 export function withoutImageRefs(text: string, count: number) {
+  if (count < 1) return text
   return text
-    .replace(/[ \t]*\[Image (\d+)\]/g, (ref, digits: string) =>
-      Number(digits) >= 1 && Number(digits) <= count ? '' : ref,
+    .replace(
+      /([ \t]*)\[Image (\d+)\]([ \t]*)/g,
+      (ref, before: string, digits: string, after: string, at: number) => {
+        if (Number(digits) < 1 || Number(digits) > count) return ref
+        const startsLine = at === 0 || text[at - 1] === '\n'
+        return before && after && !startsLine ? ' ' : ''
+      },
     )
-    .replace(/^[ \t]+/gm, '')
     .trim()
 }
 
