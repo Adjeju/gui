@@ -5,6 +5,7 @@ import { ASK_FIRST_TOOLS, GUI_TOOL_NAMES } from '../src/main/mcp-server'
 import {
   CLOSED_MID_CALL,
   NOTHING_OPEN,
+  NOTHING_PICKED,
   OUTSIDE_MCP_PORT,
   OUTSIDE_TOOL_NAMES,
   type OutsideOpener,
@@ -14,6 +15,7 @@ import {
   startOutsideMcpServer,
 } from '../src/main/outside-mcp'
 import { OUTSIDE_CLIENTS, outsideSetup } from '../src/shared/outside-setup'
+import type { Picked } from '../src/shared/types'
 
 // Agents outside Gui (Claude Code, Codex, Cursor) reach Gui's tools at one fixed loopback
 // address with the user's token, and each call acts on what's open in the focused Gui window
@@ -118,6 +120,7 @@ function opening(
     preview: () => (kind === 'canvas' ? 'Preview: the board.' : 'Dev server: running.'),
     live: () => live,
     closed: closing.signal,
+    selection: () => [],
     backends: {
       tools: {} as never,
       recordings: {} as never,
@@ -165,6 +168,7 @@ test('other agents get exactly the allowlisted tools, and nothing that runs comm
       'dev_server_logs',
       'gui_list',
       'gui_open',
+      'gui_selection',
       'gui_status',
       'preview_back',
       'preview_click',
@@ -200,6 +204,38 @@ test('other agents get exactly the allowlisted tools, and nothing that runs comm
   for (const name of names) {
     if (!name.startsWith('gui_')) expect(GUI_TOOL_NAMES).toContain(name as never)
   }
+})
+
+test('gui_selection gives what the user picked, fenced as page data, with its screenshot', async () => {
+  const picks: Picked[] = []
+  const { target } = opening('shop', 'project')
+  target.selection = () => picks
+  const harness = await start({ target })
+  expect(await callTool(harness, 'gui_selection')).toEqual({ isError: false, text: NOTHING_PICKED })
+
+  const png = 'iVBORw0KGgo='
+  picks.push({
+    kind: 'element',
+    id: 'p1',
+    url: 'http://localhost:5173/',
+    viewport: { width: 1280, height: 800 },
+    tag: 'button',
+    selector: 'main > button',
+    text: 'Buy now',
+    attributes: {},
+    outerHTML: '<button>Buy now</button>',
+    rect: { x: 10, y: 20, width: 120, height: 40 },
+    styles: { color: 'red' },
+    componentStack: ['BuyButton'],
+    source: { file: 'src/App.tsx', line: 12, approximate: false },
+    screenshot: `data:image/png;base64,${png}`,
+  })
+  const reply = await post(harness, 'tools/call', { name: 'gui_selection', arguments: {} })
+  const [block, image] = (await reply.json()).result.content
+  expect(block.text).toMatch(/^<selected_element_[0-9a-f]{8}>/)
+  expect(block.text).toContain('Source: src/App.tsx:12')
+  expect(block.text).toContain('Components (innermost first): BuyButton')
+  expect(image).toEqual({ type: 'image', data: png, mimeType: 'image/png' })
 })
 
 test('only the token from Settings gets in, at /mcp, by POST, while signed in', async () => {
