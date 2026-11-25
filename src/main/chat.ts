@@ -9,6 +9,7 @@ import type {
   SessionNotification,
 } from '@agentclientprotocol/sdk'
 import { app, BrowserWindow, dialog, type MessageBoxOptions } from 'electron'
+import { autoAnswersFor } from '../shared/auto-answer'
 import {
   boundedLocations,
   clampMiddle,
@@ -2409,8 +2410,8 @@ export class ChatController extends EventEmitter<ChatEvents> {
   }
 
   /**
-   * Follows this project's Auto setting. Cards already open stay open: Auto answers new
-   * requests. The agent's own controls follow now between turns, else before the next prompt.
+   * Follows this project's Auto setting. Switched on, it answers the cards already waiting
+   * as it would have (`answerWaitingAsAuto`); switched off, open cards stay. The agent's own controls follow now between turns, else before the next prompt.
    */
   private refreshAutoApprove = () => {
     const { autoNoteSeen, whileWorking } = getPrefs()
@@ -2419,8 +2420,20 @@ export class ChatController extends EventEmitter<ChatEvents> {
     const autoApprove = isAutoApprove(this.root)
     if (autoApprove === this.meta.autoApprove) return
     this.patchMeta({ autoApprove })
+    if (autoApprove) this.answerWaitingAsAuto()
     const agent = this.agent
     if (agent && this.agentInfo && !this.active) void this.applySettings(agent, null)
+  }
+
+  /** Auto was just switched on: the waiting cards it would have answered, it answers now. */
+  private answerWaitingAsAuto() {
+    const record = this.active
+    if (!record) return
+    const turnId = record.turn.id
+    const waiting = (item: { id: string }) => this.permissions.has(`${turnId}:${item.id}`)
+    for (const { itemId, optionId } of autoAnswersFor(record.turn.items, waiting)) {
+      this.respondPermission(turnId, itemId, optionId)
+    }
   }
 
   private onAgentExit(agent: AgentSession, error: DetailedError) {
@@ -2660,8 +2673,10 @@ export class ChatController extends EventEmitter<ChatEvents> {
       resolve(null)
       return
     }
-    if (auto !== null) {
-      resolve(auto)
+    // Auto may have come on while Ask's checks ran.
+    const answer = auto ?? (this.meta.autoApprove ? autoApproval(request) : null)
+    if (answer !== null) {
+      resolve(answer)
       return
     }
     const { toolCallId, title } = request.toolCall

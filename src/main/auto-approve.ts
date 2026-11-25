@@ -1,6 +1,6 @@
 import type { PermissionOption, RequestPermissionRequest } from '@agentclientprotocol/sdk'
+import { autoOption } from '../shared/auto-answer'
 import type { AgentId } from '../shared/types'
-import { QUESTION_KIND } from './agent-protocol'
 import { getPrefs, setPrefs } from './prefs'
 
 /**
@@ -118,9 +118,7 @@ export function requestPaths(request: RequestPermissionRequest): string[] {
  * request that offers no "allow once".
  */
 export function autoApproval(request: RequestPermissionRequest): string | null {
-  const { kind } = request.toolCall
-  if (kind === QUESTION_KIND || kind === 'switch_mode') return null
-  return allowOnce(request)?.optionId ?? null
+  return autoOption({ kind: request.toolCall.kind, options: request.options })
 }
 
 /**

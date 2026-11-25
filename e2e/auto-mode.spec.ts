@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { type AgentId, CUSTOM_AGENT_PREFIX, type TurnItem } from '../src/shared/types'
-import { electronExecutable, sleep, waitFor } from './helpers/env'
+import { electronExecutable, waitFor } from './helpers/env'
 import type { GuiSession } from './helpers/session'
 import { expect, test } from './helpers/test'
 
@@ -384,19 +384,15 @@ test('Auto mode is on per project; off, it asks; on, it answers even outside edi
   // The agent heard what the user chose, the refusal included.
   expect(agent.outcomes(0)).toEqual([chose(0, 'run-1', 'allow'), chose(0, 'edit-1', 'reject')])
 
-  // Auto on from the menu while a card Auto would have answered is open: the card stays
-  // open for the user, and only requests after it are answered by Gui.
+  // Auto on from the menu while a card Auto would have answered is open: Gui answers that
+  // card as Auto would have, and the requests after it.
   expect(await send(chat, BASIC)).toBe(true)
-  const waiting = await openCard(session, 1, 'execute')
+  await openCard(session, 1, 'execute')
   await chooseAutoModeItem(session)
   await autoModeIs(session, true)
   expect(await autoModeItem(session)).toEqual({ label: 'Auto Mode', checked: true })
   await expect(autoChip(chat)).toHaveAttribute('aria-pressed', 'true')
   await session.shot('auto-mode-on')
-  await sleep(1000)
-  expect((await cardsOf(session, 1)).map(shown)).toEqual([{ toolKind: 'execute', resolved: null }])
-  expect(agent.outcomes(1)).toEqual([])
-  await answer(session, waiting, 'allow')
   const second = await session.waitForTurn(1)
   expect(cardsIn(second.turn.items).map(shown)).toEqual([
     { toolKind: 'execute', resolved: 'allow' },
