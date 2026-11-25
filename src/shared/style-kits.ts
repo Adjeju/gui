@@ -77,7 +77,7 @@ function tokens(p: Palette, s: Shape): Record<string, string> {
     '--accent-foreground': p.accentForeground,
     '--border': p.border,
     '--input': p.border,
-    '--ring': p.accent,
+    '--ring': p.primary,
     '--radius': s.radius,
     '--font-sans': s.sans,
     '--font-heading': s.heading,
@@ -181,7 +181,7 @@ export const STYLE_KITS: readonly StyleKit[] = [
         background: '#fbfaff',
         foreground: '#2a2640',
         card: '#ffffff',
-        primary: '#8b7cf6',
+        primary: '#6d5ce6',
         primaryForeground: '#ffffff',
         secondary: '#efecff',
         muted: '#f3f1fb',
@@ -268,15 +268,18 @@ export function kitStylesheetName(kit: StyleKit): string {
   return `kit-${kit.id}.css`
 }
 
-function block(selector: string, values: Record<string, string>): string {
-  const lines = KIT_TOKENS.map((token) => `  ${token}: ${values[token]};`)
+function block(selector: string, scheme: string, values: Record<string, string>): string {
+  const lines = [
+    `  color-scheme: ${scheme};`,
+    ...KIT_TOKENS.map((token) => `  ${token}: ${values[token]};`),
+  ]
   return `${selector} {\n${lines.join('\n')}\n}\n`
 }
 
 export function kitCss(kit: StyleKit): string {
   return [
-    block(':root', kit.light),
-    block('.dark', kit.dark),
+    block(':root', 'light', kit.light),
+    block('.dark', 'dark', kit.dark),
     'body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-sans); }',
     'h1, h2, h3 { font-family: var(--font-heading); }',
     '',

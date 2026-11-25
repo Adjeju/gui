@@ -49,3 +49,28 @@ test('isStyleKitId', () => {
   expect(isStyleKitId('mono')).toBe(true)
   expect(isStyleKitId('../x')).toBe(false)
 })
+
+function luminance(hex: string) {
+  const [r, g, b] = [1, 3, 5]
+    .map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+test('every kit primary is readable under its primary-foreground (WCAG AA)', () => {
+  for (const kit of STYLE_KITS) {
+    for (const theme of ['light', 'dark'] as const) {
+      const [hi, lo] = [
+        luminance(kit[theme]['--primary']),
+        luminance(kit[theme]['--primary-foreground']),
+      ].sort((a, b) => b - a)
+      expect((hi + 0.05) / (lo + 0.05), `${kit.id} ${theme}`).toBeGreaterThanOrEqual(4.5)
+    }
+  }
+})
+
+test('kitCss sets color-scheme for each theme', () => {
+  const css = kitCss(STYLE_KITS[0])
+  expect(css).toContain('color-scheme: light;')
+  expect(css).toContain('color-scheme: dark;')
+})

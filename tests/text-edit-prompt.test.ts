@@ -183,6 +183,7 @@ describe('what the agent is told about text edits', () => {
     const text = preamble(true, true)
     expect(text).toContain('assets/kit-<id>.css')
     expect(text).toContain('may link shared files in assets/')
+    expect(preamble(false, true)).toContain('assets/kit-<id>.css')
   })
 })
 

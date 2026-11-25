@@ -48,7 +48,7 @@ export function KitGallery({ disabled }: { disabled: boolean }) {
     let current = true
     window.gui.boardKitInUse().then(
       (id) => current && setInUse(id),
-      () => {},
+      (err) => current && setError(readableError(err)),
     )
     return () => {
       current = false
@@ -80,6 +80,7 @@ export function KitGallery({ disabled }: { disabled: boolean }) {
             <button
               type="button"
               aria-label={`Use the ${kit.name} kit`}
+              aria-describedby={`kit-blurb-${kit.id}`}
               aria-busy={pending === kit.id || undefined}
               disabled={busy}
               onClick={() => void use(kit.id)}
@@ -90,7 +91,9 @@ export function KitGallery({ disabled }: { disabled: boolean }) {
                 {kit.name}
                 {pending === kit.id && <Spinner />}
               </span>
-              <span className="text-pretty text-small text-muted">{kit.blurb}</span>
+              <span id={`kit-blurb-${kit.id}`} className="text-pretty text-small text-muted">
+                {kit.blurb}
+              </span>
             </button>
           </li>
         ))}

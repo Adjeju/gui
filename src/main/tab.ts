@@ -1191,7 +1191,9 @@ export class ProjectTab implements ChatPanelOwner {
 
   /** Starts the empty canvas from a style kit (null takes the shipped one away); rejects with why not. */
   async boardUseKit(id: StyleKitId | null) {
-    await this.resources.board?.applyKit(id)
+    const board = this.resources.board
+    if (!board) throw new Error('No canvas open.')
+    await board.applyKit(id)
   }
 
   /**
