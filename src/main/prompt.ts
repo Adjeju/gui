@@ -204,6 +204,24 @@ export function buildPrompt({
   if (board) blocks.push({ type: 'text', text: describeBoard(board) })
   if (viewport) blocks.push({ type: 'text', text: describeViewport(viewport) })
   if (guides?.guides.length) blocks.push({ type: 'text', text: describeGuides(guides) })
+  blocks.push(...describeSelection(selection, images))
+  if (textEdit) blocks.push({ type: 'text', text: describeTextEdit(textEdit) })
+  blocks.push(...followUp)
+  // An agent that can't see the images doesn't get their labels either, as if none were attached.
+  if (text !== null) {
+    const said = images ? text : withoutImageRefs(text, attachments.length)
+    if (said) blocks.push({ type: 'text', text: said })
+  }
+  if (images && attachments.length) blocks.push(...describeAttachments(attachments))
+  return blocks
+}
+
+/**
+ * What the user picked in the preview, in order: a block each, then its screenshot when the
+ * agent can see `images`. Gui's server for other agents answers gui_selection with it too.
+ */
+export function describeSelection(selection: Picked[], images: boolean): ContentBlock[] {
+  const blocks: ContentBlock[] = []
   if (selection.length > 1) {
     blocks.push({
       type: 'text',
@@ -219,14 +237,6 @@ export function buildPrompt({
     const image = images && picked.screenshot ? parseDataUrl(picked.screenshot) : null
     if (image) blocks.push({ type: 'image', ...image })
   })
-  if (textEdit) blocks.push({ type: 'text', text: describeTextEdit(textEdit) })
-  blocks.push(...followUp)
-  // An agent that can't see the images doesn't get their labels either, as if none were attached.
-  if (text !== null) {
-    const said = images ? text : withoutImageRefs(text, attachments.length)
-    if (said) blocks.push({ type: 'text', text: said })
-  }
-  if (images && attachments.length) blocks.push(...describeAttachments(attachments))
   return blocks
 }
 

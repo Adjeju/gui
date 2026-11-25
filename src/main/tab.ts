@@ -1105,6 +1105,7 @@ export class ProjectTab implements ChatPanelOwner {
       },
       live,
       closed: resources.signal,
+      selection: () => (live() ? (resources.chat?.meta.selection ?? []) : []),
       backends: mcp.backends,
       // What a chat turn's end does, unless the chat's own turn is under way.
       settled: () => {

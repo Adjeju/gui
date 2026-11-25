@@ -3,9 +3,10 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { OUTSIDE_TOOL_NAMES } from '../src/main/outside-mcp'
+import { NOTHING_PICKED, OUTSIDE_TOOL_NAMES } from '../src/main/outside-mcp'
 import { AGENTS, type BoardState, type SettingsState } from '../src/shared/types'
 import { waitFor } from './helpers/env'
+import { FIXTURES, lineOf } from './helpers/fixtures'
 import { type GuiSession, standInsFile } from './helpers/session'
 import { expect, test } from './helpers/test'
 
@@ -256,4 +257,61 @@ test('from the start screen, another agent opens a canvas, which has no chat unt
   await waitFor(async () => (await session.state()).chatVisible, 'the chat to show')
   expect(await chat.evaluate(() => window.gui.send('Hello'))).toBe(true)
   await waitFor(async () => started().includes(canvasRoot), 'the agent to start in the canvas')
+})
+
+test('another agent reads what the user picked in a project, with its screenshot', async ({
+  launch,
+}) => {
+  const fixture = FIXTURES[0]
+  const port = await freePort()
+  const session = await launch({
+    fixture: fixture.name,
+    env: { GUI_E2E_OUTSIDE_MCP_PORT: String(port) },
+  })
+  await session.waitForPreview()
+
+  const settings = await settingsPage(session)
+  await settings.getByRole('switch', { name: 'Let other agents use Gui' }).click()
+  const url = `http://127.0.0.1:${port}/mcp`
+  await waitFor(
+    () =>
+      fetch(url, { method: 'POST' }).then(
+        (reply) => reply.status === 401,
+        () => false,
+      ),
+    'Gui listening for other agents',
+  )
+  const token = readFileSync(join(session.fixture.userData, 'outside-agents-token'), 'utf8').trim()
+  await settings.close()
+  const { call } = client(url, token)
+
+  expect(await call('gui_selection')).toEqual({ isError: false, text: NOTHING_PICKED })
+
+  await session.pickElement(fixture.selector)
+  const reply = await fetch(url, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'gui_selection', arguments: {} },
+    }),
+  })
+  const { result } = await reply.json()
+  expect(result.isError).toBeUndefined()
+  const [block, image] = result.content as { type: string; text?: string; mimeType?: string }[]
+  expect(block.text).toMatch(/^<selected_element_[0-9a-f]{8}>/)
+  expect(block.text).toContain('Element: <button>')
+  expect(block.text).toContain(
+    `Source: ${fixture.file}:${lineOf(session.fixture.root, fixture.file, fixture.marker)}`,
+  )
+  expect(image).toMatchObject({ type: 'image', mimeType: 'image/png' })
+
+  // Reading the picks leaves them for the user's next message in Gui's chat.
+  expect((await call('gui_selection')).text).toContain('Element: <button>')
 })

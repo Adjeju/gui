@@ -39,6 +39,7 @@ class FakeTab {
       preview: () => '',
       live: () => true,
       closed: new AbortController().signal,
+      selection: () => [],
       backends: { tools: {} as never, recordings: {} as never, board: null },
     }
   }
