@@ -60,6 +60,11 @@ async function useStandIn(session: GuiSession) {
 const selection = async (session: GuiSession) => (await session.chatSnapshot()).meta.selection
 const selecting = async (session: GuiSession) => (await session.state()).preview.selecting
 
+const centerOf = (box: { x: number; y: number; width: number; height: number }) => ({
+  x: box.x + box.width / 2,
+  y: box.y + box.height / 2,
+})
+
 /** The message box's markers, in the order the text has them. */
 const markers = (session: GuiSession) => session.chat.locator('[data-composer] [data-piece="pick"]')
 
@@ -67,7 +72,7 @@ const markers = (session: GuiSession) => session.chat.locator('[data-composer] [
 const written = (session: GuiSession) =>
   session.chat
     .locator('[data-composer]')
-    .evaluate((box) => (box as HTMLElement).innerText.replace(/\s+/g, ' ').trim())
+    .evaluate((box) => (box.textContent ?? '').replace(/\s+/g, ' ').trim())
 
 /** The webContents with the keyboard, by what it shows: chat, pick, preview, or null. */
 const keyboardAt = (session: GuiSession) =>
@@ -79,18 +84,61 @@ const keyboardAt = (session: GuiSession) =>
     return /^https?:/.test(url) ? 'preview' : url
   })
 
-/** Types `text` as keys to whatever has the keyboard, as the user's typing would go. */
-const typeToFocused = (session: GuiSession, text: string) =>
-  session.app.evaluate(({ webContents }, keys) => {
+/**
+ * Types `text` as keys to whatever has the keyboard, as the user's typing would go. A hidden
+ * window never has the system's keyboard (nothing is focused then): the keys go to the chat
+ * page, whose message box must have the page's focus.
+ */
+async function typeToFocused(session: GuiSession, text: string) {
+  const sent = await session.app.evaluate(({ webContents }, keys) => {
     const focused = webContents.getFocusedWebContents()
-    if (!focused) throw new Error('Nothing has the keyboard')
+    if (!focused) return false
     for (const key of keys) focused.sendInputEvent({ type: 'char', keyCode: key })
+    return true
   }, text)
+  if (!sent) await session.chat.keyboard.type(text)
+}
 
-const centerOf = (box: { x: number; y: number; width: number; height: number }) => ({
-  x: box.x + box.width / 2,
-  y: box.y + box.height / 2,
-})
+/** The keyboard went to the chat: the system's, when the window has it, and the page's. */
+async function keyboardInChat(session: GuiSession) {
+  await expect(session.chat.locator('[data-composer]')).toBeFocused()
+  const at = await keyboardAt(session)
+  if (at !== null) expect(at).toBe('chat')
+}
+
+/**
+ * Puts the message box's caret right after its `index`th marker, or selects that marker
+ * ('over'), as a pointer would; then waits for the editor to read it.
+ */
+const selectAround = (session: GuiSession, index: number, how: 'after' | 'over') =>
+  session.chat.locator('[data-composer]').evaluate(
+    async (box, { index, how }) => {
+      const marker = box.querySelectorAll('[data-piece="pick"]')[index]
+      const paragraph = marker?.parentNode
+      if (!marker || !paragraph) throw new Error('No such marker')
+      const at = [...paragraph.childNodes].indexOf(marker as ChildNode)
+      ;(box as HTMLElement).focus()
+      const selection = getSelection()
+      selection?.setBaseAndExtent(paragraph, how === 'over' ? at : at + 1, paragraph, at + 1)
+      await new Promise((settled) => requestAnimationFrame(() => setTimeout(settled, 50)))
+    },
+    { index, how },
+  )
+
+/**
+ * A paste of `text` in the message box, through the event a real one fires (a hidden window's
+ * page can't read the system clipboard).
+ */
+const paste = (session: GuiSession, text: string) =>
+  session.chat.locator('[data-composer]').evaluate(async (box, text) => {
+    // The editor reads the caret the keys moved first.
+    await new Promise((settled) => requestAnimationFrame(() => setTimeout(settled, 50)))
+    const data = new DataTransfer()
+    data.setData('text/plain', text)
+    box.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+    )
+  }, text)
 
 test('each click picks and picking goes on; a picked element clicked again drops out', async ({
   launch,
@@ -149,11 +197,10 @@ test('picks are markers in the message box: typing goes there, and the agent get
   // A click picks the heading; the keyboard goes to the message box, the caret after its
   // marker, and picking goes on. Typed keys go to whatever has the keyboard, as a hand's do.
   await session.startPicking()
-  expect(await keyboardAt(session)).toBe('pick')
+  await expect(session.chat.locator('[data-composer]')).not.toBeFocused()
   await session.overlayGesture(centerOf(await session.viewBox('h1')))
   await expect(markers(session)).toHaveText(['1Heading'])
-  await waitFor(async () => (await keyboardAt(session)) === 'chat', 'the keyboard in the chat')
-  await expect(session.chat.locator('[data-composer]')).toBeFocused()
+  await keyboardInChat(session)
   await typeToFocused(session, 'make this shorter ')
   expect(await written(session)).toBe('1Heading make this shorter')
   expect(await selecting(session)).toBe(true)
@@ -161,7 +208,7 @@ test('picks are markers in the message box: typing goes there, and the agent get
   // A second click, on the button, soon after: a pick too, not a double-click.
   await session.overlayGesture(centerOf(await session.viewBox('button.counter')))
   await expect(markers(session)).toHaveText(['1Heading', '2Button'])
-  await waitFor(async () => (await keyboardAt(session)) === 'chat', 'the keyboard in the chat')
+  await keyboardInChat(session)
   await typeToFocused(session, 'make it blue')
   expect(await written(session)).toBe('1Heading make this shorter 2Button make it blue')
   await expect(overlay.locator('[data-pick-badge]')).toHaveText(['1', '2'])
@@ -204,6 +251,8 @@ test('picks are markers in the message box: typing goes there, and the agent get
 
   // The message box is empty again; the sent message shows each marker as a chip.
   await expect(markers(session)).toHaveCount(0)
+  // Floating, the panel may be its message box alone: the conversation shows when it grows.
+  await session.chat.evaluate(() => window.gui.expandChat())
   const sent = session.chat.locator(`[data-user-message="${turn.id}"]`)
   await expect(sent.locator('[data-pick-ref]')).toHaveText(['1Heading', '2Button'])
   if (shots) await session.shot('sent-message', true)
@@ -223,8 +272,7 @@ test('deleting a marker drops its pick and the rest renumber, on the page too', 
   // and the button is 1, in the message box and on the page.
   const box = session.chat.locator('[data-composer]')
   await box.focus()
-  await box.press('Home')
-  await box.press('ArrowRight')
+  await selectAround(session, 0, 'after')
   await box.press('Backspace')
   await waitFor(async () => (await selection(session)).length === 1, 'the heading dropped')
   expect((await selection(session))[0]?.id).toBe(button.id)
@@ -242,12 +290,12 @@ test('deleting a marker drops its pick and the rest renumber, on the page too', 
   await expect(overlay.locator('[data-pick-badge]')).toHaveText(['1', '2'])
 
   // Cut and pasted after the button, the heading's marker moves, and the numbers follow it.
-  await box.press('Home')
-  await box.press('Shift+ArrowRight')
+  await selectAround(session, 0, 'over')
   await box.press('ControlOrMeta+x')
   await waitFor(async () => (await selection(session)).length === 1, 'the cut marker’s pick out')
-  await box.press('End')
-  await box.press('ControlOrMeta+v')
+  await selectAround(session, 0, 'after')
+  // What the cut put on the clipboard: the marker as its name.
+  await paste(session, 'Heading')
   await expect(markers(session)).toHaveText(['1Button', '2Heading'])
   await waitFor(
     async () =>

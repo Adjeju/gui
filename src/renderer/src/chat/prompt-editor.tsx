@@ -140,6 +140,31 @@ function revived(fragment: Fragment, keep: (piece: Node) => boolean): Fragment {
   return Fragment.from(nodes)
 }
 
+/** A slice of the message as plain text, each piece as its text (`PIECE_VIEWS`). */
+function sliceText(slice: Slice) {
+  const lines: string[] = []
+  slice.content.forEach((node) => {
+    const parts: string[] = []
+    if (node.isTextblock)
+      node.forEach((child) => {
+        parts.push(pieceText(child))
+      })
+    else parts.push(pieceText(node))
+    lines.push(parts.join(''))
+  })
+  return lines.join('\n')
+}
+
+/** What's selected is being cut or copied: kept, to paste back with its pieces. */
+function remember(view: EditorView) {
+  const { selection } = view.state
+  if (!selection.empty) {
+    const slice = selection.content()
+    copied = { text: sliceText(slice), slice }
+  }
+  return false
+}
+
 /** `text` pasted into `state`: what was cut or copied here, as it was; anything else plain. */
 function pastedSlice(state: EditorState, text: string) {
   if (!copied || copied.text !== text) return plainSlice(text)
@@ -242,19 +267,13 @@ export function PromptEditor({
       // writes nothing for them.
       handleDrop: (_view, event) => event.dataTransfer?.types.includes('Files') ?? false,
       clipboardTextSerializer: (slice) => {
-        const lines: string[] = []
-        slice.content.forEach((node) => {
-          const parts: string[] = []
-          if (node.isTextblock)
-            node.forEach((child) => {
-              parts.push(pieceText(child))
-            })
-          else parts.push(pieceText(node))
-          lines.push(parts.join(''))
-        })
-        const text = lines.join('\n')
+        const text = sliceText(slice)
         copied = { text, slice }
         return text
+      },
+      handleDOMEvents: {
+        cut: (editorView) => remember(editorView),
+        copy: (editorView) => remember(editorView),
       },
       dispatchTransaction: applyDraft,
     })
