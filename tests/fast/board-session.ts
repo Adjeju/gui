@@ -9,6 +9,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeFileAtomic } from '../../src/main/atomic-file'
 import { type BoardManifest, FRAME_GAP, MAX_FRAMES, sectionBounds } from '../../src/shared/board'
+import {
+  kitBrand,
+  kitCss,
+  kitFrameHtml,
+  STYLE_KITS,
+  type StyleKit,
+  type StyleKitId,
+} from '../../src/shared/style-kits'
 
 const nativeFs = { ...fs }
 const nativeFsSync = { ...fsSync }
@@ -809,6 +817,66 @@ try {
   )
   assert.ok(again.every((frame) => !['hero', 'footer'].includes(frame.id)))
   await source.dispose()
+
+  // Style kits
+  {
+    const kitOf = (key: string) => STYLE_KITS.find((k) => k.id === key) as StyleKit
+    const assets = (b: { root: string }, name = '') => join(b.root, 'assets', name)
+    const read = (b: { root: string }, name: string) => nativeFs.readFile(assets(b, name), 'utf8')
+    const files = async (b: { root: string }) => (await nativeFs.readdir(assets(b))).sort()
+    // biome-ignore lint/correctness/useHookAtTopLevel: not a React hook
+    const apply = (b: InstanceType<typeof BoardSession>, id: StyleKitId | null) => b.useKit(id)
+    const neutral = kitOf('neutral')
+
+    const used = await board('kit-use')
+    const frame = await apply(used, 'neutral')
+    assert.equal(await read(used, 'kit-neutral.css'), kitCss(neutral))
+    assert.equal(await read(used, 'brand.md'), kitBrand(neutral))
+    assert.equal(used.state().frames.length, 1)
+    assert.equal(frame?.name, 'Neutral kit')
+    assert.equal(
+      await nativeFs.readFile(used.framePath(frame?.id ?? ''), 'utf8'),
+      kitFrameHtml(neutral),
+    )
+    assert.equal(await used.kitInUse(), 'neutral')
+
+    const busy = await board('kit-busy')
+    await busy.create({ name: 'A', width: 400, height: 400 })
+    await assert.rejects(apply(busy, 'mono'), { message: 'Kits start an empty canvas.' })
+    assert.deepEqual(await files(busy), [])
+
+    const own = await board('kit-own')
+    await nativeFs.writeFile(assets(own, 'brand.md'), '# mine')
+    await assert.rejects(apply(own, 'neutral'), {
+      message: 'This canvas already has its own assets/brand.md. Move it to use a kit.',
+    })
+    assert.equal(await read(own, 'brand.md'), '# mine')
+    assert.deepEqual(await files(own), ['brand.md'])
+    assert.equal(own.state().frames.length, 0)
+
+    const edited = await board('kit-edited')
+    await apply(edited, 'neutral')
+    await edited.undo()
+    await nativeFs.appendFile(assets(edited, 'kit-neutral.css'), '/* mine */')
+    await assert.rejects(apply(edited, null), { message: /assets\/kit-neutral\.css/ })
+    assert.equal(await edited.kitInUse(), null)
+    assert.ok((await read(edited, 'kit-neutral.css')).endsWith('/* mine */'))
+
+    const switched = await board('kit-switch')
+    await apply(switched, 'editorial')
+    await switched.undo()
+    await apply(switched, 'mono')
+    assert.deepEqual(await files(switched), ['brand.md', 'kit-mono.css'])
+    assert.equal(await read(switched, 'brand.md'), kitBrand(kitOf('mono')))
+    assert.equal(switched.state().frames.length, 1)
+
+    const cleared = await board('kit-clear')
+    await apply(cleared, 'soft')
+    await cleared.undo()
+    assert.equal(await apply(cleared, null), null)
+    assert.deepEqual(await files(cleared), [])
+    assert.equal(await cleared.kitInUse(), null)
+  }
 
   console.log(
     'BoardSession allocation, limits, save ordering/retry, external files, and close/open passed.',
