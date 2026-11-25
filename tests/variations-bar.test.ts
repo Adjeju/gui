@@ -16,12 +16,18 @@ test('the bar rests in each corner of the page, inset from its edges', () => {
 })
 
 test('a floating chat in the same corner pushes the bar beside it, toward the middle', () => {
-  const leftChat = { x: 112, y: 300, width: 360, height: 338 }
+  const leftChat = {
+    rect: { x: 112, y: 300, width: 360, height: 338 },
+    corner: { x: 'left', y: 'bottom' },
+  } as const
   expect(barRest({ ...base, chat: leftChat, corner: { x: 'left', y: 'bottom' } })).toEqual({
     at: { x: 384, y: 552 },
     room: 604,
   })
-  const rightChat = { x: 728, y: 62, width: 360, height: 338 }
+  const rightChat = {
+    rect: { x: 728, y: 62, width: 360, height: 338 },
+    corner: { x: 'right', y: 'top' },
+  } as const
   expect(barRest({ ...base, chat: rightChat, corner: { x: 'right', y: 'top' } })).toEqual({
     at: { x: 316, y: 12 },
     room: 604,
@@ -29,15 +35,44 @@ test('a floating chat in the same corner pushes the bar beside it, toward the mi
 })
 
 test('a chat in another corner leaves the bar where it is', () => {
-  const leftChat = { x: 112, y: 300, width: 360, height: 338 }
+  const leftChat = {
+    rect: { x: 112, y: 300, width: 360, height: 338 },
+    corner: { x: 'left', y: 'bottom' },
+  } as const
   expect(barRest({ ...base, chat: leftChat, corner: { x: 'right', y: 'bottom' } }).at).toEqual({
     x: 688,
     y: 552,
   })
 })
 
+// A device frame's page, 390 wide, centred in a 1000px canvas; the chat is in the canvas's corner.
+const page = { x: 305, y: 40, width: 390, height: 844 }
+const device = { area: page, size: { width: 360, height: 36 }, inset: 12, minWidth: 240 }
+
+test('a chat in the other bottom corner, over part of the bar, leaves the bar at full room', () => {
+  const rightChat = {
+    rect: { x: 628, y: 500, width: 360, height: 384 },
+    corner: { x: 'right', y: 'bottom' },
+  } as const
+  expect(barRest({ ...device, chat: rightChat, corner: { x: 'left', y: 'bottom' } })).toEqual({
+    at: { x: 12, y: 796 },
+    room: 366,
+  })
+  const leftChat = {
+    rect: { x: 52, y: 500, width: 360, height: 384 },
+    corner: { x: 'left', y: 'bottom' },
+  } as const
+  expect(barRest({ ...device, chat: leftChat, corner: { x: 'right', y: 'bottom' } })).toEqual({
+    at: { x: 18, y: 796 },
+    room: 366,
+  })
+})
+
 test('beside a wide chat, the bar keeps its least room and its name shortens', () => {
-  const wideChat = { x: 112, y: 300, width: 900, height: 338 }
+  const wideChat = {
+    rect: { x: 188, y: 300, width: 900, height: 338 },
+    corner: { x: 'right', y: 'bottom' },
+  } as const
   const rest = barRest({ ...base, chat: wideChat, corner: { x: 'right', y: 'bottom' } })
   expect(rest.room).toBe(240)
   expect(rest.at).toEqual({ x: 12, y: 552 })

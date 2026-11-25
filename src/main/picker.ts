@@ -29,7 +29,7 @@ import type { HoverLabel, Inspector } from './inspector'
 import { Flight, prefersReducedMotion } from './panel-flight'
 import { getPrefs, setPrefs } from './prefs'
 import { guardAppContents, loadRenderer, PRELOAD } from './renderer'
-import { barCornerFor, barRest, clampBar } from './variations-bar'
+import { barCornerFor, barRest, clampBar, type FloatingChat } from './variations-bar'
 
 /** How often what's outlined is measured again while nothing moves (animations, late layout). */
 const IDLE_REFRESH_MS = 250
@@ -133,7 +133,7 @@ export class Picker {
   /** The page's bounds in the window, for the bar; null while it's out of sight */
   private area: Rect | null = null
   /** The floating chat, in the window: the bar sits beside it when they share a corner */
-  private chat: Rect | null = null
+  private chat: FloatingChat | null = null
   /**
    * The next `stop` keeps the overlay up, unseen, over this point (its coordinates) for a
    * double-click's second click (`linger`)
@@ -418,9 +418,9 @@ export class Picker {
 
   /**
    * Where the bar goes: its corner of the page at `area` (null: the page is out of sight, and
-   * so is the bar), beside `chat` when the floating chat is in the same spot.
+   * so is the bar), beside `chat` when the floating chat is in the same corner.
    */
-  placeBar(area: Rect | null, chat: Rect | null) {
+  placeBar(area: Rect | null, chat: FloatingChat | null) {
     this.area = area
     this.chat = chat
     if (this.bar) this.redraw()

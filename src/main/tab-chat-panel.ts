@@ -35,6 +35,7 @@ import type { ProjectResources } from './project-resources'
 import { clamp, inCanvas } from './tab-helpers'
 import type { TabHost, TabState } from './tab-host'
 import { followSurface, surfaceColor } from './theme'
+import type { FloatingChat } from './variations-bar'
 import { focusWindow, showWindow } from './window-presentation'
 
 const PANEL_MIN = { width: 320, height: 360 }
@@ -869,16 +870,20 @@ export class ChatPanel {
     return seen
   }
 
-  /** The floating chat (panel or bubble) where it's drawn in the window; null docked or hidden. */
-  floatingChatRect(): Rect | null {
-    if (!this.chatShown || this.docked || this.popout) return null
+  /**
+   * The floating chat (panel or bubble) where it's drawn in the window, and the corner it's
+   * anchored by; null docked or hidden.
+   */
+  floatingChat(): FloatingChat | null {
+    if (!this.chatShown || this.docked) return null
     const view = this.tab.chatView.getBounds()
-    return {
+    const rect = {
       x: view.x + PANEL_SHADOW_MARGIN,
       y: view.y + PANEL_SHADOW_MARGIN,
       width: view.width - PANEL_SHADOW_MARGIN * 2,
       height: view.height - PANEL_SHADOW_MARGIN * 2,
     }
+    return { rect, corner: { x: this.anchor.x, y: this.anchor.y } }
   }
 
   private placeChat() {

@@ -3114,7 +3114,7 @@ export class ProjectTab implements ChatPanelOwner {
   private placeBar() {
     const { visible } = this.state.preview
     const shown = visible && !this.website && !this.host.sheetShown && this.placement.width > 0
-    this.picker.placeBar(shown ? this.placement : null, this.panel.floatingChatRect())
+    this.picker.placeBar(shown ? this.placement : null, this.panel.floatingChat())
   }
 
   /** The user clicked the walkthrough away, or it ran its course. A held website keeps its own. */

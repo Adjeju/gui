@@ -6,11 +6,18 @@ export interface BarSize {
   height: number
 }
 
+/** The floating chat where it's drawn in the window, and the corner it's anchored by. */
+export interface FloatingChat {
+  rect: Rect
+  corner: PanelCorner
+}
+
 export interface BarRestInput {
   area: Rect
   size: BarSize
   corner: PanelCorner
-  chat: Rect | null
+  /** Moves the bar aside only when it's in the bar's corner; elsewhere the bar stays put. */
+  chat: FloatingChat | null
   inset: number
   minWidth: number
 }
@@ -20,10 +27,14 @@ export interface BarRest {
   room: number
 }
 
-export function barRest({ area, size, corner, chat, inset, minWidth }: BarRestInput): BarRest {
+export function barRest(input: BarRestInput): BarRest {
+  const { area, size, corner, inset, minWidth } = input
   const top = corner.y === 'top' ? inset : area.height - inset - size.height
   const left = corner.x === 'left' ? inset : area.width - inset - size.width
   const bar = { x: area.x + left, y: area.y + top, width: size.width, height: size.height }
+  const floating = input.chat
+  const together = floating?.corner.x === corner.x && floating.corner.y === corner.y
+  const chat = together ? floating.rect : null
   if (!chat || !overlaps(chat, bar))
     return { at: { x: left, y: top }, room: area.width - inset * 2 }
   if (corner.x === 'left') {
