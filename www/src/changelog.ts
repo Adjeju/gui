@@ -15,6 +15,7 @@ export const releases: Release[] = [
     date: '2026-11-24',
     changes: [
       'Settings → Agents → Keep awake keeps your computer from going to sleep on its own while agents work, or the whole time Gui is open. The screen still turns off, and closing the lid still sleeps it.',
+      'Drop images anywhere on the chat, not only on the message box. Each one sits in your message by name where you were typing, so you can write “compare this one with that one” and the agent knows which is which.',
       'Drag the variations bar to any corner of the preview to see what it covers. Gui remembers the corner.',
       'The Working count in the chat reads in minutes and hours, like 20m 54s, where it used to count only in seconds.',
       'On Linux, Gui no longer shows a “JavaScript error in the main process” box when a git command it runs for undo ends early.',
