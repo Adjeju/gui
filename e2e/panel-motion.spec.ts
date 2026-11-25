@@ -785,10 +785,11 @@ test('dragged to an edge the chat docks there, and pulled off the sidebar it flo
   await dockedOn(session, 'left')
   await prefsSaved({ chatSidebar: true, chatSidebarSide: 'left' })
 
-  // A click on the sidebar's header is only a click; its buttons still work.
+  // A click on the sidebar's header, just past the agent's name, is only a click; its buttons
+  // still work.
   const spot = await session.chat.evaluate(() => {
     const bar = document.querySelector('[data-chat-panel] header')
-    const name = bar?.querySelector('button')?.getBoundingClientRect()
+    const name = bar?.querySelector('h2')?.getBoundingClientRect()
     const box = bar?.getBoundingClientRect()
     if (!name || !box) throw new Error('No sidebar header')
     const at = { x: Math.round(name.right + 12), y: Math.round(box.top + box.height / 2) }
