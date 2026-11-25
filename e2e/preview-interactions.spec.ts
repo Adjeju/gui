@@ -175,6 +175,8 @@ test('a walkthrough points out elements with captions and shows the agent pointe
   ])
   await expect(overlay.getByRole('status')).toHaveText('Then send it.')
   await expect(overlay.locator('[data-guide-outline]')).toHaveCount(1)
+  // Its pointer glides to each step's element slowly enough to follow (picker.ts STEP_GLIDE_MS).
+  await expect(overlay.locator('[data-guide-pointer]')).toHaveCSS('transition-duration', '0.65s')
 
   const [missing] = await ask(session, [
     { name: 'preview_point', args: { selector: '#missing', caption: 'Nothing here' } },

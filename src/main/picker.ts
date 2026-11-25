@@ -40,8 +40,11 @@ const FRAME_MS = 16
 const MAX_LABELS = 300
 /** Room around the variations bar in its own overlay, for its shadow (shadow-popover) */
 const BAR_MARGIN = { x: 24, top: 16, bottom: 32 }
-/** The walkthrough's pointer gliding to each step's element: slow enough for the eye to follow */
-const STEP_GLIDE_MS = 400
+/**
+ * The walkthrough's pointer gliding to each step's element: slow enough for the eye to follow.
+ * A step lasts at least preview-tools.ts `readingTime` (900 ms), so it lands before the next.
+ */
+const STEP_GLIDE_MS = 650
 /** The variations bar floats this far in from the page's edges, as the floating chat does. */
 const BAR_INSET = PANEL_MARGIN
 /** The least room the bar keeps beside the chat (its name shortened) before it goes over it */

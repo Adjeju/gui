@@ -289,7 +289,10 @@ function stoppedLoading(wc: WebContents, ms: number) {
   })
 }
 
-/** About how long a walkthrough caption takes to read, and the pointer to land. */
+/**
+ * About how long a walkthrough caption takes to read, and the pointer to land: at least its
+ * glide (picker.ts STEP_GLIDE_MS) and a rest there (input-pace.ts DWELL_MS).
+ */
 const readingTime = (caption: string | null) =>
   caption ? Math.min(8000, 1400 + caption.length * 45) : 900
 
