@@ -125,7 +125,7 @@ test("a photo sent in a canvas's chat is saved to its assets at full quality wit
   expect(readdirSync(join(root, 'assets'))).toEqual([])
 
   expect(await sendFromComposer(canvas, ECHO)).toEqual([
-    '[Image 1] Beach Photo.jpg, saved as assets/beach-photo.jpg:',
+    '[Image 1] Beach Photo.jpg, saved as assets/beach-photo.jpg; to use it in a frame, write <img src="../assets/beach-photo.jpg">:',
   ])
   expect(readdirSync(join(root, 'assets'))).toEqual(['beach-photo.jpg'])
   const saved = readFileSync(join(root, 'assets', 'beach-photo.jpg'))

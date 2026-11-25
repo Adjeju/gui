@@ -123,12 +123,30 @@ test('nothing is written once the canvas closed, and a failed save still sends t
 })
 
 test("a canvas's prompt names the saved file and how a frame uses it", () => {
+  expect(texts([image('beach.jpg', { saved: 'assets/beach.jpg' })]).slice(1)).toEqual([
+    'The user attached an image, labeled below. The message refers to an image by its label, such as [Image 1].',
+    '[Image 1] beach.jpg, saved as assets/beach.jpg; to use it in a frame, write <img src="../assets/beach.jpg">:',
+  ])
   const several = texts([image('beach.jpg', { saved: 'assets/beach.jpg' }), image('huge.jpg')])
   expect(several.slice(1)).toEqual([
-    'The user attached 2 images, each labeled below in order. The message refers to an image by its label, such as [Image 1]. Each one saved to the canvas is named with its file; to use one in a frame, write <img src="../assets/<file>">.',
-    '[Image 1] beach.jpg, saved as assets/beach.jpg:',
+    'The user attached 2 images, each labeled below in order. The message refers to an image by its label, such as [Image 1].',
+    '[Image 1] beach.jpg, saved as assets/beach.jpg; to use it in a frame, write <img src="../assets/beach.jpg">:',
     '[Image 2] huge.jpg:',
   ])
+})
+
+test("an agent that can't see images gets the message without their labels", () => {
+  const blocks = buildPrompt({
+    text: 'Is [Image 2] darker than [Image 1]?\n[Image 1] first',
+    selection: [],
+    viewport: null,
+    problems: [],
+    preamble: false,
+    tools: true,
+    images: false,
+    attachments: [image('a.jpg'), image('b.jpg')],
+  })
+  expect(blocks).toEqual([{ type: 'text', text: 'Is darker than?\nfirst' }])
 })
 
 test("a project's prompt, or an image that wasn't saved, names no path", () => {

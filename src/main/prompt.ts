@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { ContentBlock } from '@agentclientprotocol/sdk'
-import { imageRef } from '../shared/image-refs'
+import { imageRef, withoutImageRefs } from '../shared/image-refs'
 import {
   type ElementContext,
   type ImageAttachment,
@@ -221,7 +221,11 @@ export function buildPrompt({
   })
   if (textEdit) blocks.push({ type: 'text', text: describeTextEdit(textEdit) })
   blocks.push(...followUp)
-  if (text !== null) blocks.push({ type: 'text', text })
+  // An agent that can't see the images doesn't get their labels either, as if none were attached.
+  if (text !== null) {
+    const said = images ? text : withoutImageRefs(text, attachments.length)
+    if (said) blocks.push({ type: 'text', text: said })
+  }
   if (images && attachments.length) blocks.push(...describeAttachments(attachments))
   return blocks
 }
@@ -241,18 +245,17 @@ export function describeAttachments(attachments: ImageAttachment[]): ContentBloc
     attachments.length === 1
       ? 'an image, labeled below'
       : `${attachments.length} images, each labeled below in order`
-  const canvas = attachments.some((attached) => attached.saved)
-    ? ' Each one saved to the canvas is named with its file; to use one in a frame, write <img src="../assets/<file>">.'
-    : ''
+  const saved = (file: string) =>
+    `, saved as ${file}; to use it in a frame, write <img src="../${file}">`
   return [
     {
       type: 'text',
-      text: `The user attached ${what}. The message refers to an image by its label, such as ${imageRef(1)}.${canvas}`,
+      text: `The user attached ${what}. The message refers to an image by its label, such as ${imageRef(1)}.`,
     },
     ...attachments.flatMap((attached, i): ContentBlock[] => [
       {
         type: 'text',
-        text: `${imageRef(i + 1)} ${attached.name}${attached.saved ? `, saved as ${attached.saved}` : ''}:`,
+        text: `${imageRef(i + 1)} ${attached.name}${attached.saved ? saved(attached.saved) : ''}:`,
       },
       image(attached),
     ]),
