@@ -276,6 +276,10 @@ test('an export names files for their frames, in a folder per section when there
     { id: 'a', path: 'summer-sale.png' },
     { id: 'b', path: 'summer-sale-2.png' },
   ])
+  expect(exportPaths(['a', 'b'], frames, sections, 'pdf').map((f) => f.path)).toEqual([
+    'summer-sale.pdf',
+    'summer-sale-2.pdf',
+  ])
   expect(exportPaths(['a', 'b', 'c', 'd'], frames, sections)).toEqual([
     { id: 'a', path: 'feed-ads/summer-sale.png' },
     { id: 'b', path: 'feed-ads/summer-sale-2.png' },

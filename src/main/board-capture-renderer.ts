@@ -148,6 +148,7 @@ export class OffscreenBoardRenderer implements BoardCaptureRenderer {
           pageSize: { width: width / 96, height: height / 96 },
           margins: { top: 0, bottom: 0, left: 0, right: 0 },
           printBackground: true,
+          pageRanges: '1', // rounding the page size can spill a blank second page
         }),
         CAPTURE_TIMEOUT_MS,
         signal,
