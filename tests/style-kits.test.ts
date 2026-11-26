@@ -93,3 +93,10 @@ test('kitProjectCss maps every color token', () => {
 test('kitProjectCss has no self-referencing variable', () => {
   for (const kit of STYLE_KITS) expect(kitProjectCss(kit)).not.toMatch(/(--[\w-]+):\s*var\(\1\)/)
 })
+
+test('kitProjectCss keeps font stacks out of @theme inline', () => {
+  for (const kit of STYLE_KITS) {
+    const inline = kitProjectCss(kit).split('@theme inline')[1]
+    expect(inline).not.toContain('--font-')
+  }
+})
