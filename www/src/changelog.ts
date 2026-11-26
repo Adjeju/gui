@@ -14,6 +14,7 @@ export const releases: Release[] = [
     version: '0.1.0-alpha.32',
     date: '2026-11-25',
     changes: [
+      'On Linux, Alt+1 to Alt+4 go to the terminal while it has the keyboard, so the shell, tmux and irssi get them. Everywhere else they still change the device size.',
       'On Linux, the dock and app menu show Gui’s icon. They showed a placeholder because the package shipped the icon at a size desktops never look up.',
     ],
   },
