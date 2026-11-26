@@ -100,3 +100,23 @@ test('kitProjectCss keeps font stacks out of @theme inline', () => {
     expect(inline).not.toContain('--font-')
   }
 })
+
+test('kitProjectCss registers font-heading in a plain @theme block', () => {
+  for (const kit of STYLE_KITS)
+    expect(kitProjectCss(kit)).toContain(
+      `@theme {\n  --font-heading: ${kit.light['--font-heading']};\n}`,
+    )
+})
+
+test('kitProjectCss derives the radius scale from --radius', () => {
+  const css = kitProjectCss(STYLE_KITS[0])
+  expect(css).toContain('--radius-sm: calc(var(--radius) - 4px);')
+  expect(css).toContain('--radius-md: calc(var(--radius) - 2px);')
+  expect(css).toContain('--radius-lg: var(--radius);')
+  expect(css).toContain('--radius-xl: calc(var(--radius) + 4px);')
+})
+
+test('kitProjectCss escapes a comment terminator in a rule', () => {
+  const css = kitProjectCss({ ...STYLE_KITS[0], rules: ['never close */ early'] })
+  expect(css).toContain('/* - never close * / early */')
+})

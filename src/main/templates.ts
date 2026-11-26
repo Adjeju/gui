@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { kitProjectCss, STYLE_KITS, type StyleKitId } from '../shared/style-kits'
 import type { ProjectTemplate } from '../shared/types'
 
 /**
@@ -47,9 +48,6 @@ createRoot(document.getElementById('root')).render(
 )
 `
 
-const CSS = `@import 'tailwindcss';
-`
-
 const GITIGNORE = `node_modules
 dist
 .DS_Store
@@ -90,19 +88,19 @@ const features = [
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-white text-zinc-900">
+    <div className="min-h-screen bg-background text-foreground">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
         <span className="font-semibold">{name}</span>
-        <nav className="flex items-center gap-6 text-sm text-zinc-600">
-          <a href="#features" className="hover:text-zinc-900">
+        <nav className="flex items-center gap-6 text-sm text-muted-foreground">
+          <a href="#features" className="hover:text-foreground">
             Features
           </a>
-          <a href="#contact" className="hover:text-zinc-900">
+          <a href="#contact" className="hover:text-foreground">
             Contact
           </a>
           <a
             href="#contact"
-            className="rounded-full bg-zinc-900 px-4 py-2 font-medium text-white hover:bg-zinc-700"
+            className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground hover:bg-primary/90"
           >
             Get started
           </a>
@@ -111,36 +109,36 @@ export default function App() {
 
       <main>
         <section className="mx-auto max-w-5xl px-6 pt-20 pb-24">
-          <p className="text-sm font-medium text-indigo-600">Introducing {name}</p>
-          <h1 className="mt-3 max-w-2xl text-5xl font-semibold tracking-tight text-balance">
+          <p className="text-sm font-medium text-primary">Introducing {name}</p>
+          <h1 className="mt-3 max-w-2xl font-heading text-5xl font-semibold tracking-tight text-balance">
             A clear headline that says what you do
           </h1>
-          <p className="mt-5 max-w-xl text-lg text-pretty text-zinc-600">
+          <p className="mt-5 max-w-xl text-lg text-pretty text-muted-foreground">
             One or two sentences on who it's for and why it matters. Replace this with your own
             story.
           </p>
           <div className="mt-8 flex gap-3">
             <a
               href="#contact"
-              className="rounded-full bg-indigo-600 px-5 py-3 font-medium text-white hover:bg-indigo-500"
+              className="rounded-md bg-primary px-5 py-3 font-medium text-primary-foreground hover:bg-primary/90"
             >
               Get started
             </a>
             <a
               href="#features"
-              className="rounded-full px-5 py-3 font-medium text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50"
+              className="rounded-md px-5 py-3 font-medium text-foreground ring-1 ring-border hover:bg-accent"
             >
               Learn more
             </a>
           </div>
         </section>
 
-        <section id="features" className="border-t border-zinc-100 bg-zinc-50">
+        <section id="features" className="border-t border-border bg-muted">
           <div className="mx-auto grid max-w-5xl gap-6 px-6 py-20 sm:grid-cols-3">
             {features.map((feature) => (
-              <div key={feature.title} className="rounded-2xl bg-white p-6 ring-1 ring-zinc-200">
+              <div key={feature.title} className="rounded-xl bg-card p-6 text-card-foreground ring-1 ring-border">
                 <h2 className="font-semibold">{feature.title}</h2>
-                <p className="mt-2 text-sm text-zinc-600">{feature.text}</p>
+                <p className="mt-2 text-sm text-muted-foreground">{feature.text}</p>
               </div>
             ))}
           </div>
@@ -148,12 +146,12 @@ export default function App() {
 
         <section id="contact" className="mx-auto max-w-5xl px-6 py-20">
           <h2 className="text-2xl font-semibold">Ready when you are</h2>
-          <p className="mt-2 text-zinc-600">Tell people how to reach you or sign up.</p>
+          <p className="mt-2 text-muted-foreground">Tell people how to reach you or sign up.</p>
         </section>
       </main>
 
-      <footer className="border-t border-zinc-100">
-        <p className="mx-auto max-w-5xl px-6 py-8 text-sm text-zinc-500">
+      <footer className="border-t border-border">
+        <p className="mx-auto max-w-5xl px-6 py-8 text-sm text-muted-foreground">
           © {new Date().getFullYear()} {name}
         </p>
       </footer>
@@ -184,8 +182,8 @@ const nav = ['Overview', 'Orders', 'Customers', 'Products', 'Settings']
 
 export default function App() {
   return (
-    <div className="flex min-h-screen bg-zinc-50 text-zinc-900">
-      <aside className="hidden w-56 shrink-0 border-r border-zinc-200 bg-white p-4 md:block">
+    <div className="flex min-h-screen bg-background text-foreground">
+      <aside className="hidden w-56 shrink-0 border-r border-border bg-card p-4 text-card-foreground md:block">
         <p className="px-2 font-semibold">{name}</p>
         <nav className="mt-6 flex flex-col gap-1 text-sm">
           {nav.map((item, i) => (
@@ -194,8 +192,8 @@ export default function App() {
               href="#"
               className={
                 i === 0
-                  ? 'rounded-md bg-zinc-100 px-2 py-1.5 font-medium'
-                  : 'rounded-md px-2 py-1.5 text-zinc-600 hover:bg-zinc-50'
+                  ? 'rounded-md bg-accent px-2 py-1.5 font-medium'
+                  : 'rounded-md px-2 py-1.5 text-muted-foreground hover:bg-accent'
               }
             >
               {item}
@@ -205,13 +203,13 @@ export default function App() {
       </aside>
 
       <main className="flex-1 p-6 md:p-8">
-        <h1 className="text-2xl font-semibold">Overview</h1>
-        <p className="mt-1 text-sm text-zinc-500">The last 12 weeks</p>
+        <h1 className="font-heading text-2xl font-semibold">Overview</h1>
+        <p className="mt-1 text-sm text-muted-foreground">The last 12 weeks</p>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {stats.map((stat) => (
-            <div key={stat.label} className="rounded-xl bg-white p-4 ring-1 ring-zinc-200">
-              <p className="text-sm text-zinc-500">{stat.label}</p>
+            <div key={stat.label} className="rounded-xl bg-card p-4 text-card-foreground ring-1 ring-border">
+              <p className="text-sm text-muted-foreground">{stat.label}</p>
               <p className="mt-1 text-2xl font-semibold tabular-nums">{stat.value}</p>
               <p
                 className={
@@ -226,23 +224,23 @@ export default function App() {
           ))}
         </div>
 
-        <section className="mt-6 rounded-xl bg-white p-4 ring-1 ring-zinc-200">
+        <section className="mt-6 rounded-xl bg-card p-4 text-card-foreground ring-1 ring-border">
           <h2 className="font-medium">Revenue by week</h2>
           <div className="mt-4 flex h-40 items-end gap-2">
             {weeks.map((value, i) => (
               <div
                 key={i}
-                className="flex-1 rounded-t bg-indigo-500"
+                className="flex-1 rounded-t bg-primary"
                 style={{ height: \`\${value}%\` }}
               />
             ))}
           </div>
         </section>
 
-        <section className="mt-6 overflow-hidden rounded-xl bg-white ring-1 ring-zinc-200">
+        <section className="mt-6 overflow-hidden rounded-xl bg-card text-card-foreground ring-1 ring-border">
           <h2 className="p-4 font-medium">Recent orders</h2>
           <table className="w-full text-left text-sm">
-            <thead className="border-y border-zinc-100 bg-zinc-50 text-zinc-500">
+            <thead className="border-y border-border bg-muted text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 font-medium">Order</th>
                 <th className="px-4 py-2 font-medium">Customer</th>
@@ -250,12 +248,12 @@ export default function App() {
                 <th className="px-4 py-2 text-right font-medium">Total</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-border">
               {orders.map((order) => (
                 <tr key={order.id}>
                   <td className="px-4 py-2 font-medium">{order.id}</td>
                   <td className="px-4 py-2">{order.customer}</td>
-                  <td className="px-4 py-2 text-zinc-600">{order.status}</td>
+                  <td className="px-4 py-2 text-muted-foreground">{order.status}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{order.total}</td>
                 </tr>
               ))}
@@ -268,7 +266,7 @@ export default function App() {
 }
 `
 
-function templateFiles(template: ProjectTemplate, name: string): Files {
+function templateFiles(template: ProjectTemplate, name: string, kit: StyleKitId): Files {
   if (template === 'blank') return {}
   return {
     '.gitignore': GITIGNORE,
@@ -276,14 +274,19 @@ function templateFiles(template: ProjectTemplate, name: string): Files {
     'vite.config.js': VITE_CONFIG,
     'index.html': indexHtml(name),
     'src/main.jsx': MAIN,
-    'src/index.css': CSS,
+    'src/index.css': kitProjectCss(STYLE_KITS.find((k) => k.id === kit) ?? STYLE_KITS[0]),
     'src/App.jsx': template === 'website' ? websiteApp(name) : dashboardApp(name),
   }
 }
 
-/** Writes `template`'s files into the new project at `root`, named `name` in the page. */
-export async function writeTemplate(root: string, template: ProjectTemplate, name: string) {
-  for (const [path, text] of Object.entries(templateFiles(template, name))) {
+/** Writes `template`'s files into the new project at `root`, named `name` in the page, styled by `kit`. */
+export async function writeTemplate(
+  root: string,
+  template: ProjectTemplate,
+  name: string,
+  kit: StyleKitId = 'neutral',
+) {
+  for (const [path, text] of Object.entries(templateFiles(template, name, kit))) {
     const file = join(root, path)
     await mkdir(dirname(file), { recursive: true })
     await writeFile(file, text, { flag: 'wx' })

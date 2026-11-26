@@ -1,5 +1,6 @@
 import { cp, lstat, mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { StyleKitId } from '../shared/style-kits'
 import type { ProjectTemplate } from '../shared/types'
 import { writeTemplate } from './templates'
 import { trust } from './trust'
@@ -81,14 +82,20 @@ export async function createProject(
   name: string,
   parent: string,
   template: ProjectTemplate,
+  kit: StyleKitId = 'neutral',
 ): Promise<string> {
-  const dest = await makeProject(name, parent, template)
+  const dest = await makeProject(name, parent, template, kit)
   await trustNew(dest)
   return dest
 }
 
 /** The folder and its template's files, not yet trusted; nothing left behind when it fails. */
-async function makeProject(name: string, parent: string, template: ProjectTemplate) {
+async function makeProject(
+  name: string,
+  parent: string,
+  template: ProjectTemplate,
+  kit: StyleKitId = 'neutral',
+) {
   const dest = join(parent, name)
   try {
     await mkdir(dest)
@@ -97,7 +104,7 @@ async function makeProject(name: string, parent: string, template: ProjectTempla
     throw new Error(code === 'EEXIST' ? `${dest} already exists.` : `Couldn't create ${dest}.`)
   }
   try {
-    await writeTemplate(dest, template, name)
+    await writeTemplate(dest, template, name, kit)
   } catch (error) {
     console.error('[gui] failed to write the project template', error)
     // Gui made the folder a moment ago: nothing in it is anyone else's.
