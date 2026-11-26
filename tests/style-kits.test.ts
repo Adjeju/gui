@@ -6,6 +6,7 @@ import {
   kitBrand,
   kitCss,
   kitFrameHtml,
+  kitProjectCss,
   kitStylesheetName,
   STYLE_KITS,
 } from '../src/shared/style-kits'
@@ -73,4 +74,22 @@ test('kitCss sets color-scheme for each theme', () => {
   const css = kitCss(STYLE_KITS[0])
   expect(css).toContain('color-scheme: light;')
   expect(css).toContain('color-scheme: dark;')
+})
+
+test('kitProjectCss starts with the tailwind import', () => {
+  for (const kit of STYLE_KITS)
+    expect(kitProjectCss(kit).startsWith("@import 'tailwindcss';")).toBe(true)
+})
+
+test('kitProjectCss maps every color token', () => {
+  for (const kit of STYLE_KITS) {
+    const css = kitProjectCss(kit)
+    for (const token of KIT_TOKENS.filter((t) => !/^--(radius|font-)/.test(t))) {
+      expect(css).toContain(`--color-${token.slice(2)}: var(${token});`)
+    }
+  }
+})
+
+test('kitProjectCss has no self-referencing variable', () => {
+  for (const kit of STYLE_KITS) expect(kitProjectCss(kit)).not.toMatch(/(--[\w-]+):\s*var\(\1\)/)
 })

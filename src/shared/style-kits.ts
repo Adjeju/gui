@@ -286,6 +286,34 @@ export function kitCss(kit: StyleKit): string {
   ].join('\n')
 }
 
+// A Tailwind v4 project's src/index.css. Fonts are literal in @theme: var(--font-sans) there would point at itself.
+export function kitProjectCss(kit: StyleKit): string {
+  const colors = KIT_TOKENS.filter((token) => !/^--(radius|font-)/.test(token)).map(
+    (token) => `  --color-${token.slice(2)}: var(${token});`,
+  )
+  const fonts = ['sans', 'mono', 'heading'].map(
+    (name) => `  --font-${name}: ${kit.light[`--font-${name}`]};`,
+  )
+  return [
+    "@import 'tailwindcss';",
+    '@custom-variant dark (&:where(.dark, .dark *));',
+    '',
+    `/* ${kit.name} style kit */`,
+    ...kit.rules.map((rule) => `/* - ${rule.replaceAll('*/', '* /')} */`),
+    '',
+    kitCss(kit),
+    '@theme inline {',
+    ...colors,
+    '  --radius-sm: calc(var(--radius) - 4px);',
+    '  --radius-md: calc(var(--radius) - 2px);',
+    '  --radius-lg: var(--radius);',
+    '  --radius-xl: calc(var(--radius) + 4px);',
+    ...fonts,
+    '}',
+    '',
+  ].join('\n')
+}
+
 export function kitBrand(kit: StyleKit): string {
   const sheet = kitStylesheetName(kit)
   return [
