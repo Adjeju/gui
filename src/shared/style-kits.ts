@@ -300,7 +300,11 @@ export function kitProjectCss(kit: StyleKit): string {
     `/* ${kit.name} style kit */`,
     ...kit.rules.map((rule) => `/* - ${rule.replaceAll('*/', '* /')} */`),
     '',
+    // base layer: so Tailwind utilities (font-mono on an h2) beat the kit's body and heading rules
+    '@layer base {',
     kitCss(kit),
+    '}',
+    '',
     '@theme {',
     `  --font-heading: ${kit.light['--font-heading']};`,
     '}',

@@ -30,6 +30,6 @@ test('a new website project takes the chosen style kit', async ({ launch }) => {
 
   const css = join(parent, 'kit-demo', 'src', 'index.css')
   await waitFor(() => existsSync(css), 'the new project')
-  const editorial = STYLE_KITS.find((kit) => kit.id === 'editorial')!
+  const editorial = STYLE_KITS.find((kit) => kit.id === 'editorial') ?? STYLE_KITS[0]
   expect(readFileSync(css, 'utf8')).toBe(kitProjectCss(editorial))
 })

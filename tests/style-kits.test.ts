@@ -108,6 +108,11 @@ test('kitProjectCss registers font-heading in a plain @theme block', () => {
     )
 })
 
+test('kitProjectCss wraps the kit rules in @layer base', () => {
+  for (const kit of STYLE_KITS)
+    expect(kitProjectCss(kit)).toContain(`@layer base {\n${kitCss(kit)}\n}\n`)
+})
+
 test('kitProjectCss derives the radius scale from --radius', () => {
   const css = kitProjectCss(STYLE_KITS[0])
   expect(css).toContain('--radius-sm: calc(var(--radius) - 4px);')

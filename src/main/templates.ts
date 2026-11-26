@@ -126,7 +126,7 @@ export default function App() {
             </a>
             <a
               href="#features"
-              className="rounded-md px-5 py-3 font-medium text-foreground ring-1 ring-border hover:bg-accent"
+              className="rounded-md px-5 py-3 font-medium text-foreground ring-1 ring-border hover:bg-muted"
             >
               Learn more
             </a>
@@ -192,8 +192,8 @@ export default function App() {
               href="#"
               className={
                 i === 0
-                  ? 'rounded-md bg-accent px-2 py-1.5 font-medium'
-                  : 'rounded-md px-2 py-1.5 text-muted-foreground hover:bg-accent'
+                  ? 'rounded-md bg-secondary px-2 py-1.5 font-medium text-secondary-foreground'
+                  : 'rounded-md px-2 py-1.5 text-muted-foreground hover:bg-muted'
               }
             >
               {item}
@@ -240,7 +240,7 @@ export default function App() {
         <section className="mt-6 overflow-hidden rounded-xl bg-card text-card-foreground ring-1 ring-border">
           <h2 className="p-4 font-medium">Recent orders</h2>
           <table className="w-full text-left text-sm">
-            <thead className="border-y border-border bg-muted text-muted-foreground">
+            <thead className="border-y border-border bg-muted text-foreground">
               <tr>
                 <th className="px-4 py-2 font-medium">Order</th>
                 <th className="px-4 py-2 font-medium">Customer</th>
