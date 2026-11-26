@@ -3,7 +3,7 @@ import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 import { TERMINAL_SCROLLBACK_BYTES } from '../../../shared/bounded'
 import type { TextMatch } from '../../../shared/find'
 import { IS_MAC } from '../../../shared/platform'
-import { isTabOrViewportKey } from '../../../shared/shortcuts'
+import { isAppKeyInTerminal } from '../../../shared/shortcuts'
 import { guardGhosttyWrites } from './ghostty-write'
 
 // Ghostty's terminal, compiled to WebAssembly: loaded once, with the module that draws the
@@ -173,8 +173,10 @@ export function mountTerminal(
   const ghosttyKeys = input?.keydownListener
   if (!input || !ghosttyKeys) throw new Error('ghostty-web: no key listener to wrap')
   const keys: Keys = (event) => {
-    // A tab's key and a viewport's go on to the menu too, though they aren't all ⌘ keys.
-    if (isTabOrViewportKey(event)) return
+    // A tab's key goes on to the menu too, though it isn't a ⌘ key on Linux; so does a
+    // viewport's on a Mac. Any key Ghostty types, it preventDefaults, and the menu only hears
+    // keys the page left unhandled, so on Linux Alt+1 to Alt+4 stay the shell's.
+    if (isAppKeyInTerminal(event)) return
     if (!IS_MAC) {
       if (!event.ctrlKey || !event.shiftKey) return ghosttyKeys(event)
       if (event.code === 'KeyC') {

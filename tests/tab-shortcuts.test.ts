@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { execFileSync } from 'node:child_process'
+import { join } from 'node:path'
 import { IS_MAC } from '../src/shared/platform'
 import {
   acceleratorKeys,
   allShortcuts,
-  isTabOrViewportKey,
+  isAppKeyInTerminal,
   type KeyPress,
   placeIndex,
   placeKeys,
@@ -82,20 +84,46 @@ describe('device sizes on ⌃1 to ⌃4 (Alt+1 to Alt+4 on Linux)', () => {
   })
 })
 
-describe('a terminal leaves the tab and device keys to the menu', () => {
-  const command = IS_MAC ? { metaKey: true } : { ctrlKey: true }
-  const device = IS_MAC ? { ctrlKey: true } : { altKey: true }
+/**
+ * `isAppKeyInTerminal` for each key, on the platform given: shortcuts.ts reads the platform as
+ * it loads, so another platform's answers come from a fresh Bun that thinks it's on that one.
+ */
+function appKeysInTerminal(platform: 'darwin' | 'linux', keys: KeyPress[]): boolean[] {
+  const script = `
+    Object.defineProperty(process, 'platform', { value: ${JSON.stringify(platform)} })
+    const { isAppKeyInTerminal } = await import(${JSON.stringify(join(import.meta.dirname, '..', 'src', 'shared', 'shortcuts.ts'))})
+    console.log(JSON.stringify(${JSON.stringify(keys)}.map(isAppKeyInTerminal)))
+  `
+  return JSON.parse(execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' }))
+}
 
-  test('⌘1 to ⌘9 and ⌃1 to ⌃4 are the app’s', () => {
-    for (const digit of '123456789') expect(isTabOrViewportKey(press(digit, command))).toBe(true)
-    for (const digit of '1234') expect(isTabOrViewportKey(press(digit, device))).toBe(true)
+const DIGITS = '1234567890'
+const each = (modifiers: Partial<KeyPress>) => [...DIGITS].map((digit) => press(digit, modifiers))
+// true for 1 to 9 and not 0, as ⌘1 to ⌘9; true for 1 to 4 only, as ⌃1 to ⌃4.
+const TABS = [...DIGITS].map((digit) => digit !== '0')
+const DEVICES = [...DIGITS].map((digit) => '1234'.includes(digit))
+const NONE = [...DIGITS].map(() => false)
+
+describe('a terminal leaves the tab keys, and on a Mac the device keys, to the menu', () => {
+  test('on a Mac, ⌘1 to ⌘9 and ⌃1 to ⌃4 are the app’s', () => {
+    const keys = [each({ metaKey: true }), each({ ctrlKey: true }), each({ altKey: true })]
+    const answers = appKeysInTerminal('darwin', keys.flat())
+    expect(answers).toEqual([...TABS, ...DEVICES, ...NONE])
+  })
+
+  test('on Linux, Ctrl+1 to Ctrl+9 are the app’s and Alt+1 to Alt+4 the shell’s', () => {
+    const keys = [each({ ctrlKey: true }), each({ altKey: true }), each({ metaKey: true })]
+    const answers = appKeysInTerminal('linux', keys.flat())
+    expect(answers).toEqual([...TABS, ...NONE, ...NONE])
   })
 
   test('other digits and modifiers are the shell’s', () => {
-    expect(isTabOrViewportKey(press('1'))).toBe(false)
-    expect(isTabOrViewportKey(press('0', command))).toBe(false)
-    expect(isTabOrViewportKey(press('5', device))).toBe(false)
-    expect(isTabOrViewportKey(press('1', { ...command, shiftKey: true }))).toBe(false)
-    expect(isTabOrViewportKey(press('1', { ...device, shiftKey: true }))).toBe(false)
+    const command = IS_MAC ? { metaKey: true } : { ctrlKey: true }
+    const device = IS_MAC ? { ctrlKey: true } : { altKey: true }
+    expect(isAppKeyInTerminal(press('1'))).toBe(false)
+    expect(isAppKeyInTerminal(press('0', command))).toBe(false)
+    expect(isAppKeyInTerminal(press('5', device))).toBe(false)
+    expect(isAppKeyInTerminal(press('1', { ...command, shiftKey: true }))).toBe(false)
+    expect(isAppKeyInTerminal(press('1', { ...device, shiftKey: true }))).toBe(false)
   })
 })

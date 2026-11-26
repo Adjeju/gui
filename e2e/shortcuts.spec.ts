@@ -855,18 +855,28 @@ function pressAccelerator(session: GuiSession, accelerator: string) {
 
 /**
  * Presses each of `keys` in `page` and says which the page took: one it didn't take goes on to
- * the app menu, as Electron sends it every key a page leaves alone.
+ * the app menu, as Electron sends it every key a page leaves alone. Heard as it starts (a
+ * terminal stops the keys it types) and read once it's done.
  */
 async function keysTaken(page: Page, keys: string[]): Promise<boolean[]> {
   await page.evaluate(() => {
     const taken: boolean[] = []
     Object.assign(window, { guiTaken: taken })
-    window.addEventListener('keydown', (event) => {
-      if (event.code.startsWith('Digit')) taken.push(event.defaultPrevented)
-    })
+    window.addEventListener(
+      'keydown',
+      (event) => {
+        if (event.code.startsWith('Digit')) setTimeout(() => taken.push(event.defaultPrevented))
+      },
+      true,
+    )
   })
   for (const key of keys) await page.keyboard.press(key)
-  return page.evaluate(() => (window as unknown as { guiTaken: boolean[] }).guiTaken)
+  return page.evaluate(
+    () =>
+      new Promise<boolean[]>((done) =>
+        setTimeout(() => done((window as unknown as { guiTaken: boolean[] }).guiTaken)),
+      ),
+  )
 }
 
 test('⌘1 to ⌘8 show a tab by its place and ⌘9 the last, from any page; ⌃1 to ⌃4 the sizes', async ({
@@ -919,6 +929,7 @@ test('⌘1 to ⌘8 show a tab by its place and ⌘9 the last, from any page; ⌃
 
   // No page keeps the keys from the menu: the message box, the preview's page, a terminal
   // (which types every other ⌃ key). ⌘1 stands for all nine: the same keys reach the menu.
+  // Except that on Linux a terminal types Alt+1 to Alt+4, for readline, tmux and irssi.
   await session.waitForPreview()
   const command = mac ? 'Meta' : 'Control'
   const sizeKey = mac ? 'Control' : 'Alt'
@@ -933,7 +944,8 @@ test('⌘1 to ⌘8 show a tab by its place and ⌘9 the last, from any page; ⌃
   expect(await keysTaken(preview, pressed), "the preview's page").toEqual(untaken)
   await clickMenu(session, 'Show Terminal')
   await waitFor(() => terminalFocused(session.chrome), 'the keyboard in the terminal')
-  expect(await keysTaken(session.chrome, pressed), 'the terminal').toEqual(untaken)
+  const inTerminal = pressed.map((_key, index) => !mac && index > 0)
+  expect(await keysTaken(session.chrome, pressed), 'the terminal').toEqual(inTerminal)
 })
 
 test('zoom steps a device frame from 25% to fit and zooms the desktop page, per viewport', async ({

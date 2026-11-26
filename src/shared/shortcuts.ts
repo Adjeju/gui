@@ -793,13 +793,15 @@ function matchesAccelerator(event: KeyPress, accelerator: string): boolean {
 }
 
 /**
- * A tab's key (⌘1 to ⌘9) or a viewport's (⌃1 to ⌃4): the app menu's even in a terminal, which
- * would otherwise type them (on Linux, Ctrl+1 and Alt+1; on a Mac, ⌃2 is NUL and ⌃4 ^\).
+ * A key the app menu keeps even while a terminal has the keyboard, which would otherwise type
+ * it: a tab's (⌘1 to ⌘9, Ctrl+1 to Ctrl+9 on Linux) and, on a Mac, a viewport's (⌃1 to ⌃4; ⌃2
+ * is NUL and ⌃4 ^\). On Linux a viewport's Alt+1 to Alt+4 are the terminal's, for readline's
+ * digit arguments, tmux and irssi: the terminal types them and so keeps them from the menu.
  */
-export function isTabOrViewportKey(event: KeyPress): boolean {
+export function isAppKeyInTerminal(event: KeyPress): boolean {
   const accelerators = [
     ...placeKeys('showTab').map((key) => key.accelerator),
-    ...Object.values(VIEWPORT_SHORTCUTS).map((id) => SHORTCUTS[id].accelerator),
+    ...(IS_MAC ? Object.values(VIEWPORT_SHORTCUTS).map((id) => SHORTCUTS[id].accelerator) : []),
   ]
   return accelerators.some((accelerator) => matchesAccelerator(event, accelerator))
 }
