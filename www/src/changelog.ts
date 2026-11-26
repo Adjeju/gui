@@ -11,6 +11,13 @@ export interface Release {
 
 export const releases: Release[] = [
   {
+    version: '0.1.0-alpha.33',
+    date: '2026-11-26',
+    changes: [
+      'New website and dashboard projects start from a style kit, picked on the start screen: Neutral, Editorial, Soft or Mono set their colors, fonts and radius.',
+    ],
+  },
+  {
     version: '0.1.0-alpha.32',
     date: '2026-11-25',
     changes: [

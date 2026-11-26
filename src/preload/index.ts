@@ -59,7 +59,7 @@ const api: GuiApi = {
   disconnectGitHub: () => request(Invoke.githubDisconnect),
   manageGitHub: () => request(Invoke.githubManage),
   cloneGitHub: (id) => request(Invoke.githubClone, id),
-  newProject: (name, template) => invokeOrThrow(Invoke.newProject, name, template),
+  newProject: (name, template, kit) => invokeOrThrow(Invoke.newProject, name, template, kit),
   startDevServer: send(Send.devServerStart),
   stopDevServer: send(Send.devServerStop),
   restartDevServer: send(Send.devServerRestart),

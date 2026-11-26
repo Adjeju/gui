@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { StartForm } from '../../../shared/ipc'
 import { FRAME_LABEL_HEIGHT } from '../../../shared/layout'
 import { IS_MAC, YOUR_COMPUTER } from '../../../shared/platform'
+import { STYLE_KITS, type StyleKitId } from '../../../shared/style-kits'
 import {
   frameLabel,
   PROJECT_TEMPLATES,
@@ -928,6 +929,7 @@ const TEMPLATE_HINTS: Record<ProjectTemplate, string> = {
     'An empty folder: ask your agent to build your app from scratch. You choose where to save it next.',
 }
 
+const KIT_SEGMENTS = STYLE_KITS.map(({ id, name }) => ({ value: id, label: name }))
 const TEMPLATE_SEGMENTS = PROJECT_TEMPLATES.map(({ id, name }) => ({ value: id, label: name }))
 
 /**
@@ -952,6 +954,7 @@ function OpenActions({ connect }: { connect: boolean }) {
   const [form, setForm] = useState<StartForm | null>(null)
   const github = useGitHub(form === 'cloneRepo')
   const [template, setTemplate] = useState<ProjectTemplate>('website')
+  const [kit, setKit] = useState<StyleKitId>('neutral')
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1041,7 +1044,7 @@ function OpenActions({ connect }: { connect: boolean }) {
       const repository = form === 'cloneRepo' ? matchRepository(value, github.state) : null
       // One of the user's own repositories goes through GitHub's access, private ones included.
       await (form === 'newProject'
-        ? gui.newProject(value, template)
+        ? gui.newProject(value, template, kit)
         : repository
           ? gui.cloneGitHub(repository.id)
           : gui.cloneProject(value))
@@ -1079,6 +1082,20 @@ function OpenActions({ connect }: { connect: boolean }) {
             aria-labelledby="start-template-label"
             stretch
           />
+          {template !== 'blank' && (
+            <>
+              <p id="start-kit-label" className="mt-2 text-small font-medium text-muted">
+                Style kit
+              </p>
+              <SegmentedControl
+                segments={KIT_SEGMENTS}
+                value={kit}
+                onChange={setKit}
+                aria-labelledby="start-kit-label"
+                stretch
+              />
+            </>
+          )}
         </div>
       )}
       <Field

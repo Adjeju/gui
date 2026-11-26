@@ -25,6 +25,12 @@ for (const template of ['website', 'dashboard'] as const) {
   })
 }
 
+test('an unknown kit id falls back to Neutral', async () => {
+  const dir = await tmp()
+  await writeTemplate(dir, 'website', 'Demo', 'nope' as never)
+  expect(await readFile(join(dir, 'src/index.css'), 'utf8')).toBe(kitProjectCss(STYLE_KITS[0]))
+})
+
 test('blank writes no files', async () => {
   const dir = await tmp()
   await writeTemplate(dir, 'blank', 'Demo', 'soft')

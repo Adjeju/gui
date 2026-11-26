@@ -16,7 +16,7 @@ export async function createProjectFromFrame(
   html: string,
   assets: string,
 ): Promise<string> {
-  const dest = await makeProject(name, parent, 'blank')
+  const dest = await makeProject(name, parent, 'blank', 'neutral')
   try {
     // Frames reach their images as ../assets/…; the app serves them from /assets/.
     await writeFile(join(dest, 'index.html'), html.replaceAll('../assets/', '/assets/'))
@@ -94,7 +94,7 @@ async function makeProject(
   name: string,
   parent: string,
   template: ProjectTemplate,
-  kit: StyleKitId = 'neutral',
+  kit: StyleKitId,
 ) {
   const dest = join(parent, name)
   try {

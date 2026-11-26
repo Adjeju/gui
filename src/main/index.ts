@@ -60,7 +60,7 @@ import {
   type ShortcutSpec,
   VIEWPORT_SHORTCUTS,
 } from '../shared/shortcuts'
-import { isStyleKitId } from '../shared/style-kits'
+import { isStyleKitId, type StyleKitId } from '../shared/style-kits'
 import {
   type CustomAgentEntry,
   type ImageAttachment,
@@ -465,11 +465,12 @@ async function newProject(
   target: ProjectWindow | undefined,
   input: string,
   template: ProjectTemplate,
+  kit: StyleKitId,
 ) {
   const name = projectName(input)
   if (!name) throw new Error('Use a name without slashes or colons, like my-app.')
   const folder = await pickParent(target, `Create ${name} in…`, 'Create Here')
-  if (folder) openSafely(target, await createProject(name, folder, template))
+  if (folder) openSafely(target, await createProject(name, folder, template, kit))
 }
 
 /** A canvas by its id, as Recent canvases and the start screen name it. */
@@ -1156,10 +1157,15 @@ function registerIpc() {
       await cloneProject(windowFor(event), repo)
     }),
   )
-  handleLegacy(Invoke.newProject, (event, name: unknown, template: unknown) =>
+  handleLegacy(Invoke.newProject, (event, name: unknown, template: unknown, kit: unknown) =>
     reportError(async () => {
       if (!isString(name)) throw new Error('Enter a name for the project.')
-      await newProject(windowFor(event), name, isProjectTemplate(template) ? template : 'blank')
+      await newProject(
+        windowFor(event),
+        name,
+        isProjectTemplate(template) ? template : 'blank',
+        isStyleKitId(kit) ? kit : 'neutral',
+      )
     }),
   )
   handleLegacy(Invoke.openRecent, async (event, root: unknown) => {

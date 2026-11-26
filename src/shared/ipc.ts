@@ -414,7 +414,7 @@ export interface GuiApi {
    * files in it, then opens it. Rejects with a message to show; resolves if they cancel the
    * picker.
    */
-  newProject(name: string, template: ProjectTemplate): Promise<void>
+  newProject(name: string, template: ProjectTemplate, kit: StyleKitId): Promise<void>
   startDevServer(): void
   stopDevServer(): void
   restartDevServer(): void
