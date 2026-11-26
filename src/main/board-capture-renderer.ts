@@ -10,7 +10,7 @@ import { type BoardCaptureRenderer, UnresponsiveFrameError } from './board-captu
 
 const LOAD_TIMEOUT_MS = 8000
 const READY_TIMEOUT_MS = 1500
-/** A tall frame exported at 2x is a large image to read back. */
+/** A tall frame exported at 2x is a large image to read back; a capture at 3x is given half as long again. */
 const CAPTURE_TIMEOUT_MS = 5000
 /**
  * While a page loads it's asked every PROBE_EVERY_MS to run a line of script; one that can't
@@ -128,7 +128,7 @@ export class OffscreenBoardRenderer implements BoardCaptureRenderer {
     return this.withPage(frame, url, scale, signal, maxHeight, async (wc, width, height) => {
       const image = await settleWithin(
         wc.capturePage({ x: 0, y: 0, width, height }),
-        CAPTURE_TIMEOUT_MS,
+        (CAPTURE_TIMEOUT_MS * Math.max(2, scale)) / 2,
         signal,
       )
       return image && !image.isEmpty() ? image : null

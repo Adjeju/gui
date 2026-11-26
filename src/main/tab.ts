@@ -24,6 +24,7 @@ import {
   BOARD_MANIFEST,
   type BoardCamera,
   exportPaths,
+  exportScale,
   FRAME_PRESETS,
   FRAMES_DIR,
   type FramePreset,
@@ -247,8 +248,15 @@ const APP_CHECK_DELAY_MS = 500
 const FRAME_EXPORT_SCALE = 2
 type FrameExport = { kind: 'png'; scale: 1 | 2 | 3 } | { kind: 'pdf' }
 const DEFAULT_EXPORT: FrameExport = { kind: 'png', scale: FRAME_EXPORT_SCALE }
-const exportBytes = async (board: BoardSession, id: string, format: FrameExport) =>
-  format.kind === 'pdf' ? board.pdf(id) : (await board.screenshot(id, format.scale)).toPNG()
+/** 1× and 3× files carry their scale so they don't overwrite the 2× one. */
+const exportSuffix = (format: FrameExport) =>
+  format.kind === 'png' && format.scale !== FRAME_EXPORT_SCALE ? `@${format.scale}x` : ''
+const exportBytes = async (board: BoardSession, id: string, format: FrameExport) => {
+  if (format.kind === 'pdf') return board.pdf(id)
+  const frame = board.frame(id)
+  const scale = frame ? exportScale(frame.width, frame.height, format.scale) : format.scale
+  return (await board.screenshot(id, scale)).toPNG()
+}
 /**
  * A frame's page that hasn't committed (stuck behind a page that hung) or still hasn't loaded
  * this long after it was opened is checked: if its process doesn't answer, Gui stops it.
@@ -4822,25 +4830,29 @@ export class ProjectTab implements ChatPanelOwner {
       ...(title ? [{ label: title, enabled: false }, { type: 'separator' as const }] : []),
       ...formats.map(([label, format]) => ({
         label,
+        ...(label === 'PNG 2×'
+          ? { accelerator: 'Shift+CmdOrCtrl+E', registerAccelerator: false }
+          : {}),
         click: () => void this.exportFrames(ids, format),
       })),
     ]
   }
 
   /** Saves a frame's page where the user picks. */
-  private async exportFrame(id: string, kind: 'html' | FrameExport) {
-    const ext = kind === 'html' ? 'html' : kind.kind
+  private async exportFrame(id: string, format: 'html' | FrameExport) {
+    const ext = format === 'html' ? 'html' : format.kind
+    const suffix = format === 'html' ? '' : exportSuffix(format)
     const board = this.resources.board
     const frame = board?.frame(id)
     if (!board || !frame) return
     const { canceled, filePath } = await dialog.showSaveDialog(this.host.win, {
-      defaultPath: `${frameId(frame.name, new Set())}.${ext}`,
+      defaultPath: `${frameId(frame.name, new Set())}${suffix}.${ext}`,
       filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
     })
     if (canceled || !filePath) return
     try {
-      if (kind === 'html') await writeFile(filePath, await readFile(board.framePath(id)))
-      else await writeFile(filePath, await exportBytes(board, id, kind))
+      if (format === 'html') await writeFile(filePath, await readFile(board.framePath(id)))
+      else await writeFile(filePath, await exportBytes(board, id, format))
     } catch (error) {
       frameError(error)
     }
@@ -4862,7 +4874,13 @@ export class ProjectTab implements ChatPanelOwner {
     })
     const dir = filePaths[0]
     if (canceled || !dir) return
-    const files = exportPaths(found, board.frames, board.sections, format.kind)
+    const files = exportPaths(
+      found,
+      board.frames,
+      board.sections,
+      format.kind,
+      exportSuffix(format),
+    )
     // Each frame renders in turn, a second or so apiece: the Dock icon shows how far it is.
     const win = this.host.win
     try {
