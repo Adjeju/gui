@@ -135,6 +135,27 @@ export class OffscreenBoardRenderer implements BoardCaptureRenderer {
     })
   }
 
+  pdf(
+    frame: BoardFrameLayout,
+    url: string,
+    signal: AbortSignal,
+    maxHeight: number,
+  ): Promise<Buffer | null> {
+    return this.withPage(frame, url, 1, signal, maxHeight, async (wc, width, height) => {
+      // pageSize is in inches; CSS is 96 px per inch.
+      const bytes = await settleWithin(
+        wc.printToPDF({
+          pageSize: { width: width / 96, height: height / 96 },
+          margins: { top: 0, bottom: 0, left: 0, right: 0 },
+          printBackground: true,
+        }),
+        CAPTURE_TIMEOUT_MS,
+        signal,
+      )
+      return bytes?.length ? bytes : null
+    })
+  }
+
   /**
    * Part of the page rasterized denser than the worker's own scale: Chromium's screenshot
    * with a clip at a scale paints only that part, sharp, rather than the whole page at the
