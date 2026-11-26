@@ -21,8 +21,8 @@ export function AccountSection({ settings }: { settings: SettingsState }) {
       <AccountDetails />
       <SettingsGroup heading="Cost and policies">
         <p className="text-pretty text-small text-muted">
-          Gui is free during alpha. Connect your own AI agent account and plan; you pay the agent
-          provider directly. Gui adds no AI usage charges.
+          Gui is free. Connect your own AI agent account and plan; you pay the agent provider
+          directly. Gui adds no AI usage charges.
         </p>
         <p className="flex gap-4 text-small">
           <a
